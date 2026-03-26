@@ -6,7 +6,7 @@ const path = require("path"); // 💡 تم إضافة استدعاء path لتق
 const Tenant = require("./models/Tenant");
 const checkMaintenanceMode = require("./middlewares/maintenanceMiddleware");
 const redisClient = require("./utils/redisClient"); // 💡 كاش لتسريع الـ Proxy
-
+const fs = require("fs");
 const app = express();
 
 // ==========================================
@@ -182,12 +182,36 @@ app.get("/logo/:slug", async (req, res) => {
 // ==========================================
 // 🌐 تقديم ملفات الواجهة الأمامية (React Frontend)
 // ==========================================
-app.use(express.static(path.join(__dirname, "frontend/dist")));
+// 1. تحديد مسار مجلد الواجهة الأمامية بذكاء (يدعم dist و build)
+let frontendPath = path.join(__dirname, "frontend", "dist"); // المسار الافتراضي لـ Vite
+if (!fs.existsSync(frontendPath)) {
+  frontendPath = path.join(__dirname, "frontend", "build"); // بديل لـ Create React App
+}
 
-// 🛑 الحل السحري لـ Express 5: استخدام app.use بدلاً من app.get("/*")
-// أي مسار غير موجود في الـ API سيتم تحويله إلى React ليتعامل معه
+// طباعة المسار في الـ Terminal لتتأكد من أنه يقرأ من المكان الصحيح
+console.log(`🚀 Serving Frontend From: ${frontendPath}`);
+
+// 2. تزويد الملفات الثابتة (js, css, images)
+app.use(express.static(frontendPath));
+
+// 3. مسار Catch-all الصحيح لـ Express 5
 app.use((req, res) => {
-  res.sendFile(path.join(__dirname, "frontend/dist", "index.html"));
+  const indexPath = path.join(frontendPath, "index.html");
+
+  // فحص أخير للتأكد من وجود ملف index.html
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    // إذا لم يجد الملف، سيعطيك رسالة واضحة تخبرك بالمسار المفقود بدلاً من خطأ 404 المبهم
+    res.status(404).send(`
+      <div style="font-family: sans-serif; text-align: center; padding: 50px;">
+        <h2>⚠️ لم يتم العثور على واجهة React!</h2>
+        <p>السيرفر يبحث عن الملف في المسار التالي:</p>
+        <code style="background: #eee; padding: 10px; border-radius: 5px;">${indexPath}</code>
+        <p>يرجى التأكد من الدخول لمجلد <b>frontend</b> وتشغيل أمر <b>npm run build</b>.</p>
+      </div>
+    `);
+  }
 });
 
 module.exports = app;
