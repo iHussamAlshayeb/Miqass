@@ -2,11 +2,12 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet"); // 🚀 حماية المتصفح
 const compression = require("compression"); // 💨 تسريع النقل
-const path = require("path"); // 💡 تم إضافة استدعاء path لتقديم ملفات الرياكت
+const path = require("path"); // 💡 للتعامل مع مسارات الملفات
+const fs = require("fs"); // 💡 لقراءة الملفات (مثل index.html)
 const Tenant = require("./models/Tenant");
 const checkMaintenanceMode = require("./middlewares/maintenanceMiddleware");
 const redisClient = require("./utils/redisClient"); // 💡 كاش لتسريع الـ Proxy
-const fs = require("fs");
+
 const app = express();
 
 // ==========================================
@@ -68,54 +69,9 @@ app.use("/api/whatsapp", require("./routes/whatsappRoutes"));
 app.use("/api/reviews", require("./routes/reviewRoutes"));
 app.use("/api/zatca", require("./routes/zatcaRoutes"));
 
-// 💡 تم تغيير مسار فحص الجاهزية لكي لا يتعارض مع الصفحة الرئيسية للرياكت
+// 💡 مسار فحص الجاهزية لكي لا يتعارض مع الصفحة الرئيسية للرياكت
 app.get("/api/health", (req, res) => {
   res.status(200).json({ status: "running", version: "2.1.0-stable" });
-});
-
-// ==========================================
-// 🚀 مشاركة الرابط (Smart Proxy) - محسنة للأداء
-// ==========================================
-app.get("/share/:slug", async (req, res) => {
-  try {
-    const { slug } = req.params;
-
-    // جلب البيانات مع اختيار الحقول المطلوبة فقط لتوفير الـ RAM
-    const tenant = await Tenant.findOne({ slug })
-      .select("salonName bio branding")
-      .lean();
-
-    if (!tenant) return res.redirect("https://miqass.app");
-
-    const frontendUrl = `https://miqass.app/${slug}`;
-    const serverUrl = `${req.protocol}://${req.get("host")}`;
-    const logoEndpoint = tenant.branding?.logoUrl
-      ? `${serverUrl}/logo/${slug}`
-      : "https://miqass.app/default-logo.png";
-
-    const html = `
-    <!DOCTYPE html>
-    <html lang="ar" dir="rtl">
-    <head>
-        <meta charset="UTF-8">
-        <title>حجز موعد | ${tenant.salonName}</title>
-        <meta property="og:title" content="${tenant.salonName} - حجز موعد" />
-        <meta property="og:description" content="${tenant.bio || "احجز موعدك الآن بخطوات بسيطة وبدون انتظار."}" />
-        <meta property="og:image" content="${logoEndpoint}" />
-        <meta property="og:type" content="website" />
-        <meta property="og:url" content="${frontendUrl}" />
-        <meta name="twitter:card" content="summary_large_image" />
-        <script>window.location.replace("${frontendUrl}");</script>
-    </head>
-    <body style="background-color: #f1f5f9; text-align: center; font-family: sans-serif; padding-top: 100px;">
-        <h2 style="color: #1e293b;">جاري نقلك لـ ${tenant.salonName}... ✂️</h2>
-    </body>
-    </html>`;
-
-    res.send(html);
-  } catch (error) {
-    res.redirect("https://miqass.app");
-  }
 });
 
 // ==========================================
@@ -180,35 +136,71 @@ app.get("/logo/:slug", async (req, res) => {
 });
 
 // ==========================================
-// 🌐 تقديم ملفات الواجهة الأمامية (React Frontend)
+// 🌐 تقديم ملفات الواجهة الأمامية (React Frontend) مع دعم (Dynamic Meta Tags) 🚀
 // ==========================================
-// 1. تحديد مسار مجلد الواجهة الأمامية بذكاء (يدعم dist و build)
-let frontendPath = path.join(__dirname, "..", "frontend", "dist"); // المسار الافتراضي لـ Vite
+// بما أن ملف app.js داخل مجلد src، نستخدم ".." للرجوع خطوة للوراء ثم الدخول لمجلد frontend
+let frontendPath = path.join(__dirname, "..", "frontend", "dist");
 if (!fs.existsSync(frontendPath)) {
-  frontendPath = path.join(__dirname, "..", "frontend", "build"); // بديل لـ Create React App
+  frontendPath = path.join(__dirname, "..", "frontend", "build");
 }
 
-// طباعة المسار في الـ Terminal لتتأكد من أنه يقرأ من المكان الصحيح
-console.log(`🚀 Serving Frontend From: ${frontendPath}`);
-
-// 2. تزويد الملفات الثابتة (js, css, images)
+// 1. تزويد الملفات الثابتة (js, css, صور)
 app.use(express.static(frontendPath));
 
-// 3. مسار Catch-all الصحيح لـ Express 5
-app.use((req, res) => {
+// 2. 🛑 مسار Catch-all الذكي: يقرأ index.html ويحقن بيانات الصالون داخله!
+app.use(async (req, res) => {
   const indexPath = path.join(frontendPath, "index.html");
 
-  // فحص أخير للتأكد من وجود ملف index.html
   if (fs.existsSync(indexPath)) {
-    res.sendFile(indexPath);
+    let html = fs.readFileSync(indexPath, "utf8");
+
+    // استخراج اسم الصالون (slug) من الرابط، مثلاً: miqass.app/hero-salon
+    const possibleSlug = req.path.split("/")[1];
+
+    // استبعاد المسارات الأساسية للنظام لكي لا يبحث عنها في الداتا بيس
+    const ignoreList = ["api", "login", "register", "dashboard", "pricing"];
+
+    if (possibleSlug && !ignoreList.includes(possibleSlug)) {
+      try {
+        // نبحث عن الصالون في قاعدة البيانات
+        const tenant = await Tenant.findOne({ slug: possibleSlug })
+          .select("salonName bio branding")
+          .lean();
+
+        if (tenant) {
+          const serverUrl = `${req.protocol}://${req.get("host")}`;
+          // نستخدم مسار /logo/ الذكي الذي يعالج Base64
+          const logoEndpoint = tenant.branding?.logoUrl
+            ? `${serverUrl}/logo/${possibleSlug}`
+            : `${serverUrl}/default-logo.png`;
+
+          // 🚀 تجهيز الميتا تاج (Meta Tags) السحرية للواتساب وتويتر
+          const ogTags = `
+            <title>حجز موعد | ${tenant.salonName}</title>
+            <meta property="og:title" content="حجز موعد | ${tenant.salonName}" />
+            <meta property="og:description" content="${tenant.bio || "احجز موعدك الآن بخطوات بسيطة وبدون انتظار."}" />
+            <meta property="og:image" content="${logoEndpoint}" />
+            <meta property="og:type" content="website" />
+            <meta property="og:url" content="${serverUrl}/${possibleSlug}" />
+            <meta name="twitter:card" content="summary_large_image" />
+          `;
+
+          // حقن (Injection) التاجات داخل الـ HTML قبل إغلاق <head>
+          html = html.replace("</head>", `${ogTags}</head>`);
+        }
+      } catch (error) {
+        console.error("Error injecting OG tags:", error);
+      }
+    }
+
+    // إرسال الـ HTML (المعدل أو العادي) للعميل
+    res.send(html);
   } else {
-    // إذا لم يجد الملف، سيعطيك رسالة واضحة تخبرك بالمسار المفقود بدلاً من خطأ 404 المبهم
     res.status(404).send(`
       <div style="font-family: sans-serif; text-align: center; padding: 50px;">
         <h2>⚠️ لم يتم العثور على واجهة React!</h2>
-        <p>السيرفر يبحث عن الملف في المسار التالي:</p>
-        <code style="background: #eee; padding: 10px; border-radius: 5px;">${indexPath}</code>
-        <p>يرجى التأكد من الدخول لمجلد <b>frontend</b> وتشغيل أمر <b>npm run build</b>.</p>
+        <p>السيرفر يبحث عن الملف في المسار: <code>${indexPath}</code></p>
+        <p>يرجى التأكد من تشغيل أمر <b>npm run build</b> في مجلد frontend.</p>
       </div>
     `);
   }
