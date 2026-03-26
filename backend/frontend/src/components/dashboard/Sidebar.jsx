@@ -154,7 +154,7 @@ const Sidebar = ({
 
                     <button
                         onClick={() => {
-                            navigator.clipboard.writeText(`https://api.miqass.app/share/${slug}`);
+                            navigator.clipboard.writeText(`https://miqass.app/${slug}`);
                             alert('تم نسخ رابط الحجز للعملاء! 🔗');
                         }}
                         className="w-full bg-slate-800 text-white p-3 rounded-xl font-bold text-sm hover:bg-slate-700 active:scale-95 transition-all flex items-center justify-center gap-2 shadow-sm"
