@@ -183,9 +183,9 @@ app.get("/logo/:slug", async (req, res) => {
 // 🌐 تقديم ملفات الواجهة الأمامية (React Frontend)
 // ==========================================
 // 1. تحديد مسار مجلد الواجهة الأمامية بذكاء (يدعم dist و build)
-let frontendPath = path.join(__dirname, "frontend", "dist"); // المسار الافتراضي لـ Vite
+let frontendPath = path.join(__dirname, "..", "frontend", "dist"); // المسار الافتراضي لـ Vite
 if (!fs.existsSync(frontendPath)) {
-  frontendPath = path.join(__dirname, "frontend", "build"); // بديل لـ Create React App
+  frontendPath = path.join(__dirname, "..", "frontend", "build"); // بديل لـ Create React App
 }
 
 // طباعة المسار في الـ Terminal لتتأكد من أنه يقرأ من المكان الصحيح
