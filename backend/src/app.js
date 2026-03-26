@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet"); // 🚀 حماية المتصفح
 const compression = require("compression"); // 💨 تسريع النقل
+const path = require("path"); // 💡 تم إضافة استدعاء path لتقديم ملفات الرياكت
 const Tenant = require("./models/Tenant");
 const checkMaintenanceMode = require("./middlewares/maintenanceMiddleware");
 const redisClient = require("./utils/redisClient"); // 💡 كاش لتسريع الـ Proxy
@@ -9,9 +10,9 @@ const redisClient = require("./utils/redisClient"); // 💡 كاش لتسريع 
 const app = express();
 
 // ==========================================
-// 🛡️ إعدادات الثقة بالبروكسي (مهم جداً لـ Render و حماية Rate Limit)
+// 🛡️ إعدادات الثقة بالبروكسي (مهم جداً لـ Cloudflare و حماية Rate Limit)
 // ==========================================
-app.set("trust proxy", 1); // 💡 هذا السطر يحل مشكلة X-Forwarded-For فوراً
+app.set("trust proxy", 1);
 
 // ==========================================
 // 🛡️ إعدادات الحماية والأداء الأساسية
@@ -27,12 +28,13 @@ app.use(compression()); // ضغط البيانات لتقليل الباندوي
 app.use(
   cors({
     origin: function (origin, callback) {
+      // 💡 السماح للطلبات الداخلية (نفس السيرفر) والـ Postman وغيرها
       if (!origin) return callback(null, true);
 
       const allowedPatterns = [
         /^https?:\/\/localhost:\d+$/,
         /^https:\/\/(www\.)?miqass\.app$/,
-        /^https:\/\/.*-ihussamalshayebs-projects\.vercel\.app$/,
+        // أضف أي نطاقات فرعية هنا إن وجدت
       ];
 
       const isAllowed = allowedPatterns.some((pattern) => pattern.test(origin));
@@ -66,8 +68,8 @@ app.use("/api/whatsapp", require("./routes/whatsappRoutes"));
 app.use("/api/reviews", require("./routes/reviewRoutes"));
 app.use("/api/zatca", require("./routes/zatcaRoutes"));
 
-// مسار فحص الجاهزية (Health Check)
-app.get("/", (req, res) => {
+// 💡 تم تغيير مسار فحص الجاهزية لكي لا يتعارض مع الصفحة الرئيسية للرياكت
+app.get("/api/health", (req, res) => {
   res.status(200).json({ status: "running", version: "2.1.0-stable" });
 });
 
@@ -175,6 +177,17 @@ app.get("/logo/:slug", async (req, res) => {
   } catch (error) {
     res.status(500).send("Server Error");
   }
+});
+
+// ==========================================
+// 🌐 تقديم ملفات الواجهة الأمامية (React Frontend)
+// ==========================================
+// تأكد من أن مسار "frontend/dist" يطابق مجلد البناء الخاص بك
+app.use(express.static(path.join(__dirname, "frontend/dist")));
+
+// 🛑 أي مسار غير موجود في الـ API سيتم تحويله إلى React ليتعامل معه
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "frontend/dist", "index.html"));
 });
 
 module.exports = app;
