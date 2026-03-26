@@ -182,11 +182,11 @@ app.get("/logo/:slug", async (req, res) => {
 // ==========================================
 // 🌐 تقديم ملفات الواجهة الأمامية (React Frontend)
 // ==========================================
-// تأكد من أن مسار "frontend/dist" يطابق مجلد البناء الخاص بك
 app.use(express.static(path.join(__dirname, "frontend/dist")));
 
-// 🛑 أي مسار غير موجود في الـ API سيتم تحويله إلى React ليتعامل معه
-app.get("/*", (req, res) => {
+// 🛑 الحل السحري لـ Express 5: استخدام app.use بدلاً من app.get("/*")
+// أي مسار غير موجود في الـ API سيتم تحويله إلى React ليتعامل معه
+app.use((req, res) => {
   res.sendFile(path.join(__dirname, "frontend/dist", "index.html"));
 });
 
