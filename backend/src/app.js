@@ -186,7 +186,7 @@ app.get("/logo/:slug", async (req, res) => {
 app.use(express.static(path.join(__dirname, "frontend/dist")));
 
 // 🛑 أي مسار غير موجود في الـ API سيتم تحويله إلى React ليتعامل معه
-app.get("*", (req, res) => {
+app.get("/*", (req, res) => {
   res.sendFile(path.join(__dirname, "frontend/dist", "index.html"));
 });
 
