@@ -1,0 +1,23 @@
+{
+  "short_name": "نظام مِقَص السحابي",
+  "name": "مِقَص",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "theme_color": "#F0F9FF",
+  "background_color": "#ffffff",
+  "orientation": "portrait"
+}

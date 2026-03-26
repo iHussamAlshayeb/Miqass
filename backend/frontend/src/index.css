@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* إعدادات بسيطة لضمان أن الموقع يدعم اللغة العربية (من اليمين لليسار) */
+body {
+  direction: rtl;
+  font-family: 'Tajawal', sans-serif;
+  /* يفضل استخدام خط عربي جميل لاحقاً */
+  background-color: #f9fafb;
+  /* لون خلفية مريح للعين */
+}
+
+
+/* تنسيقات تقويم الحجز */
+.custom-datepicker-wrapper .react-datepicker-wrapper {
+  width: 100%;
+}
+
+.react-datepicker__day--excluded {
+  background-color: #fee2e2 !important;
+  /* لون أحمر فاتح للأيام المغلقة */
+  color: #ef4444 !important;
+  text-decoration: line-through;
+  opacity: 0.5;
+  cursor: not-allowed !important;
+}
+
+.react-datepicker__day--selected {
+  background-color: #3b82f6 !important;
+  /* لون أزرق لليوم المحدد */
+  border-radius: 50%;
+}
+
+/* ==========================================
+   💡 Utilities إضافية مهمة
+   ========================================== */
+
+/* إخفاء الجولات الإرشادية أثناء الطباعة (عشان الفاتورة تطلع نظيفة) */
+@media print {
+
+  .driver-active,
+  .driver-popover {
+    display: none !important;
+  }
+}
+
+/* إخفاء شريط التمرير الافتراضي وجعله أنيقاً (يُستخدم في قائمة الخدمات/المواعيد) */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
