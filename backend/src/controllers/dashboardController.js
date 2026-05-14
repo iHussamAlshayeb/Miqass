@@ -5,9 +5,9 @@ const Customer = require("../models/Customer");
 const Barber = require("../models/Barber");
 const Service = require("../models/Service");
 
-const { encrypt } = require("../utils/encryption"); // 💡 استيراد أداة التشفير
+const { encrypt } = require("../utils/encryption");
 
-const redisClient = require("../utils/redisClient"); // 💡 استدعاء الكاش لمسحه عند التعديل
+const redisClient = require("../utils/redisClient");
 
 const {
   sendCancellationMessage,
@@ -18,7 +18,7 @@ const {
 
 const mapAppointmentForFrontend = (app) => {
   return {
-    ...(app._doc ? app._doc : app), // تعديل بسيط ليتوافق مع lean و الحفظ العادي
+    ...(app._doc ? app._doc : app),
     customerPhone: app.customerId?.phone || "غير معروف",
     chair: app.barberName,
   };
@@ -27,7 +27,6 @@ const mapAppointmentForFrontend = (app) => {
 const getBarberAppointments = async (req, res) => {
   try {
     const { date } = req.query;
-    // 🚀 استخدام lean
     const appointments = await Appointment.find({
       tenantId: req.tenantId,
       date,
@@ -150,14 +149,12 @@ const getBarberSettings = async (req, res) => {
       isActive: b.isActive !== false,
     }));
 
-    // 🛡️ حماية أمنية: تجهيز بيانات الدفع بدون إرسال المفتاح السري الحقيقي
     const safePaymentSettings = {
       isOnlinePaymentEnabled:
         tenant.paymentSettings?.isOnlinePaymentEnabled || false,
       depositAmount: tenant.paymentSettings?.depositAmount || 0,
       moyasarPublishableKey:
         tenant.paymentSettings?.moyasarPublishableKey || "",
-      // نرسل مؤشر فقط (True/False) ليعرف الفرونت إند أن المفتاح السري محفوظ وموجود
       hasSecretKey: !!tenant.paymentSettings?.moyasarSecretKey,
     };
 
@@ -175,7 +172,7 @@ const getBarberSettings = async (req, res) => {
         isEnabled: false,
         apiKey: "",
       },
-      paymentSettings: safePaymentSettings, // 💳 إضافة إعدادات الدفع الآمنة هنا
+      paymentSettings: safePaymentSettings,
       ownerPhone: tenant.ownerPhone || "",
       branding: tenant.branding || {},
       tenantId: tenant._id,
@@ -223,7 +220,7 @@ const updateBarberSettings = async (req, res) => {
       bio,
       socialLinks,
       branding,
-      paymentSettings, // 💳 نستقبل إعدادات الدفع من الواجهة الأمامية
+      paymentSettings,
     } = req.body;
 
     // 💡 تمت إضافة paymentSettings للـ select
@@ -239,7 +236,6 @@ const updateBarberSettings = async (req, res) => {
       });
     }
 
-    // تحديث الصالون
     tenant.salonName = salonName || tenant.salonName;
     tenant.ownerName = ownerName || tenant.ownerName;
     tenant.ownerPhone = ownerPhone || tenant.ownerPhone;
@@ -276,9 +272,6 @@ const updateBarberSettings = async (req, res) => {
     if (wafeqApiKey !== undefined)
       tenant.taxSettings.wafeqAccountId = wafeqApiKey;
 
-    // ==========================================
-    // 💳 🚀 تحديث إعدادات الدفع الإلكتروني وتشفير المفاتيح
-    // ==========================================
     if (paymentSettings) {
       if (!tenant.paymentSettings) tenant.paymentSettings = {};
 
@@ -296,8 +289,6 @@ const updateBarberSettings = async (req, res) => {
           paymentSettings.moyasarPublishableKey.trim();
       }
 
-      // 🛡️ تشفير المفتاح السري قبل الحفظ!
-      // نتأكد أنه أرسل مفتاحاً جديداً وليس فارغاً أو نصوصاً مموهة من الواجهة (****)
       if (
         paymentSettings.moyasarSecretKey &&
         paymentSettings.moyasarSecretKey.trim() !== "" &&
@@ -311,7 +302,6 @@ const updateBarberSettings = async (req, res) => {
 
     await tenant.save();
 
-    // 🚀 تحديث الحلاقين والخدمات بالتوازي
     const tasks = [];
 
     if (barbers && Array.isArray(barbers)) {
@@ -350,7 +340,6 @@ const updateBarberSettings = async (req, res) => {
 
     await Promise.all(tasks);
 
-    // 💣 تدمير الكاش لكي تظهر التحديثات فوراً في صفحة الحجز
     try {
       await redisClient.del(`tenant_public_profile:${tenant.slug}`);
     } catch (e) {}
@@ -367,7 +356,7 @@ const getAllUpcomingAppointments = async (req, res) => {
     const appointments = await Appointment.find({ tenantId: req.tenantId })
       .populate("customerId", "phone parentName children")
       .sort({ date: -1, timeSlot: -1 })
-      .limit(200) // حماية
+      .limit(200)
       .lean();
 
     res
@@ -612,7 +601,7 @@ const sendBroadcastCampaign = async (req, res) => {
     ) {
       return res.status(403).json({
         message:
-          "هذه الميزة تتطلب باقة VIP 👑، أو يمكنك شراء 'رصيد حملة واحدة' من الإعدادات.",
+          "هذه الميزة تتطلب باقة VIP، أو يمكنك شراء 'رصيد حملة واحدة' من الإعدادات.",
       });
     }
 

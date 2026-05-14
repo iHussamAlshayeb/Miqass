@@ -2,10 +2,6 @@ const axios = require("axios");
 
 const API_URL = "https://www.wasenderapi.com/api/send-message";
 
-// =================================================================
-// 💡 دوال المساعدة (Helpers)
-// =================================================================
-
 const formatTimeForMessage = (timeStr) => {
   if (!timeStr) return "";
   const [hourStr, minStr] = timeStr.split(":");
@@ -61,11 +57,6 @@ const handleWhatsAppError = (actionName, error) => {
   }
 };
 
-// =================================================================
-// 🚀 دوال إرسال الرسائل
-// =================================================================
-
-// 1. إرسال رسالة التأكيد (تم إضافة barberName)
 const sendWhatsAppMessage = async (
   phone,
   childName,
@@ -126,7 +117,6 @@ ${locationUrl}${contactPhone}
   }
 };
 
-// 2. إرسال رسالة الإلغاء (تم إضافة barberName)
 const sendCancellationMessage = async (
   phone,
   childName,
@@ -177,7 +167,6 @@ ${bookingLink}
   }
 };
 
-// 3. إرسال رسالة التذكير (تم إضافة barberName)
 const sendReminderMessage = async (
   phone,
   childName,
@@ -235,7 +224,6 @@ ${locationUrl}${contactPhone}
   }
 };
 
-// 4. إرسال طلب التقييم
 const sendReviewRequestMessage = async (
   phone,
   childName,
@@ -288,7 +276,6 @@ const sendReviewRequestMessage = async (
   }
 };
 
-// 5. إرسال رسالة مكافأة الولاء
 const sendLoyaltyRewardMessage = async (phone, customerName, tenant) => {
   try {
     const customApiKey = tenant?.whatsappSettings?.apiKey;
@@ -332,7 +319,6 @@ ${bookingLink}
   }
 };
 
-// 6. رسالة إعادة الاستهداف
 const sendRetentionMessage = async (phone, customerName, tenant) => {
   try {
     const customApiKey = tenant?.whatsappSettings?.apiKey;
@@ -378,7 +364,6 @@ ${bookingLink}
   }
 };
 
-// 7. دالة إرسال رسالة مخصصة (للحملات التسويقية)
 const sendCampaignMessage = async (phone, messageText, tenant) => {
   try {
     const customApiKey = tenant?.whatsappSettings?.apiKey;

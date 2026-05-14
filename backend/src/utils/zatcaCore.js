@@ -1,5 +1,5 @@
 const axios = require("axios");
-const fs = require("fs").promises; // 🚀 استخدام الـ Promises لعدم حظر السيرفر
+const fs = require("fs").promises;
 const path = require("path");
 const os = require("os");
 const { exec } = require("child_process");
@@ -8,23 +8,15 @@ const crypto = require("crypto");
 
 const execPromise = util.promisify(exec);
 
-// =================================================================
-// ⚙️ إعدادات المحرك الأساسية
-// =================================================================
 const ZATCA_BASE_URL =
   process.env.ZATCA_BASE_URL ||
   "https://gw-fatoora.zatca.gov.sa/e-invoicing/developer-portal";
 
-// 🛡️ دالة لتنظيف مدخلات الصالون ومنع الـ Config Injection
 const sanitizeZatcaString = (str) => {
   if (!str) return "Unknown";
-  // إزالة أي فواصل أسطر أو علامات يساوي قد تكسر ملف الـ OpenSSL
   return str.replace(/[\r\n=]/g, " ").trim();
 };
 
-/**
- * 🛡️ دالة مساعدة مركزية لإرسال الطلبات لهيئة الزكاة
- */
 const zatcaRequest = async (
   endpoint,
   method = "POST",
@@ -42,7 +34,7 @@ const zatcaRequest = async (
         "Accept-Language": "ar",
         ...headers,
       },
-      timeout: 15000, // 🚀 15 ثانية كحد أقصى لحماية السيرفر من تعليق سيرفرات الزكاة
+      timeout: 15000,
     });
     return response.data;
   } catch (error) {
@@ -54,9 +46,6 @@ const zatcaRequest = async (
   }
 };
 
-// =================================================================
-// 🔐 محرك التشفير: توليد المفاتيح وملف الـ CSR
-// =================================================================
 const generateZatcaCSR = async (salonData) => {
   console.log(
     `⏳ [ZATCA CORE] جاري توليد المفاتيح وملف الـ CSR لصالون: ${salonData.salonName}`,
@@ -108,7 +97,6 @@ businessCategory=Hair Salon
 `;
 
   try {
-    // 🚀 كتابة الملفات بـ Async لعدم حظر السيرفر
     await fs.writeFile(csrConfigPath, configContent);
 
     console.log("🔑 جاري توليد المفتاح الخاص (Private Key)...");
@@ -121,13 +109,11 @@ businessCategory=Hair Salon
       `openssl req -new -sha256 -key ${privateKeyPath} -extensions req_ext -config ${csrConfigPath} -out ${csrPath}`,
     );
 
-    // 🚀 قراءة الملفات بـ Async
     const privateKeyPEM = await fs.readFile(privateKeyPath, "utf8");
     const csrPEM = await fs.readFile(csrPath, "utf8");
 
     const csrBase64 = Buffer.from(csrPEM).toString("base64");
 
-    // 🧹 تنظيف الملفات بالتوازي (Parallel Cleanup)
     await Promise.all([
       fs.unlink(privateKeyPath).catch(() => null),
       fs.unlink(csrConfigPath).catch(() => null),
@@ -138,7 +124,6 @@ businessCategory=Hair Salon
 
     return { csr: csrBase64, privateKey: privateKeyPEM };
   } catch (error) {
-    // تنظيف آمن في حال الفشل
     await Promise.all([
       fs.unlink(privateKeyPath).catch(() => null),
       fs.unlink(csrConfigPath).catch(() => null),
@@ -150,9 +135,6 @@ businessCategory=Hair Salon
   }
 };
 
-// =================================================================
-// 📡 1. مسار إصدار شهادة الامتثال המبدئية (Compliance CSID)
-// =================================================================
 const getComplianceCSID = async (otp, csrBase64) => {
   const endpoint = "/compliance";
   const payload = { csr: csrBase64 };
@@ -160,9 +142,6 @@ const getComplianceCSID = async (otp, csrBase64) => {
   return await zatcaRequest(endpoint, "POST", payload, headers);
 };
 
-// =================================================================
-// 📡 2. مسار فحص الامتثال (Compliance Invoice Check)
-// =================================================================
 const checkComplianceInvoice = async (
   invoiceHash,
   invoiceBase64,
@@ -179,9 +158,6 @@ const checkComplianceInvoice = async (
   return await zatcaRequest(endpoint, "POST", payload, headers);
 };
 
-// =================================================================
-// 📡 3. مسار إصدار شهادة الإنتاج النهائية (Production CSID)
-// =================================================================
 const getProductionCSID = async (
   complianceRequestId,
   complianceToken,
@@ -196,9 +172,6 @@ const getProductionCSID = async (
   return await zatcaRequest(endpoint, "POST", payload, headers);
 };
 
-// =================================================================
-// 📡 4. مسار تجديد شهادة الإنتاج (Renew Production CSID)
-// =================================================================
 const renewProductionCSID = async (newCsrBase64, oldToken, oldSecret) => {
   const endpoint = "/production/csids";
   const authString = Buffer.from(`${oldToken}:${oldSecret}`).toString("base64");
@@ -207,9 +180,6 @@ const renewProductionCSID = async (newCsrBase64, oldToken, oldSecret) => {
   return await zatcaRequest(endpoint, "POST", payload, headers);
 };
 
-// =================================================================
-// 📡 5. مسار التبليغ عن فاتورة مبسطة (Reporting B2C)
-// =================================================================
 const reportSingleInvoice = async (
   invoiceHash,
   invoiceBase64,
@@ -228,9 +198,6 @@ const reportSingleInvoice = async (
   return await zatcaRequest(endpoint, "POST", payload, headers);
 };
 
-// =================================================================
-// 📡 6. مسار الفسح لفاتورة ضريبية قياسية (Clearance B2B)
-// =================================================================
 const clearSingleInvoice = async (
   invoiceHash,
   invoiceBase64,
@@ -249,28 +216,17 @@ const clearSingleInvoice = async (
   return await zatcaRequest(endpoint, "POST", payload, headers);
 };
 
-// =================================================================
-// 👑 الدالة المايسترو: ربط الصالون وإصدار الشهادات (Onboarding)
-// =================================================================
 const onboardDevice = async (otp, salonData) => {
   try {
     console.log(
       `🚀 [ZATCA CORE] بدء عملية الربط لصالون: ${salonData.salonName}`,
     );
 
-    // 1. 🔑 توليد المفاتيح وملف الـ CSR
     const { csr, privateKey } = await generateZatcaCSR(salonData);
 
-    // 2. 📜 الحصول على شهادة الامتثال המبدئية
-    console.log("🔑 [ZATCA CORE] جاري طلب شهادة الامتثال המبدئية...");
+    console.log("🔑 [ZATCA CORE] جاري طلب شهادة الامتثال المبدئية...");
     const complianceResponse = await getComplianceCSID(otp, csr);
 
-    // 🚨 تذكير هام للمطور (Phase 2):
-    // قبل طلب شهادة الإنتاج، يجب هنا توليد فاتورة وهمية وتمريرها لـ checkComplianceInvoice
-    // وإلا سيرفض سيرفر الزكاة طلب الـ Production CSID في بيئة الإنتاج الفعلية!
-    // await checkComplianceInvoice(...);
-
-    // 4. 👑 الحصول على شهادة الإنتاج النهائية
     console.log("📜 [ZATCA CORE] جاري طلب شهادة الإنتاج النهائية...");
     const productionResponse = await getProductionCSID(
       complianceResponse.requestID,

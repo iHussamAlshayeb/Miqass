@@ -1,16 +1,11 @@
 const crypto = require("crypto");
 
-// ⚠️ يجب إضافة هذا المتغير في ملف .env
-// عبارة عن نص عشوائي طويل (32 حرف/بايت) مثل:
-// ENCRYPTION_KEY=my_super_secret_key_that_is_32_bytes_long.
 const ENCRYPTION_KEY =
   process.env.ENCRYPTION_KEY || "default_secret_key_must_be_32_char";
-const IV_LENGTH = 16; // لعملية AES
+const IV_LENGTH = 16;
 
-// دالة التشفير
 const encrypt = (text) => {
   if (!text) return text;
-  // التأكد من أن المفتاح طوله 32 بايت بالضبط
   const key = crypto.scryptSync(ENCRYPTION_KEY, "salt", 32);
   const iv = crypto.randomBytes(IV_LENGTH);
   const cipher = crypto.createCipheriv("aes-256-cbc", key, iv);
@@ -19,7 +14,6 @@ const encrypt = (text) => {
   return iv.toString("hex") + ":" + encrypted.toString("hex");
 };
 
-// دالة فك التشفير
 const decrypt = (text) => {
   if (!text || !text.includes(":")) return text;
   try {

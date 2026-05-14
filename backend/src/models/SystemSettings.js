@@ -2,18 +2,15 @@ const mongoose = require("mongoose");
 
 const systemSettingsSchema = new mongoose.Schema(
   {
-    // 💡 حقل مخفي لضمان وجود سجل واحد فقط في كل قاعدة البيانات
     isGlobal: {
       type: Boolean,
       default: true,
-      unique: true, // 👈 الفهرس السحري الذي يمنع إنشاء سجل ثاني!
+      unique: true,
     },
-    // هل وضع الصيانة مفعل؟
     isMaintenanceMode: {
       type: Boolean,
       default: false,
     },
-    // الرسالة التي ستظهر للعملاء والصالونات
     maintenanceMessage: {
       type: String,
       default:

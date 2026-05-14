@@ -1,6 +1,5 @@
 const nodemailer = require("nodemailer");
 
-// 💡 العودة للطريقة الرسمية والمضمونة (SMTP)
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || "smtp-relay.brevo.com",
   port: process.env.SMTP_PORT || 587,
@@ -11,7 +10,6 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// للتشخيص: للتأكد من نجاح الاتصال بسيرفرات Brevo دون تعطيل السيرفر الأساسي
 try {
   transporter.verify((error, success) => {
     if (error) {
@@ -27,10 +25,8 @@ try {
   console.log("⚠️ تم تخطي فحص SMTP لتجنب إيقاف السيرفر.");
 }
 
-// 💡 رابط الواجهة الأمامية مع Fallback ذكي
 const FRONTEND_URL = process.env.FRONTEND_URL || "https://miqass.app";
 
-// التصميم الأساسي الموحد للإيميلات (SaaS Style)
 const baseTemplate = (title, content, buttonText, buttonLink) => `
 <div dir="rtl" style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f8fafc; padding: 40px 20px; text-align: right;">
     <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 24px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05); border: 1px solid #f1f5f9;">
@@ -61,14 +57,8 @@ const baseTemplate = (title, content, buttonText, buttonLink) => `
 </div>
 `;
 
-// 💡 تجهيز اسم وعنوان المُرسل من ملف .env
 const fromAddress = `"${process.env.FROM_NAME || "Miqass App"}" <${process.env.FROM_EMAIL || "noreply@miqass.app"}>`;
 
-// =================================================================
-// 🚀 دوال إرسال الإيميلات (مُغلفة بالـ Try/Catch لحماية السيرفر)
-// =================================================================
-
-// 1. رسالة تأكيد إنشاء الحساب
 const sendWelcomeEmail = async (email, ownerName, salonName) => {
   try {
     const content = `
@@ -97,7 +87,6 @@ const sendWelcomeEmail = async (email, ownerName, salonName) => {
   }
 };
 
-// 2. رسالة تأكيد تفعيل الترقية
 const sendActivationEmail = async (email, ownerName, planName, endDate) => {
   try {
     const content = `
@@ -124,7 +113,6 @@ const sendActivationEmail = async (email, ownerName, planName, endDate) => {
   }
 };
 
-// 3. رسالة التذكير بقرب انتهاء الاشتراك
 const sendRenewalReminderEmail = async (email, ownerName, daysLeft) => {
   try {
     const content = `
@@ -151,7 +139,6 @@ const sendRenewalReminderEmail = async (email, ownerName, daysLeft) => {
   }
 };
 
-// 4. رسالة إعادة تعيين كلمة المرور
 const sendPasswordResetEmail = async (email, ownerName, resetLink) => {
   try {
     const content = `
@@ -178,9 +165,7 @@ const sendPasswordResetEmail = async (email, ownerName, resetLink) => {
       `❌ فشل إرسال بريد استعادة كلمة المرور لـ ${email}:`,
       error.message,
     );
-    // 💡 ملاحظة: بما أن هذه الدالة مهمة جداً (لا يمكن للمستخدم الدخول بدونها)،
-    // يمكنك لاحقاً جعل الـ controller يعيد رسالة خطأ للعميل إذا فشلت هذه بالذات.
-    throw new Error("فشل إرسال الإيميل"); // نعيد رمي الخطأ للـ controller ليتعامل معه
+    throw new Error("فشل إرسال الإيميل");
   }
 };
 

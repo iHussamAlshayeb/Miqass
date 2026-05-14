@@ -61,13 +61,11 @@ const createAppointment = async (req, res) => {
         .json({ message: "الرجاء إكمال جميع بيانات الحجز" });
     }
 
-    // 🚀 جلب الصالون مع تقليل الـ RAM (💡 تمت إضافة paymentSettings)
     const tenant = await Tenant.findById(tenantId)
       .select("settings subscription paymentSettings")
       .lean();
     if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
 
-    // فحص الحد المجاني
     if (tenant.subscription?.plan === "Free") {
       const startOfMonth = new Date();
       startOfMonth.setDate(1);
@@ -101,7 +99,6 @@ const createAppointment = async (req, res) => {
         (name) => !customer.children.includes(name),
       );
       if (newChildren.length > 0) {
-        // تحديث ذري للعميل
         await Customer.updateOne(
           { _id: customer._id },
           { $push: { children: { $each: newChildren } } },
@@ -109,7 +106,6 @@ const createAppointment = async (req, res) => {
       }
     }
 
-    // تجهيز الحلاق
     let barber = await Barber.findOne({
       tenantId: tenant._id,
       name: chair,
@@ -146,7 +142,6 @@ const createAppointment = async (req, res) => {
       }
     }
 
-    // 🛡️ حماية من الـ Overbooking قبل الإنشاء (تتجاهل الملغاة فقط)
     const existingAppointments = await Appointment.find({
       tenantId: tenant._id,
       date: date,
@@ -162,7 +157,7 @@ const createAppointment = async (req, res) => {
     }
 
     // ==========================================
-    // 💳 1. التحقق من متطلبات الدفع (Moyasar)
+    // 1. التحقق من متطلبات الدفع (Moyasar)
     // ==========================================
     const isPaymentRequired =
       tenant.paymentSettings?.isOnlinePaymentEnabled &&
@@ -173,7 +168,6 @@ const createAppointment = async (req, res) => {
       ? tenant.paymentSettings.depositAmount
       : 0;
 
-    // 🚀 تحديث ذري صارم لعداد الفواتير!
     const updatedTenant = await Tenant.findByIdAndUpdate(
       tenant._id,
       { $inc: { invoiceCounter: childrenNames.length } },
@@ -201,9 +195,9 @@ const createAppointment = async (req, res) => {
         totalPrice: totalPrice,
         totalDuration: totalDuration,
         invoiceNumber: `INV-${currentInvoiceCounter++}`,
-        status: appointmentStatus, // 💡 "Pending_Payment" أو "Booked"
+        status: appointmentStatus,
         payment: {
-          status: paymentStatus, // 💡 "Pending" أو "Not_Required"
+          status: paymentStatus,
           amount: depositAmount,
         },
       };
@@ -213,10 +207,8 @@ const createAppointment = async (req, res) => {
       return appointmentData;
     });
 
-    // 🚀 إدخال المواعيد الأساسية
     const newAppointments = await Appointment.insertMany(appointmentsToCreate);
 
-    // Padding Blocks
     let systemCustomer = await Customer.findOne({
       tenantId: tenant._id,
       phone: "0000000000",
@@ -242,7 +234,7 @@ const createAppointment = async (req, res) => {
           date: date,
           timeSlot: paddingPointer,
           childName: "Padding Block",
-          status: "Blocked", // 💡 البلوكات تبقى Blocked لحجز الوقت
+          status: "Blocked",
         });
         paddingPointer = getNextTimeSlot(paddingPointer, slotStep);
       }
@@ -256,19 +248,17 @@ const createAppointment = async (req, res) => {
     // 💳 2. توجيه العميل (استجابة الـ API)
     // ==========================================
     if (isPaymentRequired) {
-      // 🛑 لا نرسل رسالة الواتساب ولا الإشعارات الآن، نطلب من الواجهة فتح بوابة الدفع
       return res.status(201).json({
         message: "تم حجز الموعد مؤقتاً، يرجى دفع العربون لتأكيده.",
         requiresPayment: true,
         paymentDetails: {
           amount: depositAmount,
           publishableKey: tenant.paymentSettings.moyasarPublishableKey,
-          appointmentId: newAppointments[0]._id, // نأخذ أول آيدي كمرجع للعملية
+          appointmentId: newAppointments[0]._id,
           tenantId: tenant._id,
         },
       });
     } else {
-      // ✅ الحجز مجاني (الدفع في الصالون)، نرسل رسالة الواتساب والإشعارات فوراً
       sendWhatsAppMessage(
         customerPhone,
         combinedNames,
@@ -332,7 +322,6 @@ const getAvailableSlots = async (req, res) => {
 
     if (chair) query.barberName = chair.trim();
 
-    // 🚀 استخدام lean و select لتسريع القراءة جداً
     const bookedAppointments = await Appointment.find(query)
       .select("timeSlot -_id")
       .lean();
@@ -408,14 +397,12 @@ const cancelAppointment = async (req, res) => {
     if (!updatedAppointment)
       return res.status(404).json({ message: "لم يتم العثور على الموعد" });
 
-    // مسح الحظر (Padding) المرتبط بهذا الموعد إذا كان هناك خدمات طويلة
     await Appointment.deleteMany({
       tenantId: updatedAppointment.tenantId,
       barberId: updatedAppointment.barberId,
       date: updatedAppointment.date,
       childName: "Padding Block",
       status: "Blocked",
-      // يجب أن نحدد الوقت، ولكن كإجراء عام يمكن تركها أو مسح الـ Blocks التي تلي الموعد
     });
 
     const tenant = await Tenant.findById(updatedAppointment.tenantId);

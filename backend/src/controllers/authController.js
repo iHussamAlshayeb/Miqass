@@ -42,7 +42,6 @@ const registerTenant = async (req, res) => {
 
     await newTenant.save();
 
-    // 🚀 تنفيذ الحقن الافتراضي بالتوازي (Parallel Execution) لسرعة استجابة أعلى
     try {
       await Promise.all([
         Barber.insertMany([
@@ -61,7 +60,6 @@ const registerTenant = async (req, res) => {
       console.error("⚠️ خطأ بسيط في حقن البيانات الافتراضية:", seedError);
     }
 
-    // إرسال البريد في الخلفية بدون أن نعطل الاستجابة (Fire and Forget)
     sendWelcomeEmail(
       newTenant.email,
       newTenant.ownerName,
@@ -116,7 +114,6 @@ const verifyPaymentAndActivate = async (req, res) => {
       tenant.subscription.billingCycle = billingCycle;
       await tenant.save();
 
-      // 🛡️ زيادة عداد الكوبون بشكل ذري (Atomic) لمنع تجاوز الحد الأقصى
       if (promoCodeId) {
         await PromoCode.updateOne(
           {
@@ -156,14 +153,12 @@ const freeActivation = async (req, res) => {
     const tenant = await Tenant.findById(tenantId);
     if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
 
-    // 🚀 السحر الأمني هنا (Optimistic Locking):
-    // نفحص الصلاحية والكمية ونزيد العداد في عملية قاعدة بيانات واحدة لا يمكن مقاطعتها!
     const validPromo = await PromoCode.findOneAndUpdate(
       {
         _id: promoCodeId,
         isActive: true,
-        expiryDate: { $gt: new Date() }, // يجب أن يكون غير منتهي الصلاحية
-        $expr: { $lt: ["$usedCount", "$maxUses"] }, // لم يتجاوز الحد الأقصى
+        expiryDate: { $gt: new Date() },
+        $expr: { $lt: ["$usedCount", "$maxUses"] },
       },
       { $inc: { usedCount: 1 } },
       { returnDocument: "after" },
@@ -206,7 +201,6 @@ const loginTenant = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // 🚀 استخدام .lean() لسرعة القراءة وعدم حجز RAM للـ Mongoose Object
     const tenant = await Tenant.findOne({ email }).lean();
     if (!tenant)
       return res.status(404).json({ message: "البريد الإلكتروني غير مسجل." });
@@ -258,7 +252,6 @@ const submitBankTransfer = async (req, res) => {
 
     await tenant.save();
 
-    // 🛡️ التحديث الذري للكوبون
     if (promoCodeId) {
       await PromoCode.updateOne(
         {
@@ -297,7 +290,6 @@ const forgotPassword = async (req, res) => {
     await tenant.save();
 
     const resetLink = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
-    // إرسال في الخلفية Fire and Forget
     sendPasswordResetEmail(tenant.email, tenant.ownerName, resetLink).catch(
       (e) => console.error(e),
     );

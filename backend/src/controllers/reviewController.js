@@ -4,12 +4,10 @@ const Tenant = require("../models/Tenant");
 const Customer = require("../models/Customer");
 const { sendReviewNotification } = require("../utils/onesignal");
 
-// 1. جلب بيانات الحجز لصفحة التقييم
 const getReviewPageData = async (req, res) => {
   try {
     const { appointmentId } = req.params;
 
-    // 🚀 1. فحص صاروخي: هل قيم مسبقاً؟ (استخدام exists أسرع بـ 10 مرات من findOne)
     const isReviewed = await Review.exists({ appointmentId });
     if (isReviewed) {
       return res
@@ -17,7 +15,6 @@ const getReviewPageData = async (req, res) => {
         .json({ message: "تم تقييم هذا الحجز مسبقاً، شكراً لك!" });
     }
 
-    // 🚀 2. جلب الحقول المطلوبة فقط باستخدام select و lean لعدم إرهاق الـ RAM
     const appointment = await Appointment.findById(appointmentId)
       .select("tenantId childName barberName status")
       .populate("tenantId", "salonName")
@@ -36,13 +33,11 @@ const getReviewPageData = async (req, res) => {
   }
 };
 
-// 2. استلام التقييم من العميل (أو تسجيل عدم حضوره)
 const submitReview = async (req, res) => {
   try {
     const { appointmentId } = req.params;
     const { rating, comment, didNotAttend } = req.body;
 
-    // جلب الموعد وإعدادات الصالون (لجوجل ماب)
     const appointment = await Appointment.findById(appointmentId).populate(
       "tenantId",
       "settings _id",
@@ -50,7 +45,6 @@ const submitReview = async (req, res) => {
     if (!appointment)
       return res.status(404).json({ message: "الحجز غير موجود." });
 
-    // 🛡️ حماية منطقية: لا يمكن تقييم موعد ملغي مسبقاً!
     if (appointment.status === "Cancelled") {
       return res
         .status(400)
@@ -59,9 +53,6 @@ const submitReview = async (req, res) => {
 
     const tenant = appointment.tenantId;
 
-    // ==========================================
-    // 💡 1. إذا صرح العميل بأنه "لم يحضر"
-    // ==========================================
     if (didNotAttend) {
       appointment.status = "Cancelled";
       appointment.cancelReason = "أفاد العميل بعدم الحضور من خلال رابط التقييم";
@@ -69,14 +60,10 @@ const submitReview = async (req, res) => {
       return res.status(200).json({ message: "تم تسجيل عدم الحضور بنجاح." });
     }
 
-    // ==========================================
-    // 💡 2. إذا حضر العميل وقام بالتقييم الفعلي
-    // ==========================================
     if (appointment.status !== "Completed") {
       appointment.status = "Completed";
       await appointment.save();
 
-      // 🚀 التحديث الذري للولاء (Atomic Update) لمنع تعارض البيانات
       if (appointment.customerId) {
         await Customer.updateOne(
           { _id: appointment.customerId },
@@ -88,7 +75,6 @@ const submitReview = async (req, res) => {
       }
     }
 
-    // 💡 حفظ التقييم
     await Review.create({
       tenantId: tenant._id,
       appointmentId: appointment._id,
@@ -98,7 +84,6 @@ const submitReview = async (req, res) => {
       comment: comment || "",
     });
 
-    // 🚀 إرسال الإشعار في الخلفية (Fire and Forget) لعدم تأخير استجابة العميل
     sendReviewNotification(
       appointment.childName,
       rating,
@@ -106,9 +91,6 @@ const submitReview = async (req, res) => {
       tenant._id,
     ).catch((e) => console.error(e));
 
-    // ==========================================
-    // 💡 3. الفلترة الذكية لجوجل ماب
-    // ==========================================
     let redirectToGoogle = false;
     let googleUrl = "";
 
@@ -128,7 +110,6 @@ const submitReview = async (req, res) => {
     });
   } catch (error) {
     console.error("❌ حدث خطأ أثناء حفظ التقييم:", error);
-    // حماية إضافية: إذا ضغط العميل مرتين بسرعة وتم إنشاء التقييم
     if (error.code === 11000)
       return res
         .status(400)
@@ -138,10 +119,8 @@ const submitReview = async (req, res) => {
   }
 };
 
-// 3. جلب جميع تقييمات الصالون (للوحة التحكم CRM)
 const getTenantReviews = async (req, res) => {
   try {
-    // 🚀 حماية السيرفر والرام: جلب آخر 100 تقييم فقط واستخدام lean
     const limit = parseInt(req.query.limit) || 100;
 
     const reviews = await Review.find({ tenantId: req.tenantId })

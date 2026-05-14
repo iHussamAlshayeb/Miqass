@@ -1,9 +1,6 @@
 const Tenant = require("../models/Tenant");
 const zatcaCore = require("../utils/zatcaCore");
 
-// =================================================================
-// 🔗 1. ربط الصالون بهيئة الزكاة (Onboarding / CSID Generation)
-// =================================================================
 const onboardZatca = async (req, res) => {
   try {
     const { otp, taxNumber } = req.body;
@@ -15,7 +12,6 @@ const onboardZatca = async (req, res) => {
         .json({ message: "الرقم الضريبي مطلوب لإتمام الربط." });
     }
 
-    // 1. جلب بيانات الصالون
     const tenant = await Tenant.findById(tenantId).select(
       "salonName taxSettings settings address city",
     );
@@ -23,8 +19,6 @@ const onboardZatca = async (req, res) => {
 
     console.log(`[ZATCA Controller] بدء ربط صالون: ${tenant.salonName}`);
 
-    // 🚀 2. استدعاء محرك الزكاة (المايسترو) لإصدار الشهادات أولاً
-    // (لا نحفظ الرقم الضريبي في الداتا بيس إلا إذا نجح الربط!)
     const credentials = await zatcaCore.onboardDevice(otp, {
       salonName: tenant.salonName,
       taxNumber: taxNumber,
@@ -32,8 +26,6 @@ const onboardZatca = async (req, res) => {
       city: tenant.city || "Riyadh",
     });
 
-    // 🚀 3. التحديث الذري (Atomic Update): نحفظ كل شيء بضربة واحدة
-    // ملاحظة أمنية للمستقبل: يُفضل تشفير الـ privateKey قبل حفظه باستخدام AES-256
     await Tenant.updateOne(
       { _id: tenantId },
       {
@@ -45,7 +37,6 @@ const onboardZatca = async (req, res) => {
             secret: credentials.secret,
             privateKey: credentials.privateKey,
           },
-          // تنظيف بقايا المنصات الوسيطة القديمة (وافق) إن وُجدت
           "taxSettings.wafeqAccountId": "",
           "settings.wafeqAccountId": "",
         },
@@ -79,12 +70,8 @@ const onboardZatca = async (req, res) => {
   }
 };
 
-// =================================================================
-// 🔍 2. التحقق من حالة الربط وجلب التفاصيل (لشاشة الإعدادات)
-// =================================================================
 const checkZatcaStatus = async (req, res) => {
   try {
-    // 🚀 استخدام lean و select لتسريع الاستجابة للداشبورد وحماية المفاتيح
     const tenant = await Tenant.findById(req.tenantId)
       .select("taxSettings.isZatcaOnboarded taxSettings.taxNumber")
       .lean();
@@ -107,9 +94,6 @@ const checkZatcaStatus = async (req, res) => {
   }
 };
 
-// =================================================================
-// 🔄 3. تحديث بيانات الصالون (Sync Info)
-// =================================================================
 const syncTenantZatcaInfo = async (req, res) => {
   try {
     const tenant = await Tenant.findById(req.tenantId)
@@ -131,12 +115,8 @@ const syncTenantZatcaInfo = async (req, res) => {
   }
 };
 
-// =================================================================
-// 🗑️ 4. إلغاء الربط وحذف الشهادة الضريبية (زر الخطر الأنيق)
-// =================================================================
 const disconnectZatca = async (req, res) => {
   try {
-    // 🚀 التحديث الذري لتصفير الشهادات بسرعة البرق دون جلب السجل كاملاً
     const result = await Tenant.updateOne(
       { _id: req.tenantId },
       {

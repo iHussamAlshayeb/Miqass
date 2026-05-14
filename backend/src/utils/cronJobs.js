@@ -12,13 +12,9 @@ const {
 } = require("./whatsapp");
 const { sendRenewalReminderEmail } = require("./emailService");
 
-// دالة مساعدة لتنسيق التاريخ
 const formatDate = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
-// =========================================================
-// 1. المهمة الأولى: معالجة التذكيرات الآلية للمواعيد (WhatsApp)
-// =========================================================
 const processAutomatedReminders = async () => {
   try {
     const now = new Date(
@@ -30,7 +26,6 @@ const processAutomatedReminders = async () => {
     yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayStr = formatDate(yesterday);
 
-    // 🚀 جلب الحقول المطلوبة فقط وتوفير الـ RAM
     const upcomingAppointments = await Appointment.find({
       status: "Booked",
       isReminded: false,
@@ -39,7 +34,7 @@ const processAutomatedReminders = async () => {
       .select("_id date timeSlot childName barberName customerId tenantId")
       .populate("tenantId", "settings salonName whatsappSettings")
       .populate("customerId", "phone")
-      .lean(); // استخدام lean لسرعة فائقة
+      .lean();
 
     for (let app of upcomingAppointments) {
       if (!app.tenantId?.whatsappSettings?.isEnabled) continue;
@@ -53,7 +48,6 @@ const processAutomatedReminders = async () => {
       appTime.setFullYear(year, month - 1, day);
       appTime.setHours(appHour, appMinute, 0, 0);
 
-      // معالجة حجوزات ما بعد منتصف الليل
       const startHour = parseInt(
         app.tenantId?.settings?.startTime?.split(":")[0] || "12",
       );
@@ -62,7 +56,6 @@ const processAutomatedReminders = async () => {
       const diffMs = appTime - now;
       const diffHours = diffMs / (1000 * 60 * 60);
 
-      // تذكير قبل الموعد بمدة بين ساعة وساعتين ونصف
       if (diffHours > 0 && diffHours <= 2.5) {
         console.log(
           `🤖 [السكرتير الآلي]: جاري إرسال تذكير لـ ${app.childName} من ${app.tenantId?.salonName}...`,
@@ -77,7 +70,6 @@ const processAutomatedReminders = async () => {
         );
 
         if (isSent) {
-          // 🚀 تحديث ذري سريع
           await Appointment.updateOne(
             { _id: app._id },
             { $set: { isReminded: true } },
@@ -91,9 +83,6 @@ const processAutomatedReminders = async () => {
   }
 };
 
-// =========================================================
-// 2. المهمة الثانية: فحص الاشتراكات المقاربة على الانتهاء (Email)
-// =========================================================
 const processSubscriptionReminders = async () => {
   try {
     console.log("⏳ [مدير الاشتراكات]: جاري فحص الصالونات...");
@@ -103,7 +92,6 @@ const processSubscriptionReminders = async () => {
     const startOfDay = new Date(threeDaysFromNow.setHours(0, 0, 0, 0));
     const endOfDay = new Date(threeDaysFromNow.setHours(23, 59, 59, 999));
 
-    // 🚀 جلب الحقول المطلوبة فقط
     const expiringTenants = await Tenant.find({
       "subscription.status": "Active",
       "subscription.endDate": { $gte: startOfDay, $lte: endOfDay },
@@ -125,9 +113,6 @@ const processSubscriptionReminders = async () => {
   }
 };
 
-// =========================================================
-// 3. المهمة الثالثة: طلب التقييم التلقائي بعد الحلاقة (Auto-Reviews)
-// =========================================================
 const processReviewRequests = async () => {
   try {
     const now = new Date(
@@ -173,7 +158,6 @@ const processReviewRequests = async () => {
       const diffMs = now - appTime;
       const diffHours = diffMs / (1000 * 60 * 60);
 
-      // نطلب التقييم بعد ساعة ونصف إلى 12 ساعة من الموعد
       if (diffHours >= 1.5 && diffHours <= 12) {
         console.log(
           `⭐ [مدير التقييمات]: جاري إرسال طلب تقييم لـ ${app.childName} من ${app.tenantId?.salonName}...`,
@@ -187,7 +171,6 @@ const processReviewRequests = async () => {
         );
 
         if (isSent) {
-          // 🚀 تحديث ذري سريع (يحدث الحالة فقط إذا كانت لا زالت Booked)
           const updateData = { $set: { isReviewRequested: true } };
           if (app.status === "Booked") updateData.$set.status = "Completed";
 
@@ -201,9 +184,6 @@ const processReviewRequests = async () => {
   }
 };
 
-// =========================================================
-// 4. المهمة الرابعة: التسويق الآلي وإعادة الاستهداف (Retention)
-// =========================================================
 const processRetentionCampaign = async () => {
   try {
     console.log("🔄 [مدير التسويق]: جاري فحص العملاء الغائبين...");
@@ -212,7 +192,6 @@ const processRetentionCampaign = async () => {
     );
     const todayString = formatDate(now);
 
-    // جلب الصالونات المفعلة لهذه الميزة
     const tenants = await Tenant.find({
       "settings.isRetentionEnabled": true,
       "whatsappSettings.isEnabled": true,
@@ -230,7 +209,6 @@ const processRetentionCampaign = async () => {
       const targetDateEnd = new Date(targetDate);
       targetDateEnd.setHours(23, 59, 59, 999);
 
-      // 🚀 أسرع طريقة للبحث: استخدام جدول العملاء والفهرس lastVisitDate الذي أنشأناه
       const customersToRemind = await Customer.find({
         tenantId: tenant._id,
         lastVisitDate: { $gte: targetDate, $lte: targetDateEnd },
@@ -241,7 +219,6 @@ const processRetentionCampaign = async () => {
       for (const c of customersToRemind) {
         if (!c.phone) continue;
 
-        // التحقق من عدم وجود حجز مستقبلي
         const hasFutureBooking = await Appointment.exists({
           tenantId: tenant._id,
           customerId: c._id,
@@ -266,9 +243,6 @@ const processRetentionCampaign = async () => {
   }
 };
 
-// =========================================================
-// 5. المهمة الخامسة: المعالجة البطيئة للحملات التسويقية (Broadcast)
-// =========================================================
 let isProcessingCampaigns = false;
 
 const processBroadcastCampaigns = async () => {
@@ -276,17 +250,15 @@ const processBroadcastCampaigns = async () => {
   isProcessingCampaigns = true;
 
   try {
-    // 🚀 جلب الحملة بصيغة lean لأننا سنستخدم التحديث الذري ولن نحفظ الـ Document كاملاً
     let campaign = await Campaign.findOneAndUpdate(
       { status: "Pending" },
       { $set: { status: "Processing" } },
-      { returnDocument: "after" }, // يرجع المستند بعد التحديث
+      { returnDocument: "after" },
     )
       .populate("tenantId", "salonName whatsappSettings")
       .lean();
 
     if (!campaign) {
-      // إذا لم يجد Pending، يبحث عن Processing لكي يكملها
       campaign = await Campaign.findOne({ status: "Processing" })
         .populate("tenantId", "salonName whatsappSettings")
         .lean();
@@ -318,7 +290,6 @@ const processBroadcastCampaigns = async () => {
           `✅ [Campaign] تم الإرسال لـ ${customer.name} (${i + 1}/${customers.length})`,
         );
 
-        // 🚀 التحديث الذري الأسطوري
         await Campaign.updateOne(
           { _id: campaign._id, "targetCustomers._id": customer._id },
           {
@@ -328,7 +299,6 @@ const processBroadcastCampaigns = async () => {
         );
       } catch (err) {
         console.error(`❌ [Campaign] فشل الإرسال لـ ${customer.name}`);
-        // تحديث حالة الفشل
         await Campaign.updateOne(
           { _id: campaign._id, "targetCustomers._id": customer._id },
           {
@@ -340,14 +310,12 @@ const processBroadcastCampaigns = async () => {
         );
       }
 
-      //หน่วงเวลา عشوائي لتجنب الحظر
       if (i < customers.length - 1) {
         const delay = Math.floor(Math.random() * (25000 - 10000 + 1)) + 10000;
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
 
-    // بعد الانتهاء، نغلق الحملة
     await Campaign.updateOne(
       { _id: campaign._id },
       { $set: { status: "Completed", completedAt: new Date() } },
@@ -362,12 +330,8 @@ const processBroadcastCampaigns = async () => {
   }
 };
 
-// =========================================================
-// 💳 6. المهمة السادسة: تنظيف المواعيد المعلقة (العربون غير المدفوع)
-// =========================================================
 const cleanupPendingPayments = async () => {
   try {
-    // تحديد الوقت: أي موعد مر عليه 15 دقيقة
     const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
 
     const expiredAppointments = await Appointment.find({
@@ -382,7 +346,6 @@ const cleanupPendingPayments = async () => {
     );
 
     for (const app of expiredAppointments) {
-      // 1. تحويل الموعد الأساسي إلى "ملغي" بدلاً من حذفه لكي يرى الصالون من حاول الحجز
       await Appointment.updateOne(
         { _id: app._id },
         {
@@ -393,8 +356,6 @@ const cleanupPendingPayments = async () => {
         },
       );
 
-      // 2. 🛡️ مسح البلوكات (Padding Blocks) المتعلقة به فقط!
-      // نستخدم نافذة زمنية صغيرة (10 ثواني) حول وقت الإنشاء لضمان أننا نمسح البلوكات الخاصة بهذا الموعد فقط
       const startTime = new Date(app.createdAt);
       startTime.setSeconds(startTime.getSeconds() - 5);
 
@@ -417,28 +378,19 @@ const cleanupPendingPayments = async () => {
   }
 };
 
-// =========================================================
-// تشغيل جميع المهام المجدولة
-// =========================================================
 const startCronJobs = () => {
-  console.log("⏰ تم تشغيل نظام العمليات الخلفية (Cron Jobs) بنجاح...");
+  console.log("تم تشغيل نظام العمليات الخلفية (Cron Jobs) بنجاح...");
 
-  // فحص التذكيرات كل 15 دقيقة
   cron.schedule("*/15 * * * *", processAutomatedReminders);
 
-  // فحص المواعيد المعلقة (الدفع) كل 5 دقائق 🧹💳
   cron.schedule("*/5 * * * *", cleanupPendingPayments);
 
-  // فحص الاشتراكات المنتهية الساعة 8 صباحاً بتوقيت السيرفر
   cron.schedule("0 8 * * *", processSubscriptionReminders);
 
-  // طلبات التقييم كل 30 دقيقة
   cron.schedule("*/30 * * * *", processReviewRequests);
 
-  // حملات إعادة الاستهداف (اشتقنالك) الساعة 10 صباحاً
   cron.schedule("0 10 * * *", processRetentionCampaign);
 
-  // تشغيل مدير الحملات باستمرار
   cron.schedule("* * * * *", processBroadcastCampaigns);
 };
 

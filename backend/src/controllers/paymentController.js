@@ -3,7 +3,7 @@ const Appointment = require("../models/Appointment");
 const Tenant = require("../models/Tenant");
 
 const crypto = require("crypto");
-const { decrypt } = require("../utils/encryption"); // 💡 استيراد أداة التشفير
+const { decrypt } = require("../utils/encryption");
 const zatcaXML = require("../utils/zatcaXML");
 const zatcaCore = require("../utils/zatcaCore");
 const { generateZatcaQR } = require("../utils/zatca");
@@ -179,12 +179,10 @@ const moyasarWebhook = async (req, res) => {
   try {
     const paymentData = req.body;
 
-    // 1. التأكد المبدئي من حالة الدفع (إذا لم تكن paid نتجاهلها فوراً ونرد 200 لكي لا يعيد ميسر إرسالها)
     if (paymentData.status !== "paid") {
       return res.status(200).send("Payment not paid yet");
     }
 
-    // 2. استخراج البيانات المرجعية (التي أرسلناها نحن من الفرونت إند وقت الدفع)
     const appointmentId = paymentData.metadata?.appointmentId;
     const tenantId = paymentData.metadata?.tenantId;
 
@@ -194,7 +192,6 @@ const moyasarWebhook = async (req, res) => {
         .send("Missing metadata (appointmentId or tenantId)");
     }
 
-    // 3. جلب الصالون وفك تشفير المفتاح السري للتحقق
     const tenant = await Tenant.findById(tenantId).select(
       "salonName slug ownerPhone branding taxSettings whatsappSettings settings paymentSettings",
     );
@@ -209,15 +206,12 @@ const moyasarWebhook = async (req, res) => {
       return res.status(500).send("Failed to decrypt secret key");
     }
 
-    // ==========================================
-    // 🛡️ 4. التحقق الأمني المزدوج (Double Verification) من سيرفرات ميسر
-    // ==========================================
     const verifyResponse = await axios.get(
       `https://api.moyasar.com/v1/payments/${paymentData.id}`,
       {
         auth: {
           username: secretKey,
-          password: "", // ميسر يطلب الـ Secret Key في حقل اليوزر، والباسوورد فارغ
+          password: "",
         },
       },
     );
@@ -225,13 +219,11 @@ const moyasarWebhook = async (req, res) => {
     const verifiedPayment = verifyResponse.data;
 
     if (verifiedPayment.status === "paid") {
-      // 5. جلب الموعد الأساسي لمعرفة العميل والتاريخ
       const primaryAppointment =
         await Appointment.findById(appointmentId).populate("customerId");
       if (!primaryAppointment)
         return res.status(404).send("Appointment not found");
 
-      // حماية: تجنب معالجة الويب هوك مرتين إذا أعاد ميسر الإرسال
       if (
         primaryAppointment.status === "Booked" &&
         primaryAppointment.payment?.status === "Paid"
@@ -239,7 +231,6 @@ const moyasarWebhook = async (req, res) => {
         return res.status(200).send("Already processed");
       }
 
-      // 6. 🚀 تحديث المواعيد: نقوم بتحديث كل مواعيد هذا العميل لنفس اليوم (لو حجز لـ 3 أطفال معاً)
       await Appointment.updateMany(
         {
           tenantId: tenant._id,
@@ -258,7 +249,6 @@ const moyasarWebhook = async (req, res) => {
         },
       );
 
-      // 7. تجميع أسماء الأطفال لإرسالها في الواتساب
       const bookedAppointments = await Appointment.find({
         tenantId: tenant._id,
         customerId: primaryAppointment.customerId._id,
@@ -270,9 +260,6 @@ const moyasarWebhook = async (req, res) => {
       const childrenNames = bookedAppointments.map((app) => app.childName);
       const combinedNames = childrenNames.join(" و ");
 
-      // ==========================================
-      // 📲 8. الإشعار والتأكيد النهائي!
-      // ==========================================
       sendWhatsAppMessage(
         primaryAppointment.customerId.phone,
         combinedNames,

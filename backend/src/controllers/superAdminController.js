@@ -9,14 +9,10 @@ const SystemSettings = require("../models/SystemSettings");
 
 const jwt = require("jsonwebtoken");
 const { sendActivationEmail } = require("../utils/emailService");
-const redisClient = require("../utils/redisClient"); // 💡 استدعاء الكاش
+const redisClient = require("../utils/redisClient");
 
-// ==========================================
-// 🛠️ 1. جلب جميع الصالونات وحالة النظام
-// ==========================================
 const getAllTenants = async (req, res) => {
   try {
-    // 🚀 جلب الصالونات باستبعاد الحقول الثقيلة والحساسة واستخدام lean
     const tenants = await Tenant.find()
       .select(
         "-password -taxSettings.zatcaCredentials -resetPasswordToken -resetPasswordExpires",
@@ -35,9 +31,6 @@ const getAllTenants = async (req, res) => {
   }
 };
 
-// ==========================================
-// 💸 2. جلب الأسعار والتخفيضات
-// ==========================================
 const getSystemPricing = async (req, res) => {
   try {
     let settings = await SystemSettings.findOne({ isGlobal: true }).lean();
@@ -54,9 +47,6 @@ const getSystemPricing = async (req, res) => {
   }
 };
 
-// ==========================================
-// 💾 3. تحديث الأسعار والتخفيضات
-// ==========================================
 const updateSystemPricing = async (req, res) => {
   try {
     const { pricing, discount } = req.body;
@@ -67,7 +57,6 @@ const updateSystemPricing = async (req, res) => {
       { returnDocument: "after", upsert: true },
     ).lean();
 
-    // 🚀 مسح كاش الأسعار ليظهر التحديث فوراً في صفحة الهبوط للعملاء
     try {
       await redisClient.del("system_pricing_public");
     } catch (e) {}
@@ -83,9 +72,6 @@ const updateSystemPricing = async (req, res) => {
   }
 };
 
-// ==========================================
-// 🛠️ 4. تفعيل/إيقاف وضع الصيانة
-// ==========================================
 const toggleMaintenanceMode = async (req, res) => {
   try {
     const { isMaintenanceMode } = req.body;
@@ -96,7 +82,6 @@ const toggleMaintenanceMode = async (req, res) => {
       { returnDocument: "after", upsert: true },
     ).lean();
 
-    // 🚀 تحديث الجدار الناري في الـ Redis فوراً ليطبق الحظر أو يرفعه!
     try {
       await redisClient.set(
         "system_maintenance_mode",
@@ -117,7 +102,6 @@ const toggleMaintenanceMode = async (req, res) => {
   }
 };
 
-// 5. تحديث حالة وباقة الصالون (تفعيل، إيقاف، أو ترقية)
 const updateTenantStatus = async (req, res) => {
   try {
     const { id } = req.params;
@@ -138,7 +122,6 @@ const updateTenantStatus = async (req, res) => {
       }
       tenant.subscription.endDate = endDate;
 
-      // إرسال الإيميل في الخلفية (Fire and Forget)
       sendActivationEmail(
         tenant.email,
         tenant.ownerName,
@@ -151,7 +134,6 @@ const updateTenantStatus = async (req, res) => {
 
     await tenant.save();
 
-    // 🚀 مسح كاش الصالون ليظهر التحديث فوراً في صفحة الحجز
     try {
       await redisClient.del(`tenant_public_profile:${tenant.slug}`);
     } catch (e) {}
@@ -162,14 +144,12 @@ const updateTenantStatus = async (req, res) => {
   }
 };
 
-// 6. حذف الصالون نهائياً
 const deleteTenant = async (req, res) => {
   try {
     const { id } = req.params;
     const tenant = await Tenant.findById(id);
     if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
 
-    // مسح جميع البيانات المرتبطة بالتوازي لسرعة أكبر
     await Promise.all([
       Appointment.deleteMany({ tenantId: id }),
       Review.deleteMany({ tenantId: id }),
@@ -180,7 +160,6 @@ const deleteTenant = async (req, res) => {
       Tenant.findByIdAndDelete(id),
     ]);
 
-    // 🚀 مسح الكاش الخاص بالصالون المحذوف
     try {
       await redisClient.del(`tenant_public_profile:${tenant.slug}`);
     } catch (e) {}
@@ -193,11 +172,9 @@ const deleteTenant = async (req, res) => {
   }
 };
 
-// 7. الدخول بصلاحية الصالون
 const impersonateTenant = async (req, res) => {
   try {
     const { id } = req.params;
-    // التحقق السريع من الوجود
     const tenantExists = await Tenant.exists({ _id: id });
     if (!tenantExists)
       return res.status(404).json({ message: "الصالون غير موجود" });
@@ -212,12 +189,10 @@ const impersonateTenant = async (req, res) => {
   }
 };
 
-// 🚨 8. دالة فك الارتباط الضريبي الإجباري
 const forceDisconnectZatca = async (req, res) => {
   try {
     const tenantId = req.params.id;
 
-    // استخدام updateOne لفك الارتباط بسرعة البرق دون جلب السجل
     const result = await Tenant.updateOne(
       { _id: tenantId },
       {

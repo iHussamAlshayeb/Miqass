@@ -1,17 +1,12 @@
 const axios = require("axios");
 
-// 💡 مفتاح منصة مِقَص الرئيسي (الماستر) - يفضل وضعه في ملف .env لاحقاً
 const WAFEQ_MASTER_API_KEY =
   process.env.WAFEQ_MASTER_API_KEY || "YOUR_WAFEQ_MASTER_API_KEY";
 
-// =================================================================
-// 1. دالة إنشاء حساب فرعي للصالون (Connected Account)
-// =================================================================
 const createConnectedAccount = async (tenant) => {
   try {
     const payload = {
       name: tenant.salonName,
-      // 💡 جعلنا القيم ديناميكية، مع الحفاظ على قيمك كـ (Fallbacks) لحماية الطلب من الفشل
       address: tenant.address || "المملكة العربية السعودية",
       city: tenant.city || "Riyadh",
       country: "SA",
@@ -31,7 +26,7 @@ const createConnectedAccount = async (tenant) => {
       },
     );
 
-    return response.data; // سيرجع الـ ID الخاص بهذا الصالون
+    return response.data;
   } catch (error) {
     console.error(
       "Wafeq Create Account Error:",
@@ -43,9 +38,6 @@ const createConnectedAccount = async (tenant) => {
   }
 };
 
-// =================================================================
-// 2. دالة تسجيل الجهاز بهيئة الزكاة (Onboarding via OTP)
-// =================================================================
 const registerZatcaDevice = async (
   wafeqAccountId,
   otp,
@@ -64,8 +56,8 @@ const registerZatcaDevice = async (
         headers: {
           Authorization: `Api-Key ${WAFEQ_MASTER_API_KEY}`,
           "Content-Type": "application/json",
-          "X-Zatca-Environment": "simulation", // 💡 غيرها لـ production لاحقاً
-          "X-ZATCA-Connected-Account-ID": wafeqAccountId, // 💡 توجيه الطلب لحساب الصالون
+          "X-Zatca-Environment": "simulation",
+          "X-ZATCA-Connected-Account-ID": wafeqAccountId,
         },
       },
     );
@@ -82,9 +74,6 @@ const registerZatcaDevice = async (
   }
 };
 
-// =================================================================
-// 3. دالة إرسال الفاتورة المبسطة إلى هيئة الزكاة
-// =================================================================
 const reportInvoiceToWafeq = async (appointment, tenant) => {
   try {
     const accountId = tenant.settings?.wafeqAccountId;
@@ -95,7 +84,6 @@ const reportInvoiceToWafeq = async (appointment, tenant) => {
       );
     }
 
-    // تجهيز الخدمات (Line Items)
     const lineItems =
       appointment.selectedServices && appointment.selectedServices.length > 0
         ? appointment.selectedServices.map((srv) => {
@@ -128,7 +116,6 @@ const reportInvoiceToWafeq = async (appointment, tenant) => {
             },
           ];
 
-    // تجهيز هيكل الفاتورة حسب دوكيومنتيشن الحسابات المتصلة
     const payload = {
       language: "ar",
       document: {
@@ -138,7 +125,6 @@ const reportInvoiceToWafeq = async (appointment, tenant) => {
         issue_time: new Date().toISOString().split("T")[1].substring(0, 8),
         currency: "SAR",
 
-        // بيانات المورّد (الصالون) - مطلوبة في الحسابات المتصلة
         supplier: {
           name: tenant.salonName,
           tax_registration_number: tenant.settings?.taxNumber,
@@ -152,7 +138,6 @@ const reportInvoiceToWafeq = async (appointment, tenant) => {
           },
         },
 
-        // بيانات العميل (مبسطة)
         customer: {
           name: appointment.childName || "عميل نقدي",
         },
@@ -160,7 +145,6 @@ const reportInvoiceToWafeq = async (appointment, tenant) => {
       },
     };
 
-    // إرسال الطلب
     const response = await axios.post(
       "https://api.wafeq.com/v1/zatca/simplified-invoices/report/",
       payload,
@@ -188,9 +172,6 @@ const reportInvoiceToWafeq = async (appointment, tenant) => {
   }
 };
 
-// =================================================================
-// 4. دالة جلب قائمة الصالونات المربوطة (مخصصة للوحة تحكم مدير المنصة)
-// =================================================================
 const listConnectedAccounts = async (page = 1, pageSize = 50) => {
   try {
     const response = await axios.get(
@@ -207,7 +188,6 @@ const listConnectedAccounts = async (page = 1, pageSize = 50) => {
       },
     );
 
-    // الرد سيحتوي على count (العدد الكلي)، و results (مصفوفة الحسابات)
     return response.data;
   } catch (error) {
     console.error(
@@ -218,9 +198,6 @@ const listConnectedAccounts = async (page = 1, pageSize = 50) => {
   }
 };
 
-// =================================================================
-// 5. دالة جلب بيانات حساب صالون محدد (للتدقيق والمزامنة)
-// =================================================================
 const getConnectedAccount = async (wafeqAccountId) => {
   try {
     const response = await axios.get(
@@ -233,7 +210,6 @@ const getConnectedAccount = async (wafeqAccountId) => {
       },
     );
 
-    // الرد سيحتوي على تفاصيل الحساب (الاسم، العنوان، الرقم الضريبي، حالة الحساب)
     return response.data;
   } catch (error) {
     console.error(
@@ -244,9 +220,6 @@ const getConnectedAccount = async (wafeqAccountId) => {
   }
 };
 
-// =================================================================
-// 6. دالة حذف حساب صالون من هيئة الزكاة (للإلغاء أو إعادة الضبط)
-// =================================================================
 const deleteConnectedAccount = async (wafeqAccountId) => {
   try {
     const response = await axios.delete(
@@ -259,7 +232,6 @@ const deleteConnectedAccount = async (wafeqAccountId) => {
       },
     );
 
-    // الرد 204 يعني نجاح الحذف بدون محتوى
     if (response.status === 204) {
       return true;
     }
@@ -272,12 +244,8 @@ const deleteConnectedAccount = async (wafeqAccountId) => {
   }
 };
 
-// =================================================================
-// 7. دالة تحديث بيانات حساب الصالون (Partial Update)
-// =================================================================
 const updateConnectedAccount = async (wafeqAccountId, updateData) => {
   try {
-    // 💡 استخدام patch يسمح لنا بإرسال البيانات المعدلة فقط (مثلاً الاسم فقط)
     const response = await axios.patch(
       `https://api.wafeq.com/v1/zatca/connected-accounts/${wafeqAccountId}/`,
       updateData,
@@ -290,7 +258,6 @@ const updateConnectedAccount = async (wafeqAccountId, updateData) => {
       },
     );
 
-    // الرد سيحتوي على تفاصيل الحساب بعد التعديل بنجاح
     return response.data;
   } catch (error) {
     console.error(
@@ -301,12 +268,8 @@ const updateConnectedAccount = async (wafeqAccountId, updateData) => {
   }
 };
 
-// =================================================================
-// 8. دالة التحديث الشامل لحساب الصالون (Full Update - PUT)
-// =================================================================
 const fullUpdateConnectedAccount = async (wafeqAccountId, tenant) => {
   try {
-    // 💡 في مسار الـ PUT، يجب إرسال جميع البيانات الإجبارية من جديد
     const payload = {
       name: tenant.salonName,
       address: tenant.address || "المملكة العربية السعودية",
@@ -329,7 +292,6 @@ const fullUpdateConnectedAccount = async (wafeqAccountId, tenant) => {
       },
     );
 
-    // الرد سيحتوي على تفاصيل الحساب بعد استبدالها بنجاح
     return response.data;
   } catch (error) {
     console.error(
@@ -342,9 +304,6 @@ const fullUpdateConnectedAccount = async (wafeqAccountId, tenant) => {
   }
 };
 
-// =================================================================
-// 9. دالة جلب قائمة الأجهزة المرتبطة بهيئة الزكاة لصالون محدد
-// =================================================================
 const listZatcaDevices = async (wafeqAccountId, page = 1, pageSize = 50) => {
   try {
     const response = await axios.get(
@@ -357,13 +316,12 @@ const listZatcaDevices = async (wafeqAccountId, page = 1, pageSize = 50) => {
         headers: {
           Authorization: `Api-Key ${WAFEQ_MASTER_API_KEY}`,
           Accept: "application/json; version=v1",
-          "X-Zatca-Environment": "simulation", // 💡 يتم تغييرها لـ production عند الإطلاق
-          "X-ZATCA-Connected-Account-ID": wafeqAccountId, // 💡 توجيه الطلب لحساب الصالون
+          "X-Zatca-Environment": "simulation",
+          "X-ZATCA-Connected-Account-ID": wafeqAccountId,
         },
       },
     );
 
-    // الرد سيحتوي على count (عدد الأجهزة)، و results (مصفوفة تفاصيل الأجهزة وحالتها)
     return response.data;
   } catch (error) {
     console.error(
@@ -374,9 +332,6 @@ const listZatcaDevices = async (wafeqAccountId, page = 1, pageSize = 50) => {
   }
 };
 
-// =================================================================
-// 10. دالة جلب بيانات جهاز ضريبي محدد (للتدقيق ومعرفة حالة الشهادة الأمنية)
-// =================================================================
 const getZatcaDevice = async (wafeqAccountId, deviceId) => {
   try {
     const response = await axios.get(
@@ -385,13 +340,12 @@ const getZatcaDevice = async (wafeqAccountId, deviceId) => {
         headers: {
           Authorization: `Api-Key ${WAFEQ_MASTER_API_KEY}`,
           Accept: "application/json; version=v1",
-          "X-Zatca-Environment": "simulation", // 💡 تغييرها لـ production عند الإطلاق
-          "X-ZATCA-Connected-Account-ID": wafeqAccountId, // 💡 توجيه الطلب لحساب الصالون
+          "X-Zatca-Environment": "simulation",
+          "X-ZATCA-Connected-Account-ID": wafeqAccountId,
         },
       },
     );
 
-    // الرد سيحتوي على تفاصيل الجهاز (الاسم، الحالة، وتواريخ الإصدار والانتهاء)
     return response.data;
   } catch (error) {
     console.error(
@@ -402,13 +356,10 @@ const getZatcaDevice = async (wafeqAccountId, deviceId) => {
   }
 };
 
-// =================================================================
-// 11. دالة تجديد الشهادة الأمنية للجهاز الضريبي (CSID Renewal)
-// =================================================================
 const renewZatcaDevice = async (wafeqAccountId, deviceId, otp) => {
   try {
     const payload = {
-      otp: String(otp), // تحويل الرمز إلى نص احتياطياً
+      otp: String(otp),
     };
 
     const response = await axios.post(
@@ -419,13 +370,12 @@ const renewZatcaDevice = async (wafeqAccountId, deviceId, otp) => {
           Authorization: `Api-Key ${WAFEQ_MASTER_API_KEY}`,
           "Content-Type": "application/json",
           Accept: "application/json; version=v1",
-          "X-Zatca-Environment": "simulation", // 💡 تُغير إلى production لاحقاً
-          "X-ZATCA-Connected-Account-ID": wafeqAccountId, // 💡 توجيه الطلب لحساب الصالون
+          "X-Zatca-Environment": "simulation",
+          "X-ZATCA-Connected-Account-ID": wafeqAccountId,
         },
       },
     );
 
-    // الرد سيحتوي على تفاصيل الجهاز بعد تجديد شهادته بنجاح
     return response.data;
   } catch (error) {
     console.error(
@@ -438,12 +388,8 @@ const renewZatcaDevice = async (wafeqAccountId, deviceId, otp) => {
   }
 };
 
-// =================================================================
-// 12. دالة إبطال الشهادة الأمنية لجهاز ضريبي (Revoke Device) 🚫
-// =================================================================
 const revokeZatcaDevice = async (wafeqAccountId, deviceId) => {
   try {
-    // 💡 نرسل كائناً فارغاً كـ Payload لأن المسار لا يتطلب Body Params
     const response = await axios.post(
       `https://api.wafeq.com/v1/zatca/devices/${deviceId}/revoke/`,
       {},
@@ -452,13 +398,12 @@ const revokeZatcaDevice = async (wafeqAccountId, deviceId) => {
           Authorization: `Api-Key ${WAFEQ_MASTER_API_KEY}`,
           "Content-Type": "application/json",
           Accept: "application/json; version=v1",
-          "X-Zatca-Environment": "simulation", // 💡 تُغير إلى production لاحقاً
-          "X-ZATCA-Connected-Account-ID": wafeqAccountId, // 💡 توجيه الطلب لحساب الصالون
+          "X-Zatca-Environment": "simulation",
+          "X-ZATCA-Connected-Account-ID": wafeqAccountId,
         },
       },
     );
 
-    // الرد سيؤكد نجاح عملية الإبطال
     return response.data;
   } catch (error) {
     console.error(

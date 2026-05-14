@@ -1,18 +1,13 @@
 const crypto = require("crypto");
 const { Buffer } = require("buffer");
 
-// =================================================================
-// 🔣 1. محرك توليد الـ QR Code (Phase 2 TLV Base64)
-// =================================================================
 const getTLV = (tag, value, isBinary = false) => {
-  // 🛡️ حماية من القيم الفارغة التي قد تكسر الـ Buffer
   if (!value) value = isBinary ? "" : "Unknown";
 
   let valueBuffer = isBinary
     ? Buffer.from(value, "base64")
     : Buffer.from(String(value), "utf8");
 
-  // 🚀 الحماية من طفح البيانات النصية (Tags 1 to 5) للأسماء العربية الطويلة جداً
   if (!isBinary && valueBuffer.length > 255) {
     valueBuffer = valueBuffer.subarray(0, 255);
   }
@@ -36,10 +31,10 @@ const generatePhase2QR = (
     const timeStamp = getTLV(3, data.timeStamp);
     const invoiceTotal = getTLV(4, data.totalAmount);
     const vatTotal = getTLV(5, data.vatAmount);
-    const hashTlv = getTLV(6, invoiceHash, true); // Binary
-    const signatureTlv = getTLV(7, digitalSignature, true); // Binary
-    const publicKeyTlv = getTLV(8, publicKey, true); // Binary
-    const certSignatureTlv = getTLV(9, certificateSignature, true); // Binary
+    const hashTlv = getTLV(6, invoiceHash, true);
+    const signatureTlv = getTLV(7, digitalSignature, true);
+    const publicKeyTlv = getTLV(8, publicKey, true);
+    const certSignatureTlv = getTLV(9, certificateSignature, true);
 
     const qrBuffer = Buffer.concat([
       sellerName,
@@ -60,11 +55,7 @@ const generatePhase2QR = (
   }
 };
 
-// =================================================================
-// 📄 2. مصنع الفواتير (XML UBL 2.1 Builder)
-// =================================================================
 const buildSimplifiedInvoiceXML = (invoice, salon, items) => {
-  // 🚀 استخدام map و join بدلاً من += لسرعة فائقة في بناء الـ XML وعدم استهلاك الـ RAM
   const invoiceLinesXML = items
     .map((item, index) => {
       const netPrice = (item.price / 1.15).toFixed(2);
@@ -106,9 +97,6 @@ const buildSimplifiedInvoiceXML = (invoice, salon, items) => {
     })
     .join("");
 
-  // 🚨 ملاحظة هامة جداً للإنتاج (PIH - Previous Invoice Hash):
-  // النص "NWZlY..." مسموح به فقط للفاتورة الأولى (رقم 1).
-  // الفاتورة رقم 2 يجب أن تضع هنا بصمة (Hash) الفاتورة رقم 1، وهكذا!
   const previousInvoiceHash =
     invoice.previousInvoiceHash ||
     "NWZlY2ViNjZmZmM4NmYzOGQ5NTI3ODZjNmQ2OTZjNzljMmRiYzIzOWRkNGU5MWI0NjcyOWQ3M2EyN2ZiNTdlOQ==";
@@ -212,12 +200,8 @@ const buildSimplifiedInvoiceXML = (invoice, salon, items) => {
   return xmlTemplate;
 };
 
-// =================================================================
-// ✍️ 3. محرك الختم والتشفير (XML Signer & Hashing)
-// =================================================================
 const signZatcaInvoice = (rawXml, data, privateKey, certificate) => {
   try {
-    // 1. 🛡️ المعالجة السحرية للشهادة
     const cleanToken = String(certificate).replace(/[\r\n\s]/g, "");
     const pemCertificate = `-----BEGIN CERTIFICATE-----\n${cleanToken.match(/.{1,64}/g).join("\n")}\n-----END CERTIFICATE-----\n`;
 
@@ -225,7 +209,6 @@ const signZatcaInvoice = (rawXml, data, privateKey, certificate) => {
     const serialNumber = BigInt("0x" + cert.serialNumber).toString(10);
     const issuerName = cert.issuer.split("\n").reverse().join(", ");
 
-    // 2. 🔐 تنظيف الـ XML وحساب البصمة
     const pureXmlForHashing = rawXml
       .replace("ZATCA_SIGNATURE_PLACEHOLDER", "")
       .trim();
@@ -234,22 +217,18 @@ const signZatcaInvoice = (rawXml, data, privateKey, certificate) => {
       .update(pureXmlForHashing, "utf8")
       .digest("base64");
 
-    // 3. التوقيع الرقمي (Digital Signature) باستخدام المفتاح الخاص
     const sign = crypto.createSign("SHA256");
     sign.update(pureXmlForHashing, "utf8");
     const digitalSignature = sign.sign(privateKey, "base64");
 
-    // 4. بصمة الشهادة نفسها
     const certBuffer = Buffer.from(cleanToken, "base64");
     const certificateHash = crypto
       .createHash("sha256")
       .update(certBuffer)
       .digest("base64");
 
-    // 5. ضبط صيغة الوقت (ZATCA تقبل ثواني بدون ملي ثانية)
     const signingTime = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 
-    // 6. توليد الـ QR Code
     const qrCodeBase64 = generatePhase2QR(
       data,
       invoiceHash,
@@ -258,7 +237,6 @@ const signZatcaInvoice = (rawXml, data, privateKey, certificate) => {
       certificateHash,
     );
 
-    // 7. 🧱 بناء هيكل XAdES المعتمد
     const signatureBlock = `
                 <sig:UBLDocumentSignatures xmlns:sig="urn:oasis:names:specification:ubl:schema:xsd:CommonSignatureComponents-2" xmlns:sac="urn:oasis:names:specification:ubl:schema:xsd:SignatureAggregateComponents-2" xmlns:sbc="urn:oasis:names:specification:ubl:schema:xsd:SignatureBasicComponents-2">
                     <sac:SignatureInformation>

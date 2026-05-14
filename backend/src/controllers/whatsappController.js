@@ -1,18 +1,15 @@
 const axios = require("axios");
 const Tenant = require("../models/Tenant");
 
-// 1. إنشاء جلسة واتساب جديدة (توليد الـ QR)
 const createWhatsappSession = async (req, res) => {
   try {
     const tenantId = req.tenantId;
 
-    // 🚀 جلب الحقول المطلوبة فقط لتوفير الـ RAM
     const tenant = await Tenant.findById(tenantId)
       .select("slug ownerPhone")
       .lean();
     if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
 
-    // 1. فلترة الرقم
     let cleanPhone = "966500000000";
     if (tenant.ownerPhone) {
       let extracted = tenant.ownerPhone.replace(/\D/g, "");
@@ -45,7 +42,6 @@ const createWhatsappSession = async (req, res) => {
 
     console.log("🚀 جاري إرسال الطلب لـ WASender:", payload.name);
 
-    // 💡 الخطوة الأولى: إنشاء الجلسة
     const response = await axios.post(
       "https://www.wasenderapi.com/api/whatsapp-sessions",
       payload,
@@ -59,7 +55,6 @@ const createWhatsappSession = async (req, res) => {
 
     const sessionId = response.data.data.id;
 
-    // 💡 الخطوة السحرية الجديدة: إعطاء أمر "التشغيل"
     try {
       console.log(`⚙️ جاري تشغيل محرك الواتساب للجلسة ${sessionId}...`);
       await axios.post(
@@ -108,10 +103,8 @@ const createWhatsappSession = async (req, res) => {
   }
 };
 
-// 2. جلب تفاصيل الجلسة (لإظهار الـ QR Code)
 const getWhatsappSessionData = async (req, res) => {
   try {
-    // 🚀 استخدام lean و select لتسريع قراءة حالة الجلسة
     const tenant = await Tenant.findById(req.tenantId)
       .select("whatsappSettings")
       .lean();
@@ -123,7 +116,6 @@ const getWhatsappSessionData = async (req, res) => {
         .json({ message: "لا توجد جلسة نشطة، يرجى إنشاء جلسة أولاً." });
     }
 
-    // 1. الاستعلام المباشر من WASender
     const sessionResponse = await axios.get(
       `https://www.wasenderapi.com/api/whatsapp-sessions/${sessionId}`,
       {
@@ -138,13 +130,11 @@ const getWhatsappSessionData = async (req, res) => {
       ? sessionData.status.toUpperCase()
       : "CREATED";
 
-    // 🚀 تحديث الداتا بيس بصمت (Fire and Forget) لكي لا نؤخر إرسال الباركود للعميل!
     Tenant.updateOne(
       { _id: req.tenantId },
       { $set: { "whatsappSettings.sessionStatus": currentStatus } },
     ).catch((err) => console.error("Error updating status silently:", err));
 
-    // 3. إذا لم يكن متصلاً، نحاول جلب الباركود
     if (currentStatus !== "CONNECTED" && currentStatus !== "WORKING") {
       try {
         const qrResponse = await axios.get(
@@ -181,7 +171,6 @@ const getWhatsappSessionData = async (req, res) => {
   }
 };
 
-// 3. فصل الواتساب وإلغاء الجلسة
 const disconnectWhatsappSession = async (req, res) => {
   try {
     const tenant = await Tenant.findById(req.tenantId)
@@ -207,7 +196,6 @@ const disconnectWhatsappSession = async (req, res) => {
         );
     }
 
-    // 🚀 تصفير الإعدادات جذرياً بضربة واحدة
     await Tenant.updateOne(
       { _id: req.tenantId },
       {
@@ -230,20 +218,17 @@ const disconnectWhatsappSession = async (req, res) => {
   }
 };
 
-// 4. استقبال تحديثات الحالة من WASender (Webhook)
 const handleWhatsappWebhook = async (req, res) => {
   try {
     const signature = req.headers["x-webhook-signature"];
     const payload = req.body;
 
-    // الرد فوراً بـ 200 لكي لا يعيد WASender إرسال الطلب
     res.status(200).json({ received: true });
 
     if (!payload.data || !payload.data.id) return;
 
     const sessionId = payload.data.id;
 
-    // 🚀 جلب البيانات الأساسية للتحقق فقط (سريع جداً)
     const tenant = await Tenant.findOne({
       "whatsappSettings.sessionId": sessionId,
     })
@@ -255,7 +240,6 @@ const handleWhatsappWebhook = async (req, res) => {
       return;
     }
 
-    // التحقق من التوقيع الأمني
     const expectedSecret = tenant.whatsappSettings.webhookSecret;
     if (expectedSecret && signature !== expectedSecret) {
       console.warn(
@@ -269,11 +253,9 @@ const handleWhatsappWebhook = async (req, res) => {
       payload.event,
     );
 
-    // 💡 معالجة الأحداث والتحديث الذري للحالة لتجنب تداخل البيانات
     if (payload.event === "session.status") {
       const newStatus = payload.data.status;
 
-      // 🚀 التحديث الذري (هذا السطر ينقذ السيرفر من أخطاء VersionError)
       await Tenant.updateOne(
         { "whatsappSettings.sessionId": sessionId },
         { $set: { "whatsappSettings.sessionStatus": newStatus } },

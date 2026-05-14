@@ -1,16 +1,9 @@
 const PromoCode = require("../models/PromoCode");
-
-// ==========================================
-// 🛡️ [Super Admin] دوال الإدارة العليا
-// ==========================================
-
-// 1. إنشاء كوبون جديد
 const createPromoCode = async (req, res) => {
   try {
     const { code, discountType, discountValue, maxUses, expiryDate } = req.body;
     const formattedCode = code.toUpperCase().trim();
 
-    // التأكد من عدم وجود كوبون بنفس الاسم (استخدام lean لسرعة الفحص)
     const existingCode = await PromoCode.findOne({ code: formattedCode })
       .select("_id")
       .lean();
@@ -34,10 +27,8 @@ const createPromoCode = async (req, res) => {
   }
 };
 
-// 2. جلب جميع الكوبونات لعرضها في لوحة الإدارة
 const getAllPromoCodes = async (req, res) => {
   try {
-    // 🚀 استخدام lean و الترتيب التنازلي مع الفهارس التي أنشأناها
     const promos = await PromoCode.find().sort({ createdAt: -1 }).lean();
     res.status(200).json(promos);
   } catch (error) {
@@ -45,16 +36,13 @@ const getAllPromoCodes = async (req, res) => {
   }
 };
 
-// 3. تفعيل/تعطيل الكوبون
 const togglePromoCode = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // جلب الحالة الحالية أولاً لتبديلها
     const promo = await PromoCode.findById(id).select("isActive");
     if (!promo) return res.status(404).json({ message: "الكوبون غير موجود" });
 
-    // 🚀 تحديث ذري للحالة
     const updatedPromo = await PromoCode.findByIdAndUpdate(
       id,
       { $set: { isActive: !promo.isActive } },
@@ -70,10 +58,6 @@ const togglePromoCode = async (req, res) => {
   }
 };
 
-// ==========================================
-// 💇‍♂️ [Tenant] دالة الصالون (للتحقق من الكوبون عند الترقية)
-// ==========================================
-
 const validatePromoCode = async (req, res) => {
   try {
     const { code } = req.body;
@@ -82,29 +66,24 @@ const validatePromoCode = async (req, res) => {
 
     const formattedCode = code.toUpperCase().trim();
 
-    // 🚀 استعلام صاروخي: نفحص كل الشروط داخل قاعدة البيانات بضربة واحدة
-    // هذا يمنع تحميل بيانات الكوبونات غير الصالحة في الـ RAM
     const promo = await PromoCode.findOne({
       code: formattedCode,
       isActive: true,
-      expiryDate: { $gt: new Date() }, // التأكد من تاريخ الصلاحية برمجياً في الداتا بيس
+      expiryDate: { $gt: new Date() },
     }).lean();
 
-    // 1. هل الكوبون موجود وصالح تاريخياً؟
     if (!promo) {
       return res
         .status(404)
         .json({ message: "كود الخصم غير صحيح أو منتهي الصلاحية." });
     }
 
-    // 2. هل تجاوز الحد الأقصى للاستخدام؟
     if (promo.usedCount >= promo.maxUses) {
       return res
         .status(400)
         .json({ message: "عذراً، تم استنفاد الحد الأقصى لهذا الكوبون." });
     }
 
-    // إذا مر بكل هذه الفحوصات بنجاح! 🎉
     res.status(200).json({
       message: "تم تطبيق الخصم بنجاح! ✨",
       discountType: promo.discountType,
