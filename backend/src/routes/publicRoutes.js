@@ -24,7 +24,7 @@ router.get("/stats", getPlatformStats);
 router.get("/pricing", getPublicPricing);
 router.get("/top-clients", getTopClients);
 
-router.get("/api/public/tenant-meta/:slug", async (req, res) => {
+router.get("/tenant-meta/:slug", async (req, res) => {
   try {
     const tenant = await Tenant.findOne({ slug: req.params.slug })
       .select("salonName bio")
