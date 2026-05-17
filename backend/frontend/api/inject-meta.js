@@ -1,7 +1,6 @@
 export default async function handler(req, res) {
   const { slug } = req.query;
-  const backendUrl =
-    process.env.VITE_API_BASE_URL || "https://your-backend.onrender.com";
+  const backendUrl = import.meta.VITE_BASE_URL || "https://miqass.onrender.com";
   const protocol = req.headers["x-forwarded-proto"] || "https";
   const host = req.headers["x-forwarded-host"] || req.headers.host;
   const frontendUrl = `${protocol}://${host}`;
