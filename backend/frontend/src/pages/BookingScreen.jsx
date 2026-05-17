@@ -5,11 +5,10 @@ import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
 import { motion, AnimatePresence } from 'framer-motion';
 import { getLocalDate, formatTime12Hour, getTimePeriod } from '../utils/helpers';
-import { FaInstagram, FaTiktok, FaSnapchatGhost, FaPhone, FaStar, FaMapMarkerAlt, FaChair } from "react-icons/fa";
+import { FaInstagram, FaTiktok, FaSnapchatGhost, FaPhone, FaStar, FaMapMarkerAlt } from "react-icons/fa";
 import TimeSlotsSkeleton from '../components/booking/TimeSlotsSkeleton';
 import BookingSkeleton from '../components/booking/BookingSkeleton';
 import BookingModal from '../components/booking/BookingModal';
-import { ChartBarIcon } from 'lucide-react';
 
 const getNextTimeSlot = (time, durationMinutes) => {
     if (!time) return null;
@@ -243,7 +242,10 @@ const BookingScreen = () => {
     }, [availableSlots]);
 
     const quickDates = useMemo(() => buildQuickDates(maxDate, closedDatesList), [maxDate, closedDatesList]);
+
+    // 💡 الألوان 
     const brandPrimary = tenantData?.branding?.primaryColor || '#3b82f6';
+    const brandSecondary = tenantData?.branding?.secondaryColor || '#64748b';
 
     if (isTenantLoading) return <BookingSkeleton />;
 
@@ -357,7 +359,7 @@ const BookingScreen = () => {
                     </motion.section>
                 )}
 
-                {/* ─── الحلاقين ─── */}
+                {/* ─── الحلاقين (طاقم العمل) ─── */}
                 {tenantData.barbers && tenantData.barbers.length === 0 ? (
                     <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
                         className="bg-red-50 text-red-500 p-6 rounded-3xl text-center border border-red-100 mb-6">
@@ -377,21 +379,20 @@ const BookingScreen = () => {
                                 const isSelected = selectedChair === bName;
                                 const count = tenantData.barbers.length;
 
-                                // 💡 السحر هنا: أحجام ديناميكية تتغير بناءً على عدد الحلاقين
-                                let avatarClass = "w-16 h-16 text-2xl rounded-2xl"; // 4 حلاقين فأكثر
+                                let avatarClass = "w-16 h-16 text-2xl rounded-2xl";
                                 let textClass = "text-xs";
                                 let checkSize = "w-5 h-5 text-[10px]";
 
                                 if (count === 1) {
-                                    avatarClass = "w-28 h-28 text-6xl rounded-[2rem]"; // ضخم
+                                    avatarClass = "w-28 h-28 text-6xl rounded-[2rem]";
                                     textClass = "text-lg mt-1";
                                     checkSize = "w-8 h-8 text-sm border-2";
                                 } else if (count === 2) {
-                                    avatarClass = "w-24 h-24 text-5xl rounded-3xl"; // كبير
+                                    avatarClass = "w-24 h-24 text-5xl rounded-3xl";
                                     textClass = "text-base mt-1";
                                     checkSize = "w-7 h-7 text-xs border-2";
                                 } else if (count === 3) {
-                                    avatarClass = "w-20 h-20 text-4xl rounded-[1.5rem]"; // متوسط
+                                    avatarClass = "w-20 h-20 text-4xl rounded-[1.5rem]";
                                     textClass = "text-sm";
                                     checkSize = "w-6 h-6 text-[10px]";
                                 }
@@ -403,16 +404,31 @@ const BookingScreen = () => {
                                         <div className={`relative flex items-center justify-center border-2 transition-all duration-300
                                             ${avatarClass}
                                             ${isSelected ? 'border-transparent shadow-[0_8px_20px_rgba(0,0,0,0.12)] scale-105' : 'border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50'}`}
-                                            style={isSelected ? { backgroundColor: brandPrimary } : {}}>
+                                            style={isSelected ? { backgroundColor: brandSecondary } : {}}>
 
-                                            <span className={`transition-all duration-300 ${isSelected ? 'text-white scale-110' : 'text-slate-400 grayscale opacity-60 group-hover:grayscale-0 group-hover:opacity-100'}`}>
-                                                <FaChair />
-                                            </span>
+                                            {/* 💡 أيقونة كرسي الحلاق (SVG) برسم احترافي وأنيق */}
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+                                                className={`transition-all duration-300 ${isSelected ? 'text-white scale-110' : 'text-slate-400 opacity-60 group-hover:opacity-100 group-hover:text-slate-600'}`}
+                                                width="1em" height="1em">
+                                                {/* قاعدة الكرسي */}
+                                                <path d="M8 21h8" />
+                                                <path d="M12 21v-3" />
+                                                {/* مقعد الكرسي */}
+                                                <path d="M9 18h6v-2H9v2z" />
+                                                {/* مسند الظهر */}
+                                                <path d="M7 16h10v-5a3 3 0 0 0-3-3h-4a3 3 0 0 0-3 3v5z" />
+                                                {/* مساند الذراعين */}
+                                                <path d="M4 12h3" />
+                                                <path d="M17 12h3" />
+                                                {/* مسند الرأس */}
+                                                <path d="M12 8V5" />
+                                                <path d="M10 5h4v-1a1 1 0 0 0-1-1h-2a1 1 0 0 0-1 1v1z" />
+                                            </svg>
 
                                             {isSelected && (
                                                 <motion.div layoutId="barberCheck"
                                                     className={`absolute -bottom-1 -left-1 ${checkSize} rounded-full bg-white shadow-md flex items-center justify-center font-black border-white`}
-                                                    style={{ color: brandPrimary }}>✓</motion.div>
+                                                    style={{ color: brandSecondary }}>✓</motion.div>
                                             )}
                                         </div>
 
