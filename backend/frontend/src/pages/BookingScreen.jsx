@@ -248,9 +248,7 @@ const BookingScreen = () => {
     const brandSecondary = tenantData?.branding?.secondaryColor || '#64748b';
 
     // 💡 منطق التلوين الديناميكي (Dynamic Theming)
-    // نجلب ترتيب الحلاق المختار حالياً، لتحديد لونه
     const activeBarberIndex = Math.max(0, tenantData?.barbers?.findIndex(b => b.name === selectedChair) || 0);
-    // اللون النشط للصفحة بأكملها سيكون متطابقاً مع لون الحلاق المختار (فردي أو زوجي)
     const activeThemeColor = activeBarberIndex % 2 === 0 ? brandPrimary : brandSecondary;
 
     if (isTenantLoading) return <BookingSkeleton />;
@@ -385,7 +383,6 @@ const BookingScreen = () => {
                                 const isSelected = selectedChair === bName;
                                 const count = tenantData.barbers.length;
 
-                                // لون الكرسي الخاص بهذا الحلاق
                                 const chairColor = index % 2 === 0 ? brandPrimary : brandSecondary;
 
                                 let avatarClass = "w-16 h-16 text-2xl rounded-2xl";
@@ -456,7 +453,11 @@ const BookingScreen = () => {
                                     const formattedDate = new Date(date.getTime() - offset).toISOString().split('T')[0];
                                     setSelectedDate(formattedDate);
                                 }}
-                                minDate={new Date()} maxDate={maxDate} excludeDates={closedDatesList} dateFormat="yyyy-MM-dd"
+                                minDate={new Date()}
+                                maxDate={maxDate}
+                                excludeDates={closedDatesList}
+                                dateFormat="yyyy-MM-dd"
+                                withPortal // 💡 هذا السطر يجعل التقويم يفتح كـ Modal في منتصف الشاشة
                                 className="text-xs font-black transition-colors duration-300 bg-slate-100 px-3 py-1.5 rounded-lg cursor-pointer text-center w-28 outline-none"
                                 style={{ color: activeThemeColor, backgroundColor: `${activeThemeColor}15` }}
                                 placeholderText="📅 تقويم"
