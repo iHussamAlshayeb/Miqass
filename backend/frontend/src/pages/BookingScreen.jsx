@@ -5,10 +5,11 @@ import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
 import { motion, AnimatePresence } from 'framer-motion';
 import { getLocalDate, formatTime12Hour, getTimePeriod } from '../utils/helpers';
-import { FaInstagram, FaTiktok, FaSnapchatGhost, FaPhone, FaStar, FaMapMarkerAlt } from "react-icons/fa";
+import { FaInstagram, FaTiktok, FaSnapchatGhost, FaPhone, FaStar, FaMapMarkerAlt, FaChair } from "react-icons/fa";
 import TimeSlotsSkeleton from '../components/booking/TimeSlotsSkeleton';
 import BookingSkeleton from '../components/booking/BookingSkeleton';
 import BookingModal from '../components/booking/BookingModal';
+import { ChartBarIcon } from 'lucide-react';
 
 const getNextTimeSlot = (time, durationMinutes) => {
     if (!time) return null;
@@ -230,7 +231,6 @@ const BookingScreen = () => {
         }
     }, [showPaymentForm, paymentDetails, tenantData]);
 
-    // ─── تجميع المواعيد حسب الفترة (صباح/ظهر/مساء) ───
     const groupedSlots = useMemo(() => {
         const groups = { 'صباحاً': [], 'ظهراً': [], 'مساءً': [] };
         availableSlots.forEach(t => {
@@ -366,26 +366,57 @@ const BookingScreen = () => {
                         <p className="text-xs font-bold opacity-80">نعتذر منك، لا يوجد حلاقين متاحين حالياً.</p>
                     </motion.div>
                 ) : (
-                    <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="mb-6">
-                        <h2 className="text-slate-900 font-black text-base mb-3 px-1">اختر الحلاق</h2>
-                        <div className="flex overflow-x-auto hide-scrollbar gap-2.5 pb-1 -mx-1 px-1">
+                    <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="mb-8">
+                        <div className="flex items-center justify-between mb-4 px-1">
+                            <h2 className="text-slate-900 font-black text-base">اختر الحلاق</h2>
+                            <span className="text-xs font-bold text-slate-400">{tenantData.barbers.length} متاحين</span>
+                        </div>
+                        <div className={`flex overflow-x-auto hide-scrollbar gap-4 pb-2 px-1 snap-x ${tenantData.barbers.length <= 3 ? 'justify-center' : 'justify-start -mx-1'}`}>
                             {tenantData.barbers.map((barberObj) => {
                                 const bName = barberObj.name;
                                 const isSelected = selectedChair === bName;
+                                const count = tenantData.barbers.length;
+
+                                // 💡 السحر هنا: أحجام ديناميكية تتغير بناءً على عدد الحلاقين
+                                let avatarClass = "w-16 h-16 text-2xl rounded-2xl"; // 4 حلاقين فأكثر
+                                let textClass = "text-xs";
+                                let checkSize = "w-5 h-5 text-[10px]";
+
+                                if (count === 1) {
+                                    avatarClass = "w-28 h-28 text-6xl rounded-[2rem]"; // ضخم
+                                    textClass = "text-lg mt-1";
+                                    checkSize = "w-8 h-8 text-sm border-2";
+                                } else if (count === 2) {
+                                    avatarClass = "w-24 h-24 text-5xl rounded-3xl"; // كبير
+                                    textClass = "text-base mt-1";
+                                    checkSize = "w-7 h-7 text-xs border-2";
+                                } else if (count === 3) {
+                                    avatarClass = "w-20 h-20 text-4xl rounded-[1.5rem]"; // متوسط
+                                    textClass = "text-sm";
+                                    checkSize = "w-6 h-6 text-[10px]";
+                                }
+
                                 return (
                                     <button key={barberObj._id || bName} onClick={() => setSelectedChair(bName)}
-                                        className="relative flex-shrink-0 flex flex-col items-center gap-2 group">
-                                        <div className={`relative w-16 h-16 rounded-2xl flex items-center justify-center text-2xl border-2 transition-all
-                                            ${isSelected ? 'border-transparent shadow-md scale-105' : 'border-slate-100 bg-white'}`}
+                                        className="relative flex-shrink-0 flex flex-col items-center gap-2 group snap-center outline-none">
+
+                                        <div className={`relative flex items-center justify-center border-2 transition-all duration-300
+                                            ${avatarClass}
+                                            ${isSelected ? 'border-transparent shadow-[0_8px_20px_rgba(0,0,0,0.12)] scale-105' : 'border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50'}`}
                                             style={isSelected ? { backgroundColor: brandPrimary } : {}}>
-                                            <span className={isSelected ? 'text-white' : 'text-slate-500'}>👨🏻‍✈️</span>
+
+                                            <span className={`transition-all duration-300 ${isSelected ? 'text-white scale-110' : 'text-slate-400 grayscale opacity-60 group-hover:grayscale-0 group-hover:opacity-100'}`}>
+                                                <FaChair />
+                                            </span>
+
                                             {isSelected && (
                                                 <motion.div layoutId="barberCheck"
-                                                    className="absolute -bottom-1 -left-1 w-5 h-5 rounded-full bg-white shadow flex items-center justify-center text-[10px] font-black"
+                                                    className={`absolute -bottom-1 -left-1 ${checkSize} rounded-full bg-white shadow-md flex items-center justify-center font-black border-white`}
                                                     style={{ color: brandPrimary }}>✓</motion.div>
                                             )}
                                         </div>
-                                        <span className={`text-xs font-black transition-colors ${isSelected ? 'text-slate-900' : 'text-slate-400'}`}>{bName}</span>
+
+                                        <span className={`font-black transition-colors ${textClass} ${isSelected ? 'text-slate-900' : 'text-slate-400'}`}>{bName}</span>
                                     </button>
                                 );
                             })}
