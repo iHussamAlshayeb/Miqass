@@ -25,12 +25,10 @@ const createWhatsappSession = async (req, res) => {
     const finalPhoneNumber = "+" + cleanPhone;
 
     const backendUrl = process.env.BACKEND_URL;
-    const validWebhookUrl = backendUrl.includes("localhost")
-      ? "https://miqass.onrender.com/whatsapp/webhook"
-      : `${backendUrl}/api/whatsapp/webhook`;
+    const validWebhookUrl = `${backendUrl}/api/whatsapp/webhook`;
 
     const payload = {
-      name: `Miqass_${tenant.slug}`,
+      name: `MiqassApp_${tenant.slug}`,
       phone_number: finalPhoneNumber,
       account_protection: true,
       log_messages: true,

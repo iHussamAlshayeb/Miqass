@@ -26,6 +26,7 @@ app.use(
       const allowedPatterns = [
         /^https?:\/\/localhost:\d+$/,
         /^https:\/\/(www\.)?miqass\.app$/,
+        /^https:\/\/miqass\.app$/,
         /^https:\/\/.*\.vercel\.app$/, // إضافة للسماح بنطاقات فيرسيل (يمكن إزالتها بعد ربط الدومين الرسمي)
       ];
 
