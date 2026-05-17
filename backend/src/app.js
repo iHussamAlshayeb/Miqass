@@ -2,8 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const compression = require("compression");
-const path = require("path");
-const fs = require("fs");
+const path = require("path"); // قد لا تحتاجه بعد الآن إذا لم يكن مستخدماً في ملفات أخرى
 const Tenant = require("./models/Tenant");
 const checkMaintenanceMode = require("./middlewares/maintenanceMiddleware");
 const redisClient = require("./utils/redisClient");
@@ -27,6 +26,7 @@ app.use(
       const allowedPatterns = [
         /^https?:\/\/localhost:\d+$/,
         /^https:\/\/(www\.)?miqass\.app$/,
+        /^https:\/\/.*\.vercel\.app$/, // إضافة للسماح بنطاقات فيرسيل (يمكن إزالتها بعد ربط الدومين الرسمي)
       ];
 
       const isAllowed = allowedPatterns.some((pattern) => pattern.test(origin));
@@ -46,6 +46,7 @@ app.use(express.urlencoded({ limit: "5mb", extended: true }));
 
 app.use(checkMaintenanceMode);
 
+// مسارات الـ API
 app.use("/api/tenants", require("./routes/tenantRoutes"));
 app.use("/api/appointments", require("./routes/appointmentRoutes"));
 app.use("/api/auth", require("./routes/authRoutes"));
@@ -59,6 +60,7 @@ app.get("/api/health", (req, res) => {
   res.status(200).json({ status: "running", version: "2.1.0-stable" });
 });
 
+// مسار جلب الشعار (يعمل كـ API Endpoint للواجهة)
 app.get("/logo/:slug", async (req, res) => {
   try {
     const { slug } = req.params;
@@ -115,62 +117,9 @@ app.get("/logo/:slug", async (req, res) => {
   }
 });
 
-let frontendPath = path.join(__dirname, "..", "frontend", "dist");
-if (!fs.existsSync(frontendPath)) {
-  frontendPath = path.join(__dirname, "..", "frontend", "build");
-}
-
-app.use(express.static(frontendPath));
-
-app.use(async (req, res) => {
-  const indexPath = path.join(frontendPath, "index.html");
-
-  if (fs.existsSync(indexPath)) {
-    let html = fs.readFileSync(indexPath, "utf8");
-
-    const possibleSlug = req.path.split("/")[1];
-
-    const ignoreList = ["api", "login", "register", "dashboard", "pricing"];
-
-    if (possibleSlug && !ignoreList.includes(possibleSlug)) {
-      try {
-        const tenant = await Tenant.findOne({ slug: possibleSlug })
-          .select("salonName bio branding")
-          .lean();
-
-        if (tenant) {
-          const serverUrl = `${req.protocol}://${req.get("host")}`;
-          const logoEndpoint = tenant.branding?.logoUrl
-            ? `${serverUrl}/logo/${possibleSlug}`
-            : `${serverUrl}/default-logo.png`;
-
-          const ogTags = `
-            <title>حجز موعد | ${tenant.salonName}</title>
-            <meta property="og:title" content="حجز موعد | ${tenant.salonName}" />
-            <meta property="og:description" content="${tenant.bio || "احجز موعدك الآن بخطوات بسيطة وبدون انتظار."}" />
-            <meta property="og:image" content="${logoEndpoint}" />
-            <meta property="og:type" content="website" />
-            <meta property="og:url" content="${serverUrl}/${possibleSlug}" />
-            <meta name="twitter:card" content="summary_large_image" />
-          `;
-
-          html = html.replace("</head>", `${ogTags}</head>`);
-        }
-      } catch (error) {
-        console.error("Error injecting OG tags:", error);
-      }
-    }
-
-    res.send(html);
-  } else {
-    res.status(404).send(`
-      <div style="font-family: sans-serif; text-align: center; padding: 50px;">
-        <h2>⚠️ لم يتم العثور على واجهة React!</h2>
-        <p>السيرفر يبحث عن الملف في المسار: <code>${indexPath}</code></p>
-        <p>يرجى التأكد من تشغيل أمر <b>npm run build</b> في مجلد frontend.</p>
-      </div>
-    `);
-  }
+// مسار افتراضي (Fallback) للطلبات غير الموجودة
+app.use((req, res) => {
+  res.status(404).json({ error: "API Endpoint Not Found" });
 });
 
 module.exports = app;
