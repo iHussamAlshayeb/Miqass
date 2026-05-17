@@ -26,7 +26,7 @@ const createWhatsappSession = async (req, res) => {
 
     const backendUrl = process.env.BACKEND_URL;
     const validWebhookUrl = backendUrl.includes("localhost")
-      ? "https://miqass.app/api/whatsapp/webhook"
+      ? "https://miqass.onrender.com/whatsapp/webhook"
       : `${backendUrl}/api/whatsapp/webhook`;
 
     const payload = {
