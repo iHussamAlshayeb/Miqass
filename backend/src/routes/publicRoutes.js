@@ -7,6 +7,7 @@ const {
   getPublicPricing,
   getTopClients,
 } = require("../controllers/publicController");
+const Tenant = require("../models/Tenant");
 
 const publicLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 دقيقة
@@ -22,4 +23,18 @@ router.use(publicLimiter);
 router.get("/stats", getPlatformStats);
 router.get("/pricing", getPublicPricing);
 router.get("/top-clients", getTopClients);
+
+router.get("/api/public/tenant-meta/:slug", async (req, res) => {
+  try {
+    const tenant = await Tenant.findOne({ slug: req.params.slug })
+      .select("salonName bio")
+      .lean();
+
+    if (!tenant) return res.status(404).json({ error: "Not found" });
+
+    res.json(tenant);
+  } catch (error) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
 module.exports = router;
