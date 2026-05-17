@@ -374,10 +374,13 @@ const BookingScreen = () => {
                             <span className="text-xs font-bold text-slate-400">{tenantData.barbers.length} متاحين</span>
                         </div>
                         <div className={`flex overflow-x-auto hide-scrollbar gap-4 pb-2 px-1 snap-x ${tenantData.barbers.length <= 3 ? 'justify-center' : 'justify-start -mx-1'}`}>
-                            {tenantData.barbers.map((barberObj) => {
+                            {tenantData.barbers.map((barberObj, index) => {
                                 const bName = barberObj.name;
                                 const isSelected = selectedChair === bName;
                                 const count = tenantData.barbers.length;
+
+                                // 💡 تناوب الألوان: اللون الأساسي للكرسي الأول، الثانوي للثاني، الأساسي للثالث وهكذا...
+                                const chairColor = index % 2 === 0 ? brandPrimary : brandSecondary;
 
                                 let avatarClass = "w-16 h-16 text-2xl rounded-2xl";
                                 let textClass = "text-xs";
@@ -403,12 +406,14 @@ const BookingScreen = () => {
 
                                         <div className={`relative flex items-center justify-center border-2 transition-all duration-300
                                             ${avatarClass}
-                                            ${isSelected ? 'border-transparent shadow-[0_8px_20px_rgba(0,0,0,0.12)] scale-105' : 'border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50'}`}
-                                            style={isSelected ? { backgroundColor: brandSecondary } : {}}>
+                                            ${isSelected ? 'border-transparent shadow-[0_8px_20px_rgba(0,0,0,0.12)] scale-105' : 'border-slate-100 bg-white hover:border-slate-200 hover:shadow-sm'}`}
+                                            // 💡 تطبيق لون التناوب على الخلفية عند التحديد
+                                            style={isSelected ? { backgroundColor: chairColor } : {}}>
 
-                                            {/* 💡 أيقونة كرسي الحلاق (SVG) برسم احترافي وأنيق */}
+                                            {/* 💡 أيقونة الكرسي تأخذ لون التناوب (chairColor) عندما لا تكون محددة */}
                                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
-                                                className={`transition-all duration-300 ${isSelected ? 'text-white scale-110' : 'text-slate-400 opacity-60 group-hover:opacity-100 group-hover:text-slate-600'}`}
+                                                className={`transition-all duration-300 ${isSelected ? 'text-white scale-110' : 'opacity-80 scale-100 group-hover:opacity-100 group-hover:scale-105'}`}
+                                                style={!isSelected ? { color: chairColor } : {}}
                                                 width="1em" height="1em">
                                                 {/* قاعدة الكرسي */}
                                                 <path d="M8 21h8" />
@@ -428,7 +433,7 @@ const BookingScreen = () => {
                                             {isSelected && (
                                                 <motion.div layoutId="barberCheck"
                                                     className={`absolute -bottom-1 -left-1 ${checkSize} rounded-full bg-white shadow-md flex items-center justify-center font-black border-white`}
-                                                    style={{ color: brandSecondary }}>✓</motion.div>
+                                                    style={{ color: chairColor }}>✓</motion.div>
                                             )}
                                         </div>
 
