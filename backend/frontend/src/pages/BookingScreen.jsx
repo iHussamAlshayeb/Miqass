@@ -243,9 +243,15 @@ const BookingScreen = () => {
 
     const quickDates = useMemo(() => buildQuickDates(maxDate, closedDatesList), [maxDate, closedDatesList]);
 
-    // 💡 الألوان 
+    // 💡 الألوان الأساسية والثانوية
     const brandPrimary = tenantData?.branding?.primaryColor || '#3b82f6';
     const brandSecondary = tenantData?.branding?.secondaryColor || '#64748b';
+
+    // 💡 منطق التلوين الديناميكي (Dynamic Theming)
+    // نجلب ترتيب الحلاق المختار حالياً، لتحديد لونه
+    const activeBarberIndex = Math.max(0, tenantData?.barbers?.findIndex(b => b.name === selectedChair) || 0);
+    // اللون النشط للصفحة بأكملها سيكون متطابقاً مع لون الحلاق المختار (فردي أو زوجي)
+    const activeThemeColor = activeBarberIndex % 2 === 0 ? brandPrimary : brandSecondary;
 
     if (isTenantLoading) return <BookingSkeleton />;
 
@@ -379,7 +385,7 @@ const BookingScreen = () => {
                                 const isSelected = selectedChair === bName;
                                 const count = tenantData.barbers.length;
 
-                                // 💡 تناوب الألوان: اللون الأساسي للكرسي الأول، الثانوي للثاني، الأساسي للثالث وهكذا...
+                                // لون الكرسي الخاص بهذا الحلاق
                                 const chairColor = index % 2 === 0 ? brandPrimary : brandSecondary;
 
                                 let avatarClass = "w-16 h-16 text-2xl rounded-2xl";
@@ -407,25 +413,18 @@ const BookingScreen = () => {
                                         <div className={`relative flex items-center justify-center border-2 transition-all duration-300
                                             ${avatarClass}
                                             ${isSelected ? 'border-transparent shadow-[0_8px_20px_rgba(0,0,0,0.12)] scale-105' : 'border-slate-100 bg-white hover:border-slate-200 hover:shadow-sm'}`}
-                                            // 💡 تطبيق لون التناوب على الخلفية عند التحديد
                                             style={isSelected ? { backgroundColor: chairColor } : {}}>
 
-                                            {/* 💡 أيقونة الكرسي تأخذ لون التناوب (chairColor) عندما لا تكون محددة */}
                                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
                                                 className={`transition-all duration-300 ${isSelected ? 'text-white scale-110' : 'opacity-80 scale-100 group-hover:opacity-100 group-hover:scale-105'}`}
                                                 style={!isSelected ? { color: chairColor } : {}}
                                                 width="1em" height="1em">
-                                                {/* قاعدة الكرسي */}
                                                 <path d="M8 21h8" />
                                                 <path d="M12 21v-3" />
-                                                {/* مقعد الكرسي */}
                                                 <path d="M9 18h6v-2H9v2z" />
-                                                {/* مسند الظهر */}
                                                 <path d="M7 16h10v-5a3 3 0 0 0-3-3h-4a3 3 0 0 0-3 3v5z" />
-                                                {/* مساند الذراعين */}
                                                 <path d="M4 12h3" />
                                                 <path d="M17 12h3" />
-                                                {/* مسند الرأس */}
                                                 <path d="M12 8V5" />
                                                 <path d="M10 5h4v-1a1 1 0 0 0-1-1h-2a1 1 0 0 0-1 1v1z" />
                                             </svg>
@@ -437,7 +436,7 @@ const BookingScreen = () => {
                                             )}
                                         </div>
 
-                                        <span className={`font-black transition-colors ${textClass} ${isSelected ? 'text-slate-900' : 'text-slate-400'}`}>{bName}</span>
+                                        <span className={`font-black transition-colors duration-300 ${textClass} ${isSelected ? 'text-slate-900' : 'text-slate-400'}`}>{bName}</span>
                                     </button>
                                 );
                             })}
@@ -445,7 +444,7 @@ const BookingScreen = () => {
                     </motion.section>
                 )}
 
-                {/* ─── التاريخ — شريط أيام سريع + datepicker للمزيد ─── */}
+                {/* ─── التاريخ ─── */}
                 <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="mb-6">
                     <div className="flex justify-between items-center mb-3 px-1">
                         <h2 className="text-slate-900 font-black text-base">تاريخ الزيارة</h2>
@@ -458,7 +457,8 @@ const BookingScreen = () => {
                                     setSelectedDate(formattedDate);
                                 }}
                                 minDate={new Date()} maxDate={maxDate} excludeDates={closedDatesList} dateFormat="yyyy-MM-dd"
-                                className="text-xs font-black text-blue-500 bg-blue-50 px-3 py-1.5 rounded-lg cursor-pointer text-center w-28 outline-none"
+                                className="text-xs font-black transition-colors duration-300 bg-slate-100 px-3 py-1.5 rounded-lg cursor-pointer text-center w-28 outline-none"
+                                style={{ color: activeThemeColor, backgroundColor: `${activeThemeColor}15` }}
                                 placeholderText="📅 تقويم"
                             />
                         </div>
@@ -469,14 +469,14 @@ const BookingScreen = () => {
                             const disabled = d.isClosed;
                             return (
                                 <button key={d.iso} onClick={() => !disabled && setSelectedDate(d.iso)} disabled={disabled}
-                                    className={`relative flex-shrink-0 w-14 py-3 rounded-2xl flex flex-col items-center gap-1 border-2 transition-all snap-start
+                                    className={`relative flex-shrink-0 w-14 py-3 rounded-2xl flex flex-col items-center gap-1 border-2 transition-all duration-300 snap-start
                                         ${disabled ? 'bg-slate-50 border-slate-100 opacity-40 cursor-not-allowed' :
                                             isSelected ? 'border-transparent text-white shadow-md scale-105' :
                                                 'bg-white border-slate-100 text-slate-600 active:scale-95'}`}
-                                    style={isSelected && !disabled ? { backgroundColor: brandPrimary } : {}}>
-                                    <span className={`text-[10px] font-bold ${isSelected ? 'text-white/80' : 'text-slate-400'}`}>{d.day}</span>
+                                    style={isSelected && !disabled ? { backgroundColor: activeThemeColor } : {}}>
+                                    <span className={`text-[10px] font-bold transition-colors duration-300 ${isSelected ? 'text-white/90' : 'text-slate-400'}`}>{d.day}</span>
                                     <span className="text-lg font-black leading-none">{d.num}</span>
-                                    {d.isToday && !isSelected && <span className="absolute bottom-1 w-1 h-1 rounded-full" style={{ backgroundColor: brandPrimary }}></span>}
+                                    {d.isToday && !isSelected && <span className="absolute bottom-1 w-1 h-1 rounded-full transition-colors duration-300" style={{ backgroundColor: activeThemeColor }}></span>}
                                 </button>
                             );
                         })}
@@ -489,7 +489,8 @@ const BookingScreen = () => {
                         <div className="flex justify-between items-center mb-3 px-1">
                             <h2 className="text-slate-900 font-black text-base">الخدمات المطلوبة</h2>
                             {servicesCount > 0 && (
-                                <span className="text-xs font-black px-2.5 py-1 rounded-lg" style={{ backgroundColor: `${brandPrimary}15`, color: brandPrimary }}>
+                                <span className="text-xs font-black px-2.5 py-1 rounded-lg transition-colors duration-300"
+                                    style={{ backgroundColor: `${activeThemeColor}15`, color: activeThemeColor }}>
                                     {servicesCount} مختارة
                                 </span>
                             )}
@@ -504,10 +505,10 @@ const BookingScreen = () => {
                                             if (isSelected) setSelectedServicesIds(selectedServicesIds.filter(id => id !== srvId));
                                             else setSelectedServicesIds([...selectedServicesIds, srvId]);
                                         }}
-                                        className={`w-full flex justify-between items-center p-4 transition-colors text-right ${isSelected ? 'bg-blue-50/50' : 'hover:bg-slate-50'}`}>
+                                        className={`w-full flex justify-between items-center p-4 transition-all duration-300 text-right ${isSelected ? 'bg-slate-50/50' : 'hover:bg-slate-50'}`}>
                                         <div className="flex items-center gap-3 flex-1 min-w-0">
-                                            <div className={`w-6 h-6 rounded-lg flex items-center justify-center border-2 transition-all shrink-0 ${isSelected ? 'text-white' : 'border-slate-200 bg-white'}`}
-                                                style={isSelected ? { backgroundColor: brandPrimary, borderColor: brandPrimary } : {}}>
+                                            <div className={`w-6 h-6 rounded-lg flex items-center justify-center border-2 transition-all duration-300 shrink-0 ${isSelected ? 'text-white' : 'border-slate-200 bg-white'}`}
+                                                style={isSelected ? { backgroundColor: activeThemeColor, borderColor: activeThemeColor } : {}}>
                                                 {isSelected && <span className="text-xs">✓</span>}
                                             </div>
                                             <div className="text-right min-w-0">
@@ -533,11 +534,11 @@ const BookingScreen = () => {
                         <TimeSlotsSkeleton />
                     ) : isClosed ? (
                         <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-                            className="p-8 rounded-3xl text-center border flex flex-col items-center"
-                            style={{ backgroundColor: `${brandPrimary}10`, borderColor: `${brandPrimary}30` }}>
+                            className="p-8 rounded-3xl text-center border flex flex-col items-center transition-colors duration-300"
+                            style={{ backgroundColor: `${activeThemeColor}10`, borderColor: `${activeThemeColor}30` }}>
                             <span className="text-5xl mb-3">🏖️</span>
-                            <h3 className="font-black text-lg mb-1" style={{ color: brandPrimary }}>الصالون في إجازة</h3>
-                            <p className="font-bold text-sm" style={{ color: brandPrimary, opacity: 0.8 }}>نراكم في يوم آخر!</p>
+                            <h3 className="font-black text-lg mb-1 transition-colors duration-300" style={{ color: activeThemeColor }}>الصالون في إجازة</h3>
+                            <p className="font-bold text-sm transition-colors duration-300" style={{ color: activeThemeColor, opacity: 0.8 }}>نراكم في يوم آخر!</p>
                         </motion.div>
                     ) : availableSlots.length === 0 ? (
                         <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
@@ -578,11 +579,13 @@ const BookingScreen = () => {
                 </motion.section>
 
                 <footer className="text-center opacity-60 pb-4">
-                    <p className="text-slate-400 font-bold text-xs" dir="ltr">برمجة وتطوير <span className="font-black" style={{ color: brandPrimary }}>حسام احمد</span> © {new Date().getFullYear()}</p>
+                    <p className="text-slate-400 font-bold text-xs transition-colors duration-300" dir="ltr">
+                        برمجة وتطوير <span className="font-black" style={{ color: activeThemeColor }}>حسام احمد</span> © {new Date().getFullYear()}
+                    </p>
                 </footer>
             </main>
 
-            {/* ─── شريط ملخص ثابت أسفل الشاشة (يظهر عند اختيار خدمات) ─── */}
+            {/* ─── شريط ملخص ثابت أسفل الشاشة ─── */}
             <AnimatePresence>
                 {servicesCount > 0 && (
                     <motion.div
@@ -590,14 +593,16 @@ const BookingScreen = () => {
                         transition={{ type: 'spring', stiffness: 280, damping: 26 }}
                         className="fixed bottom-10 left-0 right-0 z-30 px-4 pointer-events-none">
                         <div className="max-w-md mx-auto pointer-events-auto">
-                            <div className="bg-white rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.12)] border border-slate-100 p-3 flex items-center justify-between gap-3">
+                            <div className="bg-white rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.12)] border border-slate-100 p-3 flex items-center justify-between gap-3 transition-colors duration-300">
                                 <div className="flex-1 min-w-0">
                                     <p className="text-[10px] font-bold text-slate-400">{servicesCount} خدمة · {totals.duration} د</p>
                                     <p className="text-base font-black text-slate-900">
                                         {totals.price} <span className="text-xs font-bold text-slate-400">ر.س</span>
                                     </p>
                                 </div>
-                                <div className="text-[11px] font-black text-slate-400">↓ اختر وقتك من الأسفل</div>
+                                <div className="text-[11px] font-black transition-colors duration-300" style={{ color: activeThemeColor }}>
+                                    ↓ اختر وقتك من الأسفل
+                                </div>
                             </div>
                         </div>
                     </motion.div>
@@ -631,7 +636,7 @@ const BookingScreen = () => {
                             <div className="text-center mb-6 mt-2">
                                 <h3 className="text-2xl font-black text-slate-900 mb-2">تأكيد الحجز (عربون)</h3>
                                 <p className="text-slate-500 font-bold text-sm">
-                                    المبلغ المطلوب: <span className="font-black text-lg" style={{ color: brandPrimary }}>{paymentDetails.amount} ر.س</span>
+                                    المبلغ المطلوب: <span className="font-black text-lg transition-colors duration-300" style={{ color: activeThemeColor }}>{paymentDetails.amount} ر.س</span>
                                 </p>
                             </div>
                             <AnimatePresence mode="wait">
