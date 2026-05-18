@@ -479,6 +479,7 @@ const getLiveQueue = async (req, res) => {
     const tenant = await Tenant.findOne({ slug })
       .select("_id salonName branding")
       .lean();
+
     if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
 
     const ksaDate = new Date(
@@ -486,27 +487,44 @@ const getLiveQueue = async (req, res) => {
     );
     const today = `${ksaDate.getFullYear()}-${String(ksaDate.getMonth() + 1).padStart(2, "0")}-${String(ksaDate.getDate()).padStart(2, "0")}`;
 
-    const appointments = await Appointment.find({
-      tenantId: tenant._id,
-      date: today,
-      status: "Booked",
-    })
-      .select("childName timeSlot barberName status customerId")
-      .populate("customerId", "phone")
-      .sort({ timeSlot: 1 })
-      .lean();
+    // 💡 تحسين الأداء: جلب المواعيد والحلاقين في نفس الوقت بشكل متوازٍ
+    const [appointments, barbers] = await Promise.all([
+      Appointment.find({
+        tenantId: tenant._id,
+        date: today,
+        status: "Booked",
+      })
+        .select(
+          "childName timeSlot barberName status customerId totalPrice selectedServices",
+        )
+        .populate("customerId", "phone")
+        .sort({ timeSlot: 1 })
+        .lean(),
+      Barber.find({ tenantId: tenant._id, isActive: true })
+        .select("name")
+        .lean(),
+    ]);
 
-    const barbers = await Barber.find({ tenantId: tenant._id, isActive: true })
-      .select("name")
-      .lean();
+    // 💡 مطابقة البيانات (Mapping) لتتوافق مع ما تتوقعه شاشة React بالضبط
+    const formattedAppointments = appointments.map((app) => ({
+      _id: app._id,
+      childName: app.childName,
+      timeSlot: app.timeSlot,
+      chair: app.barberName, // الواجهة تبحث عن chair
+      status: app.status,
+      customerPhone: app.customerId?.phone || "غير معروف", // استخراج الرقم من كائن العميل
+      totalPrice: app.totalPrice || 0,
+      selectedServices: app.selectedServices || [],
+    }));
 
     res.status(200).json({
       salonName: tenant.salonName,
       branding: tenant.branding,
       barbers: barbers.map((b) => b.name),
-      appointments: appointments.map(mapAppointmentForFrontend),
+      appointments: formattedAppointments,
     });
   } catch (error) {
+    console.error("Live Queue Error:", error);
     res.status(500).json({ message: "حدث خطأ داخلي" });
   }
 };
