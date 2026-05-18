@@ -9,6 +9,17 @@ const {
 } = require("../utils/whatsapp");
 const { sendAdminNotification } = require("../utils/onesignal");
 
+// ==========================================
+// 🛠️ دوال مساعدة (Helpers)
+// ==========================================
+const mapAppointmentForFrontend = (app) => {
+  return {
+    ...(app._doc ? app._doc : app),
+    customerPhone: app.customerId?.phone || "غير معروف",
+    chair: app.barberName,
+  };
+};
+
 const generateTimeSlots = (start, end, duration) => {
   const slots = [];
   const [startHour, startMin] = start.split(":").map(Number);
@@ -36,6 +47,11 @@ const getNextTimeSlot = (time, durationMinutes) => {
   return `${hh}:${mm}`;
 };
 
+// ==========================================
+// 🚀 الدوال الأساسية للكنترولر
+// ==========================================
+
+// 1. إنشاء موعد جديد
 const createAppointment = async (req, res) => {
   try {
     const {
@@ -66,6 +82,7 @@ const createAppointment = async (req, res) => {
       .lean();
     if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
 
+    // فحص الباقة المجانية
     if (tenant.subscription?.plan === "Free") {
       const startOfMonth = new Date();
       startOfMonth.setDate(1);
@@ -106,6 +123,7 @@ const createAppointment = async (req, res) => {
       }
     }
 
+    // تجهيز الحلاق
     let barber = await Barber.findOne({
       tenantId: tenant._id,
       name: chair,
@@ -142,11 +160,12 @@ const createAppointment = async (req, res) => {
       }
     }
 
+    // التحقق من التعارض
     const existingAppointments = await Appointment.find({
       tenantId: tenant._id,
       date: date,
       barberId: barber._id,
-      status: { $in: ["Pending_Payment", "Booked", "Blocked", "Completed"] }, // 💡 أضفنا Pending_Payment لمنع الحجز فوق موعد ينتظر الدفع
+      status: { $in: ["Pending_Payment", "Booked", "Blocked", "Completed"] },
       timeSlot: { $in: neededSlots },
     }).lean();
 
@@ -156,9 +175,7 @@ const createAppointment = async (req, res) => {
       });
     }
 
-    // ==========================================
-    // 1. التحقق من متطلبات الدفع (Moyasar)
-    // ==========================================
+    // التحقق من متطلبات الدفع
     const isPaymentRequired =
       tenant.paymentSettings?.isOnlinePaymentEnabled &&
       tenant.paymentSettings?.depositAmount > 0;
@@ -180,8 +197,9 @@ const createAppointment = async (req, res) => {
 
     let currentInvoiceCounter =
       updatedTenant.invoiceCounter - childrenNames.length + 1;
-
     let startSlotForPerson = timeSlot;
+
+    // تجهيز المواعيد للحفظ
     const appointmentsToCreate = childrenNames.map((name) => {
       const appointmentData = {
         tenantId: tenant._id,
@@ -196,10 +214,7 @@ const createAppointment = async (req, res) => {
         totalDuration: totalDuration,
         invoiceNumber: `INV-${currentInvoiceCounter++}`,
         status: appointmentStatus,
-        payment: {
-          status: paymentStatus,
-          amount: depositAmount,
-        },
+        payment: { status: paymentStatus, amount: depositAmount },
       };
       for (let s = 0; s < slotsNeededPerPerson; s++) {
         startSlotForPerson = getNextTimeSlot(startSlotForPerson, slotStep);
@@ -209,6 +224,7 @@ const createAppointment = async (req, res) => {
 
     const newAppointments = await Appointment.insertMany(appointmentsToCreate);
 
+    // تجهيز الـ Padding Blocks
     let systemCustomer = await Customer.findOne({
       tenantId: tenant._id,
       phone: "0000000000",
@@ -244,9 +260,7 @@ const createAppointment = async (req, res) => {
 
     const combinedNames = childrenNames.join(" و ");
 
-    // ==========================================
-    // 💳 2. توجيه العميل (استجابة الـ API)
-    // ==========================================
+    // الاستجابة
     if (isPaymentRequired) {
       return res.status(201).json({
         message: "تم حجز الموعد مؤقتاً، يرجى دفع العربون لتأكيده.",
@@ -266,15 +280,14 @@ const createAppointment = async (req, res) => {
         timeSlot,
         barber.name,
         updatedTenant,
-      ).catch((e) => console.error(e));
-
+      ).catch(console.error);
       sendAdminNotification(
         combinedNames,
         date,
         timeSlot,
         chair,
         tenantId,
-      ).catch((e) => console.error(e));
+      ).catch(console.error);
 
       return res.status(201).json({
         message: "تم تأكيد الحجز بنجاح! 🎉",
@@ -282,12 +295,13 @@ const createAppointment = async (req, res) => {
       });
     }
   } catch (error) {
-    console.error("Error creating appointments:", error);
     if (error.code === 11000) {
-      return res.status(409).json({
-        message:
-          "حدث تعارض، شخص آخر حجز هذا الوقت للتو! الرجاء تحديث الصفحة والمحاولة.",
-      });
+      return res
+        .status(409)
+        .json({
+          message:
+            "حدث تعارض، شخص آخر حجز هذا الوقت للتو! الرجاء تحديث الصفحة والمحاولة.",
+        });
     }
     res
       .status(500)
@@ -295,6 +309,7 @@ const createAppointment = async (req, res) => {
   }
 };
 
+// 2. جلب الأوقات المتاحة
 const getAvailableSlots = async (req, res) => {
   try {
     const { tenantId, date, chair, requestedDuration } = req.query;
@@ -378,11 +393,11 @@ const getAvailableSlots = async (req, res) => {
 
     res.status(200).json({ availableSlots });
   } catch (error) {
-    console.error("Get Available Slots Error:", error);
     res.status(500).json({ message: "حدث خطأ داخلي في الخادم" });
   }
 };
 
+// 3. إلغاء موعد (سواء من العميل أو الإدارة)
 const cancelAppointment = async (req, res) => {
   try {
     const { appointmentId } = req.params;
@@ -397,6 +412,7 @@ const cancelAppointment = async (req, res) => {
     if (!updatedAppointment)
       return res.status(404).json({ message: "لم يتم العثور على الموعد" });
 
+    // مسح الـ Padding Blocks المرتبطة
     await Appointment.deleteMany({
       tenantId: updatedAppointment.tenantId,
       barberId: updatedAppointment.barberId,
@@ -413,7 +429,7 @@ const cancelAppointment = async (req, res) => {
       updatedAppointment.barberName,
       tenant,
       cancelReason,
-    ).catch((e) => {});
+    ).catch(() => {});
 
     res.status(200).json({
       message: "تم إلغاء الموعد بنجاح",
@@ -424,6 +440,57 @@ const cancelAppointment = async (req, res) => {
   }
 };
 
+// 4. جلب الطابور المباشر للعملاء
+const getLiveQueue = async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const tenant = await Tenant.findOne({ slug })
+      .select("_id salonName branding")
+      .lean();
+
+    if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
+
+    const ksaDate = new Date(
+      new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh" }),
+    );
+    const today = `${ksaDate.getFullYear()}-${String(ksaDate.getMonth() + 1).padStart(2, "0")}-${String(ksaDate.getDate()).padStart(2, "0")}`;
+
+    const [appointments, barbers] = await Promise.all([
+      Appointment.find({ tenantId: tenant._id, date: today, status: "Booked" })
+        .select(
+          "childName timeSlot barberName status customerId totalPrice selectedServices",
+        )
+        .populate("customerId", "phone")
+        .sort({ timeSlot: 1 })
+        .lean(),
+      Barber.find({ tenantId: tenant._id, isActive: true })
+        .select("name")
+        .lean(),
+    ]);
+
+    const formattedAppointments = appointments.map((app) => ({
+      _id: app._id,
+      childName: app.childName,
+      timeSlot: app.timeSlot,
+      chair: app.barberName,
+      status: app.status,
+      customerPhone: app.customerId?.phone || "غير معروف",
+      totalPrice: app.totalPrice || 0,
+      selectedServices: app.selectedServices || [],
+    }));
+
+    res.status(200).json({
+      salonName: tenant.salonName,
+      branding: tenant.branding,
+      barbers: barbers.map((b) => b.name),
+      appointments: formattedAppointments,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "حدث خطأ داخلي" });
+  }
+};
+
+// 5. حظر الأوقات (تم إبقاؤه هنا لأنه يستخدم مسار /block العام)
 const blockTimeSlot = async (req, res) => {
   try {
     const tenantId = req.tenantId;
@@ -445,12 +512,13 @@ const blockTimeSlot = async (req, res) => {
       tenantId,
       phone: "0000000000",
     }).select("_id");
-    if (!systemCustomer)
+    if (!systemCustomer) {
       systemCustomer = await Customer.create({
         tenantId,
         phone: "0000000000",
         parentName: "SYSTEM",
       });
+    }
 
     const barber = await Barber.findOne({ tenantId }).select("_id name");
 
@@ -471,61 +539,6 @@ const blockTimeSlot = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: "حدث خطأ أثناء حظر الوقت" });
-  }
-};
-const getLiveQueue = async (req, res) => {
-  try {
-    const { slug } = req.params;
-    const tenant = await Tenant.findOne({ slug })
-      .select("_id salonName branding")
-      .lean();
-
-    if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
-
-    const ksaDate = new Date(
-      new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh" }),
-    );
-    const today = `${ksaDate.getFullYear()}-${String(ksaDate.getMonth() + 1).padStart(2, "0")}-${String(ksaDate.getDate()).padStart(2, "0")}`;
-
-    // 💡 تحسين الأداء: جلب المواعيد والحلاقين في نفس الوقت بشكل متوازٍ
-    const [appointments, barbers] = await Promise.all([
-      Appointment.find({
-        tenantId: tenant._id,
-        date: today,
-        status: "Booked",
-      })
-        .select(
-          "childName timeSlot barberName status customerId totalPrice selectedServices",
-        )
-        .populate("customerId", "phone")
-        .sort({ timeSlot: 1 })
-        .lean(),
-      Barber.find({ tenantId: tenant._id, isActive: true })
-        .select("name")
-        .lean(),
-    ]);
-
-    // 💡 مطابقة البيانات (Mapping) لتتوافق مع ما تتوقعه شاشة React بالضبط
-    const formattedAppointments = appointments.map((app) => ({
-      _id: app._id,
-      childName: app.childName,
-      timeSlot: app.timeSlot,
-      chair: app.barberName, // الواجهة تبحث عن chair
-      status: app.status,
-      customerPhone: app.customerId?.phone || "غير معروف", // استخراج الرقم من كائن العميل
-      totalPrice: app.totalPrice || 0,
-      selectedServices: app.selectedServices || [],
-    }));
-
-    res.status(200).json({
-      salonName: tenant.salonName,
-      branding: tenant.branding,
-      barbers: barbers.map((b) => b.name),
-      appointments: formattedAppointments,
-    });
-  } catch (error) {
-    console.error("Live Queue Error:", error);
-    res.status(500).json({ message: "حدث خطأ داخلي" });
   }
 };
 
