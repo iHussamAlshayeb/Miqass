@@ -4,11 +4,18 @@ import { motion, AnimatePresence } from 'framer-motion';
 import API from '../services/api';
 import { formatTime12Hour, getTimePeriod } from '../utils/helpers';
 
+// 💡 دالة مساعدة للحصول على التاريخ بصيغة YYYY-MM-DD
+const getLocalYYYYMMDD = (dateObj = new Date()) => {
+    const year = dateObj.getFullYear();
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const day = String(dateObj.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
 const BarberPortal = () => {
     const { slug } = useParams();
 
     const [tenantData, setTenantData] = useState(null);
-    // 💡 حالة جديدة لتخزين قائمة الحلاقين (Barbers) من الباك إند
     const [barbersList, setBarbersList] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -17,18 +24,23 @@ const BarberPortal = () => {
     const [pin, setPin] = useState(localStorage.getItem(`barber_pin_${slug}`) || '');
     const [loginError, setLoginError] = useState('');
 
+    // 💡 حالة جديدة لتخزين التاريخ المحدد (الافتراضي هو اليوم)
+    const [selectedDate, setSelectedDate] = useState(getLocalYYYYMMDD());
+
     const [appointments, setAppointments] = useState([]);
     const [isUpdating, setIsUpdating] = useState(false);
     const [isAutoLoggingIn, setIsAutoLoggingIn] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
 
-    const fetchQueue = useCallback(async (bName, bPin, silent = false) => {
+    // 💡 تم إضافة dateStr كمعامل للدالة ليتم إرساله للباك إند
+    const fetchQueue = useCallback(async (bName, bPin, dateStr, silent = false) => {
         if (!silent) setIsRefreshing(true);
         try {
             const res = await API.post('/appointments/barber-portal/queue', {
                 slug,
                 barberName: bName,
-                pin: bPin
+                pin: bPin,
+                date: dateStr // إرسال التاريخ هنا
             });
             setAppointments(res.data.appointments);
             return true;
@@ -39,16 +51,11 @@ const BarberPortal = () => {
         }
     }, [slug]);
 
-    // 1. جلب بيانات الصالون مع قائمة الحلاقين
     useEffect(() => {
         const fetchTenantAndBarbers = async () => {
             try {
-                // استدعاء الباك إند لجلب بيانات الـ Tenant والحلاقين المربوطين به
                 const res = await API.get(`/tenants/${slug}`);
                 setTenantData(res.data.tenant);
-
-                // 💡 افتراض أن الباك إند يرسل الحلاقين كمصفوفة من الـ Objects
-                // تأكد أن الكنترولر (getTenantBySlug) يجلب الـ barbers
                 const barbers = res.data.barbers || [];
                 setBarbersList(barbers);
 
@@ -64,39 +71,36 @@ const BarberPortal = () => {
         if (slug) fetchTenantAndBarbers();
     }, [slug]);
 
-    // 2. الدخول الآلي عند تحديث الصفحة
     useEffect(() => {
         const autoLogin = async () => {
             const savedName = localStorage.getItem(`barber_name_${slug}`);
             const savedPin = localStorage.getItem(`barber_pin_${slug}`);
 
             if (savedName && savedPin) {
-                const success = await fetchQueue(savedName, savedPin, true);
+                // 💡 إرسال selectedDate عند الدخول التلقائي
+                const success = await fetchQueue(savedName, savedPin, selectedDate, true);
                 if (success) setIsLoggedIn(true);
                 else handleLogout();
             }
             setIsAutoLoggingIn(false);
         };
         autoLogin();
-    }, [slug, fetchQueue]);
+    }, [slug, fetchQueue]); // تم إزالة selectedDate لمنع التكرار غير المرغوب
 
-    // 3. التحديث التلقائي (Polling) كل 30 ثانية 
+    // التحديث التلقائي (Polling)
     useEffect(() => {
         let interval;
         if (isLoggedIn && barberName && pin) {
             interval = setInterval(() => {
-                fetchQueue(barberName, pin, true);
+                fetchQueue(barberName, pin, selectedDate, true);
             }, 30000);
         }
         return () => clearInterval(interval);
-    }, [isLoggedIn, barberName, pin, fetchQueue]);
+    }, [isLoggedIn, barberName, pin, selectedDate, fetchQueue]); // 💡 إضافة selectedDate
 
-    // تسجيل الدخول اليدوي
     const handleLogin = async (e) => {
         e.preventDefault();
 
-        // 💡 التحقق من الـ PIN (إذا كان الصالون يتطلب PIN)
-        // إذا كان الـ PIN فارغاً والكرسي لا يتطلب PIN، يمكننا السماح له بالدخول
         const selectedBarber = barbersList.find(b => b.name === barberName);
         if (selectedBarber?.hasPin && pin.length < 3) {
             return setLoginError('الرمز السري قصير جداً');
@@ -105,7 +109,8 @@ const BarberPortal = () => {
         setIsLoading(true);
         setLoginError('');
 
-        const success = await fetchQueue(barberName, pin);
+        // 💡 إرسال التاريخ عند الدخول اليدوي
+        const success = await fetchQueue(barberName, pin, selectedDate);
 
         if (success) {
             localStorage.setItem(`barber_name_${slug}`, barberName);
@@ -117,7 +122,6 @@ const BarberPortal = () => {
         setIsLoading(false);
     };
 
-    // تسجيل الخروج
     const handleLogout = () => {
         if (!window.confirm('هل تريد تسجيل الخروج من البوابة؟')) return;
         localStorage.removeItem(`barber_name_${slug}`);
@@ -127,7 +131,6 @@ const BarberPortal = () => {
         setAppointments([]);
     };
 
-    // تحديث حالة الموعد
     const handleUpdateStatus = async (appointmentId, newStatus) => {
         if (!window.confirm(newStatus === 'Completed' ? 'هل أنت متأكد من إنهاء هذه الحلاقة؟ ✂️' : 'هل العميل لم يحضر؟ ❌')) return;
 
@@ -147,6 +150,22 @@ const BarberPortal = () => {
         }
     };
 
+    // 💡 دالة لتغيير التاريخ بسرعة (أمس، اليوم، غداً) وجلب المواعيد
+    const changeDateOffset = (days) => {
+        const d = new Date();
+        d.setDate(d.getDate() + days);
+        const newDate = getLocalYYYYMMDD(d);
+        setSelectedDate(newDate);
+        fetchQueue(barberName, pin, newDate);
+    };
+
+    // 💡 دالة لتغيير التاريخ من التقويم وجلب المواعيد
+    const handleDateChange = (e) => {
+        const newDate = e.target.value;
+        setSelectedDate(newDate);
+        fetchQueue(barberName, pin, newDate);
+    };
+
     if ((isLoading && !tenantData) || isAutoLoggingIn) {
         return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white font-arabic text-xl font-bold animate-pulse">جاري التجهيز... ⏳</div>;
     }
@@ -156,6 +175,7 @@ const BarberPortal = () => {
     }
 
     const primaryColor = tenantData.branding?.primaryColor || '#2563eb';
+    const todayStr = getLocalYYYYMMDD();
 
     return (
         <div className="min-h-screen bg-slate-50 font-arabic text-right pb-10 selection:bg-slate-200" dir="rtl">
@@ -187,7 +207,6 @@ const BarberPortal = () => {
                                             <option disabled>لا يوجد حلاقين مسجلين</option>
                                         ) : (
                                             barbersList.map(b => (
-                                                // 💡 نستخدم b.name كقيمة
                                                 <option key={b._id || b.name} value={b.name}>{b.name}</option>
                                             ))
                                         )}
@@ -195,7 +214,6 @@ const BarberPortal = () => {
                                 </div>
                                 <div>
                                     <label className="block text-sm font-bold text-slate-500 mb-2">الرمز السري (PIN):</label>
-                                    {/* 💡 تعطيل الحقل إذا كان الكرسي لا يتطلب رمز سري */}
                                     <input
                                         type="number"
                                         required={barbersList.find(b => b.name === barberName)?.hasPin ? true : false}
@@ -219,21 +237,51 @@ const BarberPortal = () => {
                         </motion.form>
                     ) : (
                         <motion.div key="queue" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-                            <div className="flex justify-between items-center mb-6 px-1">
-                                <div className="flex items-center gap-3">
-                                    <h2 className="text-lg font-black text-slate-800">مواعيد اليوم 📅</h2>
-                                    <button onClick={() => fetchQueue(barberName, pin)} disabled={isRefreshing} className={`text-xs bg-slate-100 text-slate-500 p-2 rounded-full hover:bg-slate-200 transition-all ${isRefreshing ? 'animate-spin' : ''}`} title="تحديث القائمة">
+                            <div className="flex justify-between items-center mb-4 px-1">
+                                <h2 className="text-lg font-black text-slate-800">سجل المواعيد 📅</h2>
+                                <div className="flex items-center gap-2">
+                                    <button onClick={() => fetchQueue(barberName, pin, selectedDate)} disabled={isRefreshing} className={`text-xs bg-slate-100 text-slate-500 p-2 rounded-full hover:bg-slate-200 transition-all ${isRefreshing ? 'animate-spin' : ''}`} title="تحديث القائمة">
                                         🔄
                                     </button>
+                                    <button onClick={handleLogout} className="text-xs font-bold text-red-500 hover:bg-red-500 hover:text-white bg-red-50 px-4 py-2 rounded-xl transition-all shadow-sm">خروج 🚪</button>
                                 </div>
-                                <button onClick={handleLogout} className="text-xs font-bold text-red-500 hover:bg-red-500 hover:text-white bg-red-50 px-4 py-2 rounded-xl transition-all shadow-sm">خروج 🚪</button>
+                            </div>
+
+                            {/* 💡 شريط اختيار التاريخ الجديد */}
+                            <div className="mb-6 flex gap-2 overflow-x-auto pb-2 hide-scrollbar">
+                                <button
+                                    onClick={() => changeDateOffset(-1)}
+                                    className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all ${selectedDate === getLocalYYYYMMDD(new Date(new Date().setDate(new Date().getDate() - 1))) ? 'bg-slate-800 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
+                                >
+                                    أمس
+                                </button>
+                                <button
+                                    onClick={() => changeDateOffset(0)}
+                                    className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all ${selectedDate === todayStr ? 'bg-slate-800 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
+                                >
+                                    اليوم
+                                </button>
+                                <button
+                                    onClick={() => changeDateOffset(1)}
+                                    className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all ${selectedDate === getLocalYYYYMMDD(new Date(new Date().setDate(new Date().getDate() + 1))) ? 'bg-slate-800 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
+                                >
+                                    غداً
+                                </button>
+                                <div className="relative flex-1 min-w-[120px]">
+                                    <input
+                                        type="date"
+                                        value={selectedDate}
+                                        onChange={handleDateChange}
+                                        className="w-full bg-white border border-slate-200 text-slate-700 text-sm font-bold rounded-xl px-3 py-2 outline-none focus:border-slate-400 h-full"
+                                    />
+                                </div>
                             </div>
 
                             {appointments.length === 0 ? (
                                 <div className="text-center py-16 bg-white rounded-3xl border border-slate-100 shadow-sm flex flex-col items-center">
                                     <span className="text-6xl block mb-4 grayscale opacity-60">🏖️</span>
-                                    <p className="text-slate-500 font-bold text-lg">لا توجد مواعيد لك اليوم حتى الآن!</p>
-                                    <p className="text-xs font-bold text-slate-400 mt-2">سيتم تحديث القائمة تلقائياً...</p>
+                                    <p className="text-slate-500 font-bold text-lg">لا توجد مواعيد في هذا اليوم!</p>
+                                    <p className="text-xs font-bold text-slate-400 mt-2">({selectedDate})</p>
                                 </div>
                             ) : (
                                 <div className="space-y-4">
@@ -254,7 +302,6 @@ const BarberPortal = () => {
                                                     <span className={`text-[9px] md:text-[10px] px-3 py-1 rounded-full font-black shadow-sm ${app.status === 'Booked' ? 'bg-blue-50 text-blue-600 border border-blue-100' : app.status === 'Completed' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-red-50 text-red-600 border border-red-100'}`}>
                                                         {app.status === 'Booked' ? 'قادم ⏳' : app.status === 'Completed' ? 'مكتمل ✅' : 'لم يحضر ❌'}
                                                     </span>
-                                                    {/* 💡 عرض السعر للحلاق ليعرف كم يحاسب العميل */}
                                                     {app.status === 'Booked' && app.totalPrice > 0 && (
                                                         <span className="text-xs font-black text-slate-700 bg-slate-100 px-2 py-1 rounded-lg mt-1">
                                                             {app.totalPrice} ر.س
@@ -263,7 +310,6 @@ const BarberPortal = () => {
                                                 </div>
                                             </div>
 
-                                            {/* 💡 عرض الخدمات المطلوبة بوضوح */}
                                             {app.selectedServices && app.selectedServices.length > 0 && (
                                                 <div className="flex flex-wrap gap-1.5 mb-3 bg-slate-50 p-2 rounded-xl border border-slate-100">
                                                     {app.selectedServices.map((srv, idx) => (

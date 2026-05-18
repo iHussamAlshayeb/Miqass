@@ -479,7 +479,9 @@ const getTenantCustomers = async (req, res) => {
 
 const getBarberQueue = async (req, res) => {
   try {
-    const { slug, barberName, pin } = req.body;
+    // 💡 تم إضافة date هنا لاستقباله من الواجهة الأمامية
+    const { slug, barberName, pin, date } = req.body;
+
     const tenant = await Tenant.findOne({ slug })
       .select("_id salonName")
       .lean();
@@ -495,30 +497,35 @@ const getBarberQueue = async (req, res) => {
     if (!barber)
       return res.status(401).json({ message: "رمز الدخول (PIN) غير صحيح ❌" });
 
-    const ksaDate = new Date(
-      new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh" }),
-    );
-    const today = `${ksaDate.getFullYear()}-${String(ksaDate.getMonth() + 1).padStart(2, "0")}-${String(ksaDate.getDate()).padStart(2, "0")}`;
+    // 💡 تحديد التاريخ: إذا أرسلت الواجهة تاريخ نستخدمه، وإلا نستخدم تاريخ اليوم
+    let targetDate = date;
 
-    // 1. إصلاح مشكلة الـ ID: البحث بالاسم والـ ID معاً لضمان عدم ضياع أي موعد، وتجاهل المواعيد الملغية
+    if (!targetDate) {
+      const ksaDate = new Date(
+        new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh" }),
+      );
+      targetDate = `${ksaDate.getFullYear()}-${String(ksaDate.getMonth() + 1).padStart(2, "0")}-${String(ksaDate.getDate()).padStart(2, "0")}`;
+    }
+
+    // جلب المواعيد بناءً على التاريخ المحدد (targetDate)
     const appointments = await Appointment.find({
       tenantId: tenant._id,
       $or: [{ barberId: barber._id }, { barberName: barber.name }],
-      date: today,
-      status: { $ne: "Cancelled" }, // اختياري: إذا أردت إخفاء المواعيد الملغية من شاشة الحلاق
+      date: targetDate,
+      status: { $ne: "Cancelled" }, // إخفاء المواعيد الملغية لتنظيف الشاشة
     })
       .populate("customerId", "phone")
-      .lean(); // تم إزالة .sort() من هنا لأننا سنفرزها برمجياً
+      .lean();
 
     // تجهيز المواعيد للواجهة
     const mappedAppointments = appointments.map(mapAppointmentForFrontend);
 
-    // 2. إصلاح مشكلة الترتيب: استخدام دالة الفرز الخاصة بك لترتيب الوقت بشكل منطقي (صباحاً/مساءً)
+    // فرز المواعيد زمنياً
     const sortedAppointments = mappedAppointments.sort((a, b) => {
       const getVal = (slot) => {
         if (!slot) return 0;
         const h = parseInt(slot.split(":")[0]);
-        return h < 12 ? h + 24 : h; // التعديل حسب صيغة وقتك (12H / 24H)
+        return h < 12 ? h + 24 : h;
       };
       return getVal(a.timeSlot) - getVal(b.timeSlot);
     });
@@ -527,6 +534,7 @@ const getBarberQueue = async (req, res) => {
       appointments: sortedAppointments,
       tenantId: tenant._id,
       salonName: tenant.salonName,
+      requestedDate: targetDate, // 💡 إرسال التاريخ المطلوب للواجهة للتأكيد
     });
   } catch (error) {
     console.error("Queue Error:", error);
