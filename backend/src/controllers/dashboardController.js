@@ -521,11 +521,21 @@ const getBarberQueue = async (req, res) => {
     const mappedAppointments = appointments.map(mapAppointmentForFrontend);
 
     // فرز المواعيد زمنياً
+    // فرز المواعيد زمنياً (بالساعة والدقيقة)
     const sortedAppointments = mappedAppointments.sort((a, b) => {
       const getVal = (slot) => {
         if (!slot) return 0;
-        const h = parseInt(slot.split(":")[0]);
-        return h < 12 ? h + 24 : h;
+
+        // فصل الساعة عن الدقائق
+        const [hourStr, minStr] = slot.split(":");
+        const h = parseInt(hourStr, 10);
+        const m = parseInt(minStr, 10) || 0;
+
+        // نقل أوقات ما بعد منتصف الليل (الصباح الباكر) لآخر القائمة
+        const adjustedHour = h < 12 ? h + 24 : h;
+
+        // تحويل الوقت بالكامل إلى دقائق لضمان دقة الفرز
+        return adjustedHour * 60 + m;
       };
       return getVal(a.timeSlot) - getVal(b.timeSlot);
     });
