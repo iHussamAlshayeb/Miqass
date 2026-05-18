@@ -490,7 +490,7 @@ const getBarberQueue = async (req, res) => {
       name: barberName,
       pin,
     })
-      .select("_id")
+      .select("_id name")
       .lean();
     if (!barber)
       return res.status(401).json({ message: "رمز الدخول (PIN) غير صحيح ❌" });
@@ -500,21 +500,36 @@ const getBarberQueue = async (req, res) => {
     );
     const today = `${ksaDate.getFullYear()}-${String(ksaDate.getMonth() + 1).padStart(2, "0")}-${String(ksaDate.getDate()).padStart(2, "0")}`;
 
+    // 1. إصلاح مشكلة الـ ID: البحث بالاسم والـ ID معاً لضمان عدم ضياع أي موعد، وتجاهل المواعيد الملغية
     const appointments = await Appointment.find({
       tenantId: tenant._id,
-      barberId: barber._id,
+      $or: [{ barberId: barber._id }, { barberName: barber.name }],
       date: today,
+      status: { $ne: "Cancelled" }, // اختياري: إذا أردت إخفاء المواعيد الملغية من شاشة الحلاق
     })
       .populate("customerId", "phone")
-      .sort({ timeSlot: 1 })
-      .lean();
+      .lean(); // تم إزالة .sort() من هنا لأننا سنفرزها برمجياً
+
+    // تجهيز المواعيد للواجهة
+    const mappedAppointments = appointments.map(mapAppointmentForFrontend);
+
+    // 2. إصلاح مشكلة الترتيب: استخدام دالة الفرز الخاصة بك لترتيب الوقت بشكل منطقي (صباحاً/مساءً)
+    const sortedAppointments = mappedAppointments.sort((a, b) => {
+      const getVal = (slot) => {
+        if (!slot) return 0;
+        const h = parseInt(slot.split(":")[0]);
+        return h < 12 ? h + 24 : h; // التعديل حسب صيغة وقتك (12H / 24H)
+      };
+      return getVal(a.timeSlot) - getVal(b.timeSlot);
+    });
 
     res.status(200).json({
-      appointments: appointments.map(mapAppointmentForFrontend),
+      appointments: sortedAppointments,
       tenantId: tenant._id,
       salonName: tenant.salonName,
     });
   } catch (error) {
+    console.error("Queue Error:", error);
     res.status(500).json({ message: "حدث خطأ داخلي" });
   }
 };
