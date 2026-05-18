@@ -12,7 +12,7 @@ const TrustedClients = () => {
             try {
                 // 🚀 استدعاء المسار الجديد الذي برمجناه
                 const response = await API.get('/public/top-clients');
-                setClients(response.data);
+                setClients(Array.isArray(response.data) ? response.data : []);
             } catch (error) {
                 console.error("Failed to fetch top clients", error);
             } finally {
@@ -24,7 +24,9 @@ const TrustedClients = () => {
     }, []);
 
     // إذا لم يكتمل التحميل أو لا يوجد عملاء بعد، لا نعرض القسم أو نعرض واجهة انتظار (Skeleton)
-    if (isLoading || clients.length === 0) return null;
+    if (isLoading || !Array.isArray(clients) || clients.length === 0) {
+        return null;
+    }
 
     return (
         <section className="py-24 bg-white relative overflow-hidden" dir="rtl">
