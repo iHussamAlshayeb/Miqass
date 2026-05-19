@@ -7,7 +7,7 @@ const redisClient = require("../utils/redisClient");
 const getTenantBySlug = async (req, res) => {
   try {
     const { slug } = req.params;
-    const cacheKey = `tenant_public_profile:${slug}`;
+    const cacheKey = `tenant_public_profile_v2:${slug}`;
 
     try {
       const cachedData = await redisClient.get(cacheKey);
@@ -33,7 +33,7 @@ const getTenantBySlug = async (req, res) => {
         .json({ message: "الصالون غير موجود أو أن اشتراكه منتهي." });
     }
 
-    const [barbers, services, reviews] = await Promise.all([
+    const [barbers, services, rawReviews] = await Promise.all([
       Barber.find({ tenantId: tenant._id, isActive: { $ne: false } })
         .select("name pin isActive")
         .lean(),
@@ -42,13 +42,16 @@ const getTenantBySlug = async (req, res) => {
         .select("name description price duration category")
         .lean(),
 
+      // 💡 التعديل هنا: جلب التقييمات واستخراج الاسم من الحجز المرتبط
       Review.find({
         tenantId: tenant._id,
         rating: { $gte: 4 },
         comment: { $exists: true, $ne: "" },
       })
-        .select("customerName rating comment createdAt")
+        .populate("appointmentId", "childName") // جلب اسم العميل من الموعد
+        .select("rating comment createdAt appointmentId")
         .sort({ createdAt: -1 })
+        .limit(10) // 💡 من الأفضل جلب آخر 10 تقييمات فقط لتسريع الصفحة
         .lean(),
     ]);
 
@@ -58,11 +61,20 @@ const getTenantBySlug = async (req, res) => {
       hasPin: !!b.pin,
     }));
 
+    // 💡 إعادة صياغة التقييمات لتتوافق مع ما يتوقعه الفرونت إند
+    const mappedReviews = rawReviews.map((r) => ({
+      _id: r._id,
+      rating: r.rating,
+      comment: r.comment,
+      createdAt: r.createdAt,
+      customerName: r.appointmentId?.childName || "عميل سعيد",
+    }));
+
     const responseData = {
       tenant,
       barbers: safeBarbers,
       services,
-      reviews,
+      reviews: mappedReviews, // إرسال التقييمات المجهزة
     };
 
     try {
