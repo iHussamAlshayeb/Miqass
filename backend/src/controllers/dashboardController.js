@@ -6,16 +6,11 @@ const Barber = require("../models/Barber");
 const Service = require("../models/Service");
 
 const { encrypt } = require("../utils/encryption");
+const { sendReminderMessage } = require("../utils/whatsapp");
 
-const redisClient = require("../utils/redisClient");
-
-const {
-  sendCancellationMessage,
-  sendReminderMessage,
-  sendLoyaltyRewardMessage,
-  sendReviewRequestMessage,
-} = require("../utils/whatsapp");
-
+// ==========================================
+// 🛠️ دالة مساعدة لتجهيز المواعيد للواجهة
+// ==========================================
 const mapAppointmentForFrontend = (app) => {
   return {
     ...(app._doc ? app._doc : app),
@@ -24,113 +19,11 @@ const mapAppointmentForFrontend = (app) => {
   };
 };
 
-const getBarberAppointments = async (req, res) => {
-  try {
-    const { date } = req.query;
-    const appointments = await Appointment.find({
-      tenantId: req.tenantId,
-      date,
-    })
-      .populate("customerId", "phone parentName children")
-      .lean();
+// ==========================================
+// 🚀 الدوال الخاصة بلوحة تحكم الصالون (Dashboard)
+// ==========================================
 
-    const mappedAppointments = appointments.map(mapAppointmentForFrontend);
-    const sortedAppointments = mappedAppointments.sort((a, b) => {
-      const getVal = (slot) => {
-        const h = parseInt(slot.split(":")[0]);
-        return h < 12 ? h + 24 : h;
-      };
-      return getVal(a.timeSlot) - getVal(b.timeSlot);
-    });
-
-    res.status(200).json({ appointments: sortedAppointments });
-  } catch (error) {
-    res.status(500).json({ message: "حدث خطأ أثناء جلب المواعيد" });
-  }
-};
-
-const updateAppointmentStatus = async (req, res) => {
-  try {
-    const { appointmentId } = req.params;
-    const { status, cancelReason } = req.body;
-
-    const validStatuses = ["Booked", "Completed", "Cancelled"];
-    if (!validStatuses.includes(status))
-      return res.status(400).json({ message: "حالة الموعد غير صالحة" });
-
-    const updateData = { status };
-    if (status === "Cancelled" && cancelReason)
-      updateData.cancelReason = cancelReason;
-
-    const updatedAppointment = await Appointment.findByIdAndUpdate(
-      appointmentId,
-      updateData,
-      { returnDocument: "after" },
-    ).populate("customerId");
-
-    if (!updatedAppointment)
-      return res.status(404).json({ message: "لم يتم العثور على الموعد" });
-
-    if (status === "Cancelled" || status === "Completed") {
-      const tenant = await Tenant.findById(updatedAppointment.tenantId);
-
-      if (status === "Cancelled") {
-        sendCancellationMessage(
-          updatedAppointment.customerId.phone,
-          updatedAppointment.childName,
-          updatedAppointment.barberName,
-          tenant,
-          cancelReason,
-        ).catch((e) => {});
-      }
-
-      if (status === "Completed") {
-        await Customer.updateOne(
-          { _id: updatedAppointment.customerId._id },
-          { $inc: { totalVisits: 1 }, $set: { lastVisitDate: new Date() } },
-        );
-
-        if (tenant.settings?.isLoyaltyEnabled) {
-          const customer = await Customer.findById(
-            updatedAppointment.customerId._id,
-          ).select("totalVisits phone");
-          const requiredVisits = tenant.settings.loyaltyVisitsRequired || 5;
-
-          if (
-            customer.totalVisits % requiredVisits === 0 &&
-            customer.totalVisits > 0
-          ) {
-            sendLoyaltyRewardMessage(
-              customer.phone,
-              updatedAppointment.childName,
-              tenant,
-            ).catch((e) => {});
-          }
-
-          if (
-            tenant.settings?.enableGoogleReviews &&
-            tenant.settings?.googleReviewLink
-          ) {
-            sendReviewRequestMessage(
-              customer.phone,
-              updatedAppointment.childName,
-              tenant,
-              updatedAppointment._id,
-            ).catch((e) => {});
-          }
-        }
-      }
-    }
-
-    res.status(200).json({
-      message: "تم التحديث",
-      appointment: mapAppointmentForFrontend(updatedAppointment),
-    });
-  } catch (error) {
-    res.status(500).json({ message: "حدث خطأ أثناء التحديث" });
-  }
-};
-
+// 1. جلب إعدادات الصالون بالكامل
 const getBarberSettings = async (req, res) => {
   try {
     const tenant = await Tenant.findById(req.tenantId).lean();
@@ -192,6 +85,7 @@ const getBarberSettings = async (req, res) => {
   }
 };
 
+// 2. تحديث إعدادات الصالون والحلاقين والخدمات
 const updateBarberSettings = async (req, res) => {
   try {
     let {
@@ -223,7 +117,6 @@ const updateBarberSettings = async (req, res) => {
       paymentSettings,
     } = req.body;
 
-    // 💡 تمت إضافة paymentSettings للـ select
     const tenant = await Tenant.findById(req.tenantId).select(
       "slug subscription bio socialLinks branding settings taxSettings paymentSettings",
     );
@@ -240,6 +133,7 @@ const updateBarberSettings = async (req, res) => {
     tenant.ownerName = ownerName || tenant.ownerName;
     tenant.ownerPhone = ownerPhone || tenant.ownerPhone;
     tenant.bio = bio !== undefined ? bio : tenant.bio;
+
     if (socialLinks) tenant.socialLinks = socialLinks;
     if (!tenant.branding) tenant.branding = {};
     tenant.branding.logoUrl =
@@ -274,20 +168,16 @@ const updateBarberSettings = async (req, res) => {
 
     if (paymentSettings) {
       if (!tenant.paymentSettings) tenant.paymentSettings = {};
-
-      if (paymentSettings.isOnlinePaymentEnabled !== undefined) {
+      if (paymentSettings.isOnlinePaymentEnabled !== undefined)
         tenant.paymentSettings.isOnlinePaymentEnabled =
           paymentSettings.isOnlinePaymentEnabled;
-      }
-      if (paymentSettings.depositAmount !== undefined) {
+      if (paymentSettings.depositAmount !== undefined)
         tenant.paymentSettings.depositAmount = Number(
           paymentSettings.depositAmount,
         );
-      }
-      if (paymentSettings.moyasarPublishableKey !== undefined) {
+      if (paymentSettings.moyasarPublishableKey !== undefined)
         tenant.paymentSettings.moyasarPublishableKey =
           paymentSettings.moyasarPublishableKey.trim();
-      }
 
       if (
         paymentSettings.moyasarSecretKey &&
@@ -340,10 +230,6 @@ const updateBarberSettings = async (req, res) => {
 
     await Promise.all(tasks);
 
-    try {
-      await redisClient.del(`tenant_public_profile:${tenant.slug}`);
-    } catch (e) {}
-
     res.status(200).json({ message: "تم التحديث بنجاح" });
   } catch (error) {
     console.error("Update Settings Error:", error);
@@ -351,6 +237,7 @@ const updateBarberSettings = async (req, res) => {
   }
 };
 
+// 3. جلب أحدث 200 موعد قادم للإدارة
 const getAllUpcomingAppointments = async (req, res) => {
   try {
     const appointments = await Appointment.find({ tenantId: req.tenantId })
@@ -367,6 +254,7 @@ const getAllUpcomingAppointments = async (req, res) => {
   }
 };
 
+// 4. إعادة إرسال رسالة تذكير يدوية لموعد محدد
 const resendSingleWhatsApp = async (req, res) => {
   try {
     const { id } = req.params;
@@ -383,7 +271,7 @@ const resendSingleWhatsApp = async (req, res) => {
       app.timeSlot,
       app.barberName,
       app.tenantId,
-    ).catch((e) => {});
+    ).catch(() => {});
 
     res
       .status(200)
@@ -393,6 +281,7 @@ const resendSingleWhatsApp = async (req, res) => {
   }
 };
 
+// 5. تحديث إعدادات الـ API الخاصة بواتساب (قديماً قبل الربط المباشر بـ WASender)
 const updateWhatsappSettings = async (req, res) => {
   try {
     const { apiKey, isEnabled } = req.body;
@@ -419,6 +308,7 @@ const updateWhatsappSettings = async (req, res) => {
   }
 };
 
+// 6. جلب بيانات ولاء عميل محدد
 const getCustomerLoyalty = async (req, res) => {
   try {
     const { tenantId, phone } = req.params;
@@ -435,6 +325,7 @@ const getCustomerLoyalty = async (req, res) => {
   }
 };
 
+// 7. جلب قائمة العملاء (مفلترة ومجهزة بنظام الولاء)
 const getTenantCustomers = async (req, res) => {
   try {
     const tenant = await Tenant.findById(req.tenantId)
@@ -443,8 +334,6 @@ const getTenantCustomers = async (req, res) => {
     if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
 
     const requiredVisits = tenant.settings?.loyaltyVisitsRequired || 5;
-
-    // 🚀 Pagination مبدئي وحماية RAM
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 200;
     const skip = (page - 1) * limit;
@@ -477,148 +366,7 @@ const getTenantCustomers = async (req, res) => {
   }
 };
 
-const getBarberQueue = async (req, res) => {
-  try {
-    // 💡 تم إضافة date هنا لاستقباله من الواجهة الأمامية
-    const { slug, barberName, pin, date } = req.body;
-
-    const tenant = await Tenant.findOne({ slug })
-      .select("_id salonName")
-      .lean();
-    if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
-
-    const barber = await Barber.findOne({
-      tenantId: tenant._id,
-      name: barberName,
-      pin,
-    })
-      .select("_id name")
-      .lean();
-    if (!barber)
-      return res.status(401).json({ message: "رمز الدخول (PIN) غير صحيح ❌" });
-
-    // 💡 تحديد التاريخ: إذا أرسلت الواجهة تاريخ نستخدمه، وإلا نستخدم تاريخ اليوم
-    let targetDate = date;
-
-    if (!targetDate) {
-      const ksaDate = new Date(
-        new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh" }),
-      );
-      targetDate = `${ksaDate.getFullYear()}-${String(ksaDate.getMonth() + 1).padStart(2, "0")}-${String(ksaDate.getDate()).padStart(2, "0")}`;
-    }
-
-    // جلب المواعيد بناءً على التاريخ المحدد (targetDate)
-    const appointments = await Appointment.find({
-      tenantId: tenant._id,
-      $or: [{ barberId: barber._id }, { barberName: barber.name }],
-      date: targetDate,
-      status: { $ne: "Cancelled" }, // إخفاء المواعيد الملغية لتنظيف الشاشة
-    })
-      .populate("customerId", "phone")
-      .lean();
-
-    // تجهيز المواعيد للواجهة
-    const mappedAppointments = appointments.map(mapAppointmentForFrontend);
-
-    // فرز المواعيد زمنياً
-    // فرز المواعيد زمنياً (بالساعة والدقيقة)
-    const sortedAppointments = mappedAppointments.sort((a, b) => {
-      const getVal = (slot) => {
-        if (!slot) return 0;
-
-        // فصل الساعة عن الدقائق
-        const [hourStr, minStr] = slot.split(":");
-        const h = parseInt(hourStr, 10);
-        const m = parseInt(minStr, 10) || 0;
-
-        // نقل أوقات ما بعد منتصف الليل (الصباح الباكر) لآخر القائمة
-        const adjustedHour = h < 12 ? h + 24 : h;
-
-        // تحويل الوقت بالكامل إلى دقائق لضمان دقة الفرز
-        return adjustedHour * 60 + m;
-      };
-      return getVal(a.timeSlot) - getVal(b.timeSlot);
-    });
-
-    res.status(200).json({
-      appointments: sortedAppointments,
-      tenantId: tenant._id,
-      salonName: tenant.salonName,
-      requestedDate: targetDate, // 💡 إرسال التاريخ المطلوب للواجهة للتأكيد
-    });
-  } catch (error) {
-    console.error("Queue Error:", error);
-    res.status(500).json({ message: "حدث خطأ داخلي" });
-  }
-};
-
-const barberUpdateStatus = async (req, res) => {
-  try {
-    const { appointmentId } = req.params;
-    const { status, pin, slug, barberName } = req.body;
-
-    const tenant = await Tenant.findOne({ slug }).select("_id settings").lean();
-    const barber = await Barber.exists({
-      tenantId: tenant._id,
-      name: barberName,
-      pin,
-    });
-    if (!barber) return res.status(401).json({ message: "غير مصرح" });
-
-    const updatedAppointment = await Appointment.findByIdAndUpdate(
-      appointmentId,
-      { status },
-      { returnDocument: "after" },
-    ).populate("customerId");
-
-    if (!updatedAppointment)
-      return res.status(404).json({ message: "الموعد غير موجود" });
-
-    if (status === "Completed") {
-      await Customer.updateOne(
-        { _id: updatedAppointment.customerId._id },
-        { $inc: { totalVisits: 1 }, $set: { lastVisitDate: new Date() } },
-      );
-
-      if (tenant.settings?.isLoyaltyEnabled) {
-        const customer = await Customer.findById(
-          updatedAppointment.customerId._id,
-        ).select("totalVisits phone");
-        const requiredVisits = tenant.settings.loyaltyVisitsRequired || 5;
-        if (
-          customer.totalVisits % requiredVisits === 0 &&
-          customer.totalVisits > 0
-        ) {
-          sendLoyaltyRewardMessage(
-            customer.phone,
-            updatedAppointment.childName,
-            tenant,
-          ).catch((e) => {});
-        }
-      }
-
-      if (
-        tenant.settings?.enableGoogleReviews &&
-        tenant.settings?.googleReviewLink
-      ) {
-        sendReviewRequestMessage(
-          updatedAppointment.customerId.phone,
-          updatedAppointment.childName,
-          tenant,
-          updatedAppointment._id,
-        ).catch((e) => {});
-      }
-    }
-
-    res.status(200).json({
-      message: "تم التحديث بنجاح",
-      appointment: mapAppointmentForFrontend(updatedAppointment),
-    });
-  } catch (error) {
-    res.status(500).json({ message: "حدث خطأ أثناء التحديث" });
-  }
-};
-
+// 8. تجهيز وإطلاق حملات واتساب التسويقية (Broadcast)
 const sendBroadcastCampaign = async (req, res) => {
   try {
     const { tenantId, message, targetAudience } = req.body;
@@ -688,23 +436,21 @@ const sendBroadcastCampaign = async (req, res) => {
 };
 
 const importCustomers = async (req, res) => {
-  res.status(200).json({
-    message: "يرجى تعديل دالة الاستيراد لتتوافق مع جدول العملاء الجديد.",
-  });
+  res
+    .status(200)
+    .json({
+      message: "يرجى تعديل دالة الاستيراد لتتوافق مع جدول العملاء الجديد.",
+    });
 };
 
 module.exports = {
-  getAllUpcomingAppointments,
-  updateWhatsappSettings,
-  resendSingleWhatsApp,
-  updateBarberSettings,
   getBarberSettings,
-  getBarberAppointments,
-  updateAppointmentStatus,
+  updateBarberSettings,
+  getAllUpcomingAppointments,
+  resendSingleWhatsApp,
+  updateWhatsappSettings,
   getCustomerLoyalty,
   getTenantCustomers,
-  getBarberQueue,
-  barberUpdateStatus,
   sendBroadcastCampaign,
   importCustomers,
 };

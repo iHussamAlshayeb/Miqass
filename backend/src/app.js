@@ -5,7 +5,6 @@ const compression = require("compression");
 const path = require("path"); // قد لا تحتاجه بعد الآن إذا لم يكن مستخدماً في ملفات أخرى
 const Tenant = require("./models/Tenant");
 const checkMaintenanceMode = require("./middlewares/maintenanceMiddleware");
-const redisClient = require("./utils/redisClient");
 
 const app = express();
 
@@ -65,18 +64,6 @@ app.get("/api/health", (req, res) => {
 app.get("/logo/:slug", async (req, res) => {
   try {
     const { slug } = req.params;
-
-    const cachedLogo = await redisClient.get(`logo_buffer:${slug}`);
-    if (cachedLogo) {
-      const [contentType, base64Data] = cachedLogo.split("|");
-      const buffer = Buffer.from(base64Data, "base64");
-      res.writeHead(200, {
-        "Content-Type": contentType,
-        "Cache-Control": "public, max-age=86400",
-      });
-      return res.end(buffer);
-    }
-
     const tenant = await Tenant.findOne({ slug })
       .select("branding.logoUrl")
       .lean();
@@ -92,17 +79,11 @@ app.get("/logo/:slug", async (req, res) => {
       if (matches && matches.length === 3) {
         const contentType = matches[1];
         const base64Data = matches[2];
-
-        await redisClient.setEx(
-          `logo_buffer:${slug}`,
-          86400,
-          `${contentType}|${base64Data}`,
-        );
-
         const buffer = Buffer.from(base64Data, "base64");
+
         res.writeHead(200, {
           "Content-Type": contentType,
-          "Cache-Control": "public, max-age=86400",
+          "Cache-Control": "public, max-age=86400", // المتصفح سيكيش الصورة تلقائياً
         });
         return res.end(buffer);
       }

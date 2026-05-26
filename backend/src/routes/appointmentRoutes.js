@@ -22,19 +22,22 @@ const {
 
 const {
   getCustomerLoyalty,
-  barberUpdateStatus,
-  getBarberQueue,
   getBarberSettings,
   updateBarberSettings,
   updateWhatsappSettings,
-  getBarberAppointments,
   getAllUpcomingAppointments,
-  updateAppointmentStatus,
   resendSingleWhatsApp,
   getTenantCustomers,
   importCustomers,
   sendBroadcastCampaign,
 } = require("../controllers/dashboardController");
+
+const {
+  getBarberAppointments,
+  updateAppointmentStatus,
+  getBarberQueue,
+  barberUpdateStatus,
+} = require("../controllers/barberController");
 
 const bookingLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
