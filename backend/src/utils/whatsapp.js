@@ -331,7 +331,7 @@ const sendRetentionMessage = async (phone, customerName, tenant) => {
 
     const salonName = tenant?.salonName || "الصالون";
     const slug = tenant?.slug || "";
-    const bookingLink = slug ? `https://miqass.app/${slug}` : "رابط الصالون";
+    const bookingLink = `https://miqass.app/balloon`;
 
     const message = `يا هلا والله بـ ${customerName} 👋
 طالت الغيبة! اشتقنا لزيارتك لنا في ${salonName} ✂️✨
