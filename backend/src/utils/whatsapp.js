@@ -336,7 +336,7 @@ const sendRetentionMessage = async (phone, customerName, tenant) => {
     const message = `يا هلا والله بـ ${customerName} 👋
 طالت الغيبة! اشتقنا لزيارتك لنا في ${salonName} ✂️✨
 
-حبينا نذكرك إن وقت حلاقتك قرّب، وتقدر تحجز موعدك وتختار حلاقك المفضل بكل سهولة وفي ثواني عبر الرابط:
+تقدر تحجز موعدك وتختار حلاقك المفضل بكل سهولة وفي ثواني عبر الرابط:
 👇👇
 ${bookingLink}
 
