@@ -1,3 +1,5 @@
+/* global importScripts */
+
 const MIQASS_CACHE_NAME = "miqass-pwa-v1";
 const MIQASS_APP_SHELL = ["/", "/manifest.json", "/logo.png"];
 

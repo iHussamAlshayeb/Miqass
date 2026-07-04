@@ -17,6 +17,7 @@ import ReviewsTab from '../components/dashboard/ReviewsTab';
 import CustomersTab from '../components/dashboard/CustomersTab';
 import BroadcastsTab from '../components/dashboard/BroadcastsTab';
 import StatisticsTab from '../components/dashboard/StatisticsTab';
+import PushNotificationPrompt from '../components/dashboard/PushNotificationPrompt';
 
 const DashboardScreen = () => {
     const navigate = useNavigate();
@@ -146,7 +147,7 @@ const DashboardScreen = () => {
 
                     const currentTenantId = settingsRes.data.tenantId;
                     if (currentTenantId) {
-                        initOneSignalForTenant(currentTenantId, { prompt: true }).catch((error) => {
+                        initOneSignalForTenant(currentTenantId).catch((error) => {
                             console.error("OneSignal Error:", error);
                         });
                     }
@@ -333,6 +334,8 @@ const DashboardScreen = () => {
                 <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} appointments={appointments} allAppointments={allAppointments} apiStatus={apiStatus} whatsappSettings={whatsappSettings} slug={slug} subscription={subscription} />
 
                 <div className="lg:col-span-9">
+                    <PushNotificationPrompt tenantId={tenantId} />
+
                     {activeTab === 'statistics' && <StatisticsTab allAppointments={allAppointments} />}
                     {activeTab === 'appointments' && <DailyTab selectedDate={selectedDate} setSelectedDate={setSelectedDate} isLoading={isLoading} appointments={appointments} handleStatusChange={handleStatusChange} handleSingleWhatsApp={handleSingleWhatsApp} whatsappSettings={whatsappSettings} refreshAppointments={fetchAppointments} />}
                     {activeTab === 'all' && <AllTab isLoading={isLoading} allAppointments={allAppointments} exportToExcel={exportToExcel} handleStatusChange={handleStatusChange} />}
