@@ -11,6 +11,7 @@ const {
   resetPassword,
   freeActivation,
 } = require("../controllers/authController");
+const { protect } = require("../middlewares/authMiddleware");
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 دقيقة
@@ -35,9 +36,9 @@ const passwordLimiter = rateLimit({
 
 router.post("/register", registerTenant);
 router.post("/login", loginLimiter, loginTenant);
-router.post("/verify-payment", verifyPaymentAndActivate);
-router.post("/submit-bank-transfer", submitBankTransfer);
-router.post("/free-activation", freeActivation);
+router.post("/verify-payment", protect, verifyPaymentAndActivate);
+router.post("/submit-bank-transfer", protect, submitBankTransfer);
+router.post("/free-activation", protect, freeActivation);
 router.post("/forgot-password", passwordLimiter, forgotPassword);
 router.post("/reset-password/:token", resetPassword);
 

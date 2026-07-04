@@ -128,6 +128,12 @@ const PaymentScreen = () => {
                 description: `اشتراك منصة مقص - ${selectedPlan.name} (${isAnnual ? 'سنوي' : 'شهري'})`,
                 publishable_api_key: 'pk_test_8s4X2aBao3nxmiFKLjK6mtXGSPMdr6ipBv7ufZkn',
                 callback_url: window.location.href,
+                metadata: {
+                    tenantId,
+                    plan: selectedPlan.id,
+                    billingCycle: isAnnual ? 'annual' : 'monthly',
+                    promoCodeId: appliedPromo?.codeId || ''
+                },
                 methods: ['creditcard', 'stcpay'],
 
                 on_completed: function (payment) {

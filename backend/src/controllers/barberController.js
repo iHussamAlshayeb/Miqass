@@ -60,18 +60,24 @@ const updateAppointmentStatus = async (req, res) => {
       updateData.cancelReason = cancelReason;
     }
 
-    const updatedAppointment = await Appointment.findByIdAndUpdate(
-      appointmentId,
-      updateData,
-      { returnDocument: "after" },
-    ).populate("customerId");
+    const updatedAppointment = await Appointment.findOne({
+      _id: appointmentId,
+      tenantId: req.tenantId,
+    }).populate("customerId");
 
     if (!updatedAppointment) {
       return res.status(404).json({ message: "لم يتم العثور على الموعد" });
     }
 
-    if (status === "Cancelled" || status === "Completed") {
-      const tenant = await Tenant.findById(updatedAppointment.tenantId);
+    const previousStatus = updatedAppointment.status;
+    updatedAppointment.set(updateData);
+    await updatedAppointment.save();
+
+    if (
+      (status === "Cancelled" || status === "Completed") &&
+      previousStatus !== status
+    ) {
+      const tenant = await Tenant.findById(req.tenantId);
 
       if (status === "Cancelled") {
         sendCancellationMessage(
@@ -83,7 +89,7 @@ const updateAppointmentStatus = async (req, res) => {
         ).catch(() => {});
       }
 
-      if (status === "Completed") {
+      if (status === "Completed" && updatedAppointment.customerId?._id) {
         await Customer.updateOne(
           { _id: updatedAppointment.customerId._id },
           { $inc: { totalVisits: 1 }, $set: { lastVisitDate: new Date() } },
@@ -199,20 +205,40 @@ const getBarberQueue = async (req, res) => {
 const barberUpdateStatus = async (req, res) => {
   try {
     const { appointmentId } = req.params;
-    const { status, pin, slug, barberName } = req.body;
+    const { status, pin, slug, barberName, cancelReason } = req.body;
 
-    const tenant = await Tenant.findOne({ slug }).select("_id settings").lean();
-    const barber = await Barber.exists({
+    const validStatuses = ["Booked", "Completed", "Cancelled"];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ message: "حالة الموعد غير صالحة" });
+    }
+
+    const tenant = await Tenant.findOne({ slug })
+      .select("_id settings salonName whatsappSettings slug ownerPhone")
+      .lean();
+    if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
+
+    const barber = await Barber.findOne({
       tenantId: tenant._id,
       name: barberName,
       pin,
-    });
+    })
+      .select("_id name")
+      .lean();
 
     if (!barber) return res.status(401).json({ message: "غير مصرح" });
 
-    const updatedAppointment = await Appointment.findByIdAndUpdate(
-      appointmentId,
-      { status },
+    const updateData = { status };
+    if (status === "Cancelled" && cancelReason) {
+      updateData.cancelReason = cancelReason;
+    }
+
+    const updatedAppointment = await Appointment.findOneAndUpdate(
+      {
+        _id: appointmentId,
+        tenantId: tenant._id,
+        $or: [{ barberId: barber._id }, { barberName: barber.name }],
+      },
+      updateData,
       { returnDocument: "after" },
     ).populate("customerId");
 

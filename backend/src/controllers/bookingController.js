@@ -2,6 +2,8 @@ const Appointment = require("../models/Appointment");
 const Tenant = require("../models/Tenant");
 const Customer = require("../models/Customer");
 const Barber = require("../models/Barber");
+const Service = require("../models/Service");
+const mongoose = require("mongoose");
 
 const {
   sendWhatsAppMessage,
@@ -45,6 +47,17 @@ const getNextTimeSlot = (time, durationMinutes) => {
   const hh = String(date.getHours()).padStart(2, "0");
   const mm = String(date.getMinutes()).padStart(2, "0");
   return `${hh}:${mm}`;
+};
+
+const normalizeSelectedServiceIds = (selectedServices = []) => {
+  if (!Array.isArray(selectedServices)) return [];
+
+  const ids = selectedServices
+    .map((service) => service?.serviceId || service?._id || service?.id || service)
+    .filter(Boolean)
+    .map(String);
+
+  return [...new Set(ids)];
 };
 
 // ==========================================
@@ -136,11 +149,49 @@ const createAppointment = async (req, res) => {
       });
     }
 
-    // حساب المدة والسعر
+    const requestedServiceIds = normalizeSelectedServiceIds(selectedServices);
+    if (
+      requestedServiceIds.some((id) => !mongoose.Types.ObjectId.isValid(id))
+    ) {
+      return res.status(400).json({ message: "قائمة الخدمات غير صالحة." });
+    }
+
+    let selectedServicesSnapshot = [];
+    if (requestedServiceIds.length > 0) {
+      const servicesFromDb = await Service.find({
+        _id: { $in: requestedServiceIds },
+        tenantId: tenant._id,
+        isActive: true,
+      })
+        .select("_id name price duration")
+        .lean();
+
+      if (servicesFromDb.length !== requestedServiceIds.length) {
+        return res.status(400).json({
+          message: "إحدى الخدمات المختارة غير متاحة لهذا الصالون.",
+        });
+      }
+
+      const servicesById = new Map(
+        servicesFromDb.map((service) => [String(service._id), service]),
+      );
+
+      selectedServicesSnapshot = requestedServiceIds.map((id) => {
+        const service = servicesById.get(id);
+        return {
+          serviceId: service._id,
+          name: service.name,
+          price: Number(service.price) || 0,
+          duration: Number(service.duration) || 0,
+        };
+      });
+    }
+
+    // حساب المدة والسعر من قاعدة البيانات فقط
     let totalDuration = 0;
     let totalPrice = 0;
-    if (selectedServices && selectedServices.length > 0) {
-      selectedServices.forEach((srv) => {
+    if (selectedServicesSnapshot.length > 0) {
+      selectedServicesSnapshot.forEach((srv) => {
         totalDuration += Number(srv.duration || 0);
         totalPrice += Number(srv.price || 0);
       });
@@ -209,7 +260,7 @@ const createAppointment = async (req, res) => {
         date: date,
         timeSlot: startSlotForPerson,
         childName: name,
-        selectedServices: selectedServices || [],
+        selectedServices: selectedServicesSnapshot,
         totalPrice: totalPrice,
         totalDuration: totalDuration,
         invoiceNumber: `INV-${currentInvoiceCounter++}`,
@@ -403,8 +454,8 @@ const cancelAppointment = async (req, res) => {
     const { appointmentId } = req.params;
     const { cancelReason } = req.body;
 
-    const updatedAppointment = await Appointment.findByIdAndUpdate(
-      appointmentId,
+    const updatedAppointment = await Appointment.findOneAndUpdate(
+      { _id: appointmentId, tenantId: req.tenantId },
       { status: "Cancelled", cancelReason: cancelReason },
       { returnDocument: "after" },
     ).populate("customerId");
@@ -412,24 +463,39 @@ const cancelAppointment = async (req, res) => {
     if (!updatedAppointment)
       return res.status(404).json({ message: "لم يتم العثور على الموعد" });
 
-    // مسح الـ Padding Blocks المرتبطة
-    await Appointment.deleteMany({
-      tenantId: updatedAppointment.tenantId,
-      barberId: updatedAppointment.barberId,
-      date: updatedAppointment.date,
-      childName: "Padding Block",
-      status: "Blocked",
-    });
-
     const tenant = await Tenant.findById(updatedAppointment.tenantId);
+    const slotStep = tenant?.settings?.slotDuration || 30;
+    const slotsNeeded = Math.ceil(
+      (updatedAppointment.totalDuration || slotStep) / slotStep,
+    );
 
-    sendCancellationMessage(
-      updatedAppointment.customerId.phone,
-      updatedAppointment.childName,
-      updatedAppointment.barberName,
-      tenant,
-      cancelReason,
-    ).catch(() => {});
+    const paddingSlots = [];
+    let paddingSlot = updatedAppointment.timeSlot;
+    for (let i = 1; i < slotsNeeded; i++) {
+      paddingSlot = getNextTimeSlot(paddingSlot, slotStep);
+      paddingSlots.push(paddingSlot);
+    }
+
+    if (paddingSlots.length > 0) {
+      await Appointment.deleteMany({
+        tenantId: updatedAppointment.tenantId,
+        barberId: updatedAppointment.barberId,
+        date: updatedAppointment.date,
+        timeSlot: { $in: paddingSlots },
+        childName: "Padding Block",
+        status: "Blocked",
+      });
+    }
+
+    if (updatedAppointment.customerId?.phone) {
+      sendCancellationMessage(
+        updatedAppointment.customerId.phone,
+        updatedAppointment.childName,
+        updatedAppointment.barberName,
+        tenant,
+        cancelReason,
+      ).catch(() => {});
+    }
 
     res.status(200).json({
       message: "تم إلغاء الموعد بنجاح",

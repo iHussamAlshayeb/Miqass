@@ -14,7 +14,10 @@ const { sendAdminNotification } = require("../utils/onesignal");
 const getInvoiceData = async (req, res) => {
   try {
     const { id: appointmentId } = req.params;
-    const appointment = await Appointment.findById(appointmentId)
+    const appointment = await Appointment.findOne({
+      _id: appointmentId,
+      tenantId: req.tenantId,
+    })
       .populate("customerId")
       .lean();
 
@@ -217,10 +220,22 @@ const moyasarWebhook = async (req, res) => {
     );
 
     const verifiedPayment = verifyResponse.data;
+    const verifiedAppointmentId = verifiedPayment.metadata?.appointmentId;
+    const verifiedTenantId = verifiedPayment.metadata?.tenantId;
+
+    if (
+      String(verifiedAppointmentId || "") !== String(appointmentId) ||
+      String(verifiedTenantId || "") !== String(tenantId)
+    ) {
+      return res.status(400).send("Payment metadata mismatch");
+    }
 
     if (verifiedPayment.status === "paid") {
       const primaryAppointment =
-        await Appointment.findById(appointmentId).populate("customerId");
+        await Appointment.findOne({
+          _id: appointmentId,
+          tenantId: tenant._id,
+        }).populate("customerId");
       if (!primaryAppointment)
         return res.status(404).send("Appointment not found");
 

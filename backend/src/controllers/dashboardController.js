@@ -120,6 +120,8 @@ const updateBarberSettings = async (req, res) => {
     const tenant = await Tenant.findById(req.tenantId).select(
       "slug subscription bio socialLinks branding settings taxSettings paymentSettings",
     );
+    if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
+
     const currentPlan = tenant.subscription?.plan || "Free";
 
     if (currentPlan === "Free" && barbers && barbers.length > 2) {
@@ -258,7 +260,7 @@ const getAllUpcomingAppointments = async (req, res) => {
 const resendSingleWhatsApp = async (req, res) => {
   try {
     const { id } = req.params;
-    const app = await Appointment.findById(id)
+    const app = await Appointment.findOne({ _id: id, tenantId: req.tenantId })
       .populate("tenantId")
       .populate("customerId");
 
@@ -369,7 +371,8 @@ const getTenantCustomers = async (req, res) => {
 // 8. تجهيز وإطلاق حملات واتساب التسويقية (Broadcast)
 const sendBroadcastCampaign = async (req, res) => {
   try {
-    const { tenantId, message, targetAudience } = req.body;
+    const tenantId = req.tenantId;
+    const { message, targetAudience } = req.body;
     const tenant = await Tenant.findById(tenantId)
       .select("subscription campaignCredits")
       .lean();
@@ -384,13 +387,6 @@ const sendBroadcastCampaign = async (req, res) => {
         message:
           "هذه الميزة تتطلب باقة VIP، أو يمكنك شراء 'رصيد حملة واحدة' من الإعدادات.",
       });
-    }
-
-    if (tenant.subscription?.plan !== "Premium") {
-      await Tenant.updateOne(
-        { _id: tenantId },
-        { $inc: { campaignCredits: -1 } },
-      );
     }
 
     let targetCustomers = [];
@@ -413,6 +409,13 @@ const sendBroadcastCampaign = async (req, res) => {
       return res
         .status(400)
         .json({ message: "لا يوجد عملاء يطابقون هذا الفلتر حالياً." });
+
+    if (tenant.subscription?.plan !== "Premium") {
+      await Tenant.updateOne(
+        { _id: tenantId, campaignCredits: { $gt: 0 } },
+        { $inc: { campaignCredits: -1 } },
+      );
+    }
 
     await Campaign.create({
       tenantId: tenant._id,

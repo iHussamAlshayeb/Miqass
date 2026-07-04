@@ -2,15 +2,82 @@ const Tenant = require("../models/Tenant");
 const Barber = require("../models/Barber");
 const Service = require("../models/Service");
 const PromoCode = require("../models/PromoCode");
+const SystemSettings = require("../models/SystemSettings");
 
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const axios = require("axios");
+const mongoose = require("mongoose");
 const {
   sendWelcomeEmail,
   sendPasswordResetEmail,
 } = require("../utils/emailService");
+
+const VALID_PLANS = ["Pro", "Premium"];
+const VALID_BILLING_CYCLES = ["monthly", "annual"];
+
+const normalizeSubscriptionRequest = (plan, billingCycle) => {
+  const normalizedPlan = VALID_PLANS.includes(plan) ? plan : null;
+  const normalizedBillingCycle = VALID_BILLING_CYCLES.includes(billingCycle)
+    ? billingCycle
+    : "monthly";
+
+  if (!normalizedPlan) return null;
+  return { plan: normalizedPlan, billingCycle: normalizedBillingCycle };
+};
+
+const findValidPromo = async (promoCodeId) => {
+  if (!promoCodeId) return null;
+  if (!mongoose.Types.ObjectId.isValid(promoCodeId)) return null;
+
+  return PromoCode.findOne({
+    _id: promoCodeId,
+    isActive: true,
+    expiryDate: { $gt: new Date() },
+    $expr: { $lt: ["$usedCount", "$maxUses"] },
+  }).lean();
+};
+
+const calculateSubscriptionPrice = async (plan, billingCycle, promo = null) => {
+  const settings = await SystemSettings.findOne({ isGlobal: true }).lean();
+  const pricing = settings?.pricing || { pro: 99, premium: 199 };
+  const planKey = plan.toLowerCase();
+
+  let price = Number(pricing[planKey] || (plan === "Premium" ? 199 : 99));
+  if (billingCycle === "annual") price *= 10;
+
+  if (settings?.discount?.isActive) {
+    const discountPercentage = Number(settings.discount.percentage || 0);
+    price *= 1 - discountPercentage / 100;
+  }
+
+  if (promo) {
+    if (promo.discountType === "percentage") {
+      price *= 1 - Number(promo.discountValue || 0) / 100;
+    } else if (promo.discountType === "fixed") {
+      price -= Number(promo.discountValue || 0);
+    }
+  }
+
+  return Math.max(0, Math.round(price));
+};
+
+const consumePromo = async (promoCodeId) => {
+  if (!promoCodeId) return true;
+
+  const result = await PromoCode.updateOne(
+    {
+      _id: promoCodeId,
+      isActive: true,
+      expiryDate: { $gt: new Date() },
+      $expr: { $lt: ["$usedCount", "$maxUses"] },
+    },
+    { $inc: { usedCount: 1 } },
+  );
+
+  return result.modifiedCount === 1;
+};
 
 // 1. تسجيل صالون جديد
 const registerTenant = async (req, res) => {
@@ -86,7 +153,8 @@ const registerTenant = async (req, res) => {
 // 2. التحقق من الدفع وتفعيل الترقية (من بوابة الدفع)
 const verifyPaymentAndActivate = async (req, res) => {
   try {
-    const { tenantId, paymentId, plan, billingCycle, promoCodeId } = req.body;
+    const { paymentId } = req.body;
+    const tenantId = req.tenantId;
 
     const tenant = await Tenant.findById(tenantId);
     if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
@@ -101,28 +169,59 @@ const verifyPaymentAndActivate = async (req, res) => {
     );
 
     if (gatewayResponse.data.status === "paid") {
+      const metadata = gatewayResponse.data.metadata || {};
+      if (String(metadata.tenantId || "") !== String(tenantId)) {
+        return res
+          .status(400)
+          .json({ message: "بيانات الدفع لا تطابق حساب الصالون الحالي." });
+      }
+
+      const normalized = normalizeSubscriptionRequest(
+        metadata.plan,
+        metadata.billingCycle,
+      );
+      if (!normalized) {
+        return res
+          .status(400)
+          .json({ message: "بيانات الباقة في عملية الدفع غير صالحة." });
+      }
+
+      const promoCodeId = metadata.promoCodeId || null;
+      const promo = promoCodeId ? await findValidPromo(promoCodeId) : null;
+      if (promoCodeId && !promo) {
+        return res
+          .status(400)
+          .json({ message: "كود الخصم المرفق بعملية الدفع غير صالح." });
+      }
+
+      const expectedAmount = await calculateSubscriptionPrice(
+        normalized.plan,
+        normalized.billingCycle,
+        promo,
+      );
+      const paidAmount = Number(gatewayResponse.data.amount || 0);
+
+      if (expectedAmount <= 0 || paidAmount < expectedAmount * 100) {
+        return res.status(400).json({
+          message: "مبلغ الدفع لا يطابق قيمة الاشتراك المطلوبة.",
+        });
+      }
+
       const endDate = new Date();
-      if (billingCycle === "annual") {
+      if (normalized.billingCycle === "annual") {
         endDate.setFullYear(endDate.getFullYear() + 1);
       } else {
         endDate.setMonth(endDate.getMonth() + 1);
       }
 
-      tenant.subscription.plan = plan || "Premium";
+      tenant.subscription.plan = normalized.plan;
       tenant.subscription.status = "Active";
       tenant.subscription.endDate = endDate;
-      tenant.subscription.billingCycle = billingCycle;
+      tenant.subscription.billingCycle = normalized.billingCycle;
       await tenant.save();
 
-      if (promoCodeId) {
-        await PromoCode.updateOne(
-          {
-            _id: promoCodeId,
-            isActive: true,
-            $expr: { $lt: ["$usedCount", "$maxUses"] },
-          },
-          { $inc: { usedCount: 1 } },
-        ).catch((err) => console.error("فشل تحديث الكوبون", err));
+      if (promoCodeId && !(await consumePromo(promoCodeId))) {
+        console.error("فشل تحديث الكوبون بعد الدفع:", promoCodeId);
       }
 
       const token = jwt.sign({ tenantId: tenant._id }, process.env.JWT_SECRET, {
@@ -148,39 +247,53 @@ const verifyPaymentAndActivate = async (req, res) => {
 // 3. التفعيل الفوري (إذا كان الكوبون مجاني 100%)
 const freeActivation = async (req, res) => {
   try {
-    const { tenantId, plan, billingCycle, promoCodeId } = req.body;
+    const { plan, billingCycle, promoCodeId } = req.body;
+    const tenantId = req.tenantId;
 
     const tenant = await Tenant.findById(tenantId);
     if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
 
-    const validPromo = await PromoCode.findOneAndUpdate(
-      {
-        _id: promoCodeId,
-        isActive: true,
-        expiryDate: { $gt: new Date() },
-        $expr: { $lt: ["$usedCount", "$maxUses"] },
-      },
-      { $inc: { usedCount: 1 } },
-      { returnDocument: "after" },
-    );
+    const normalized = normalizeSubscriptionRequest(plan, billingCycle);
+    if (!normalized) {
+      return res.status(400).json({ message: "بيانات الباقة غير صالحة." });
+    }
 
+    const validPromo = await findValidPromo(promoCodeId);
     if (!validPromo) {
       return res.status(400).json({
         message: "عذراً، هذا الكود غير صالح، أو منتهي الصلاحية، أو نفدت كميته!",
       });
     }
 
+    const finalPrice = await calculateSubscriptionPrice(
+      normalized.plan,
+      normalized.billingCycle,
+      validPromo,
+    );
+
+    if (finalPrice > 0) {
+      return res.status(400).json({
+        message: "هذا الكود لا يغطي كامل قيمة الاشتراك ولا يصلح للتفعيل المجاني.",
+      });
+    }
+
+    if (!(await consumePromo(promoCodeId))) {
+      return res.status(400).json({
+        message: "تعذر استخدام الكوبون لأنه استُخدم أو انتهت صلاحيته للتو.",
+      });
+    }
+
     const endDate = new Date();
-    if (billingCycle === "annual") {
+    if (normalized.billingCycle === "annual") {
       endDate.setFullYear(endDate.getFullYear() + 1);
     } else {
       endDate.setMonth(endDate.getMonth() + 1);
     }
 
-    tenant.subscription.plan = plan || "Pro";
+    tenant.subscription.plan = normalized.plan;
     tenant.subscription.status = "Active";
     tenant.subscription.endDate = endDate;
-    tenant.subscription.billingCycle = billingCycle;
+    tenant.subscription.billingCycle = normalized.billingCycle;
     await tenant.save();
 
     const token = jwt.sign({ tenantId: tenant._id }, process.env.JWT_SECRET, {
@@ -240,31 +353,42 @@ const loginTenant = async (req, res) => {
 // 5. استلام طلب التحويل البنكي اليدوي
 const submitBankTransfer = async (req, res) => {
   try {
-    const { tenantId, senderName, bankName, plan, billingCycle, promoCodeId } =
-      req.body;
+    const { senderName, bankName, plan, billingCycle, promoCodeId } = req.body;
+    const tenantId = req.tenantId;
+
+    const normalized = normalizeSubscriptionRequest(plan, billingCycle);
+    if (!normalized) {
+      return res.status(400).json({ message: "بيانات الباقة غير صالحة." });
+    }
+
+    if (promoCodeId) {
+      const promo = await findValidPromo(promoCodeId);
+      if (!promo) {
+        return res.status(400).json({
+          message: "كود الخصم غير صالح أو انتهت صلاحيته.",
+        });
+      }
+    }
 
     const tenant = await Tenant.findById(tenantId);
     if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
 
     tenant.subscription.status = "Pending_Approval";
-    if (plan) tenant.subscription.plan = plan;
-    if (billingCycle) tenant.subscription.billingCycle = billingCycle;
+    tenant.subscription.plan = normalized.plan;
+    tenant.subscription.billingCycle = normalized.billingCycle;
 
     await tenant.save();
 
     if (promoCodeId) {
-      await PromoCode.updateOne(
-        {
-          _id: promoCodeId,
-          isActive: true,
-          $expr: { $lt: ["$usedCount", "$maxUses"] },
-        },
-        { $inc: { usedCount: 1 } },
-      ).catch((err) => console.log(err));
+      if (!(await consumePromo(promoCodeId))) {
+        return res.status(400).json({
+          message: "كود الخصم غير صالح أو انتهت صلاحيته.",
+        });
+      }
     }
 
     res.status(200).json({
-      message: `تم استلام طلب الترقية لباقة (${plan}) الدفع (${billingCycle === "annual" ? "السنوي" : "الشهري"})، سيتم مراجعة الحوالة وتفعيل حسابك قريباً.`,
+      message: `تم استلام طلب الترقية لباقة (${normalized.plan}) الدفع (${normalized.billingCycle === "annual" ? "السنوي" : "الشهري"})، سيتم مراجعة الحوالة وتفعيل حسابك قريباً.`,
     });
   } catch (error) {
     console.error("❌ خطأ في إرسال الحوالة:", error);
