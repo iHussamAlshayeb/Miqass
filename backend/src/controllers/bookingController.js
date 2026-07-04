@@ -14,6 +14,8 @@ const { sendAdminNotification } = require("../utils/onesignal");
 // ==========================================
 // 🛠️ دوال مساعدة (Helpers)
 // ==========================================
+const KIOSK_PAST_BOOKING_GRACE_MINUTES = 10;
+
 const mapAppointmentForFrontend = (app) => {
   return {
     ...(app._doc ? app._doc : app),
@@ -49,6 +51,43 @@ const getNextTimeSlot = (time, durationMinutes) => {
   return `${hh}:${mm}`;
 };
 
+const getKsaNow = () =>
+  new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh" }));
+
+const buildSlotDateTime = (date, timeSlot, startTime, now = getKsaNow()) => {
+  const [year, month, day] = date.split("-").map(Number);
+  const [slotHour, slotMin] = timeSlot.split(":").map(Number);
+  const startHour = parseInt(startTime.split(":")[0], 10);
+
+  const slotTime = new Date(now);
+  slotTime.setFullYear(year, month - 1, day);
+  slotTime.setHours(slotHour, slotMin, 0, 0);
+
+  if (slotHour < startHour) slotTime.setDate(slotTime.getDate() + 1);
+
+  return slotTime;
+};
+
+const isKioskBookingSource = (bookingSource) => bookingSource === "kiosk";
+
+const isSlotBookableByTime = ({
+  date,
+  timeSlot,
+  startTime,
+  bookingSource,
+  now = getKsaNow(),
+}) => {
+  const slotTime = buildSlotDateTime(date, timeSlot, startTime, now);
+  const diffMs = slotTime.getTime() - now.getTime();
+
+  if (diffMs > 0) return true;
+
+  if (!isKioskBookingSource(bookingSource)) return false;
+
+  const graceMs = KIOSK_PAST_BOOKING_GRACE_MINUTES * 60 * 1000;
+  return Math.abs(diffMs) <= graceMs;
+};
+
 const normalizeSelectedServiceIds = (selectedServices = []) => {
   if (!Array.isArray(selectedServices)) return [];
 
@@ -75,6 +114,7 @@ const createAppointment = async (req, res) => {
       childrenNames,
       chair,
       selectedServices,
+      bookingSource,
     } = req.body;
 
     if (
@@ -94,6 +134,21 @@ const createAppointment = async (req, res) => {
       .select("settings subscription paymentSettings")
       .lean();
     if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
+
+    const start = tenant.settings?.startTime || "16:00";
+    if (
+      !isSlotBookableByTime({
+        date,
+        timeSlot,
+        startTime: start,
+        bookingSource,
+      })
+    ) {
+      return res.status(400).json({
+        message:
+          "عذراً، انتهت مهلة حجز هذا الوقت. يمكن الحجز بعد بداية الموعد بعشر دقائق فقط من بوابة الكشك داخل الصالون.",
+      });
+    }
 
     // فحص الباقة المجانية
     if (tenant.subscription?.plan === "Free") {
@@ -363,7 +418,8 @@ const createAppointment = async (req, res) => {
 // 2. جلب الأوقات المتاحة
 const getAvailableSlots = async (req, res) => {
   try {
-    const { tenantId, date, chair, requestedDuration } = req.query;
+    const { tenantId, date, chair, requestedDuration, bookingSource } =
+      req.query;
 
     const tenant = await Tenant.findById(tenantId).select("settings").lean();
     if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
@@ -410,19 +466,11 @@ const getAvailableSlots = async (req, res) => {
       if (isSlotValid) availableSlots.push(allWorkingSlots[i]);
     }
 
-    const now = new Date(
-      new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh" }),
-    );
+    const now = getKsaNow();
     const startHour = parseInt(start.split(":")[0]);
-    const [year, month, day] = date.split("-").map(Number);
 
     availableSlots = availableSlots.filter((slot) => {
-      const [slotHour, slotMin] = slot.split(":").map(Number);
-      let slotTime = new Date(now);
-      slotTime.setFullYear(year, month - 1, day);
-      slotTime.setHours(slotHour, slotMin, 0, 0);
-
-      if (slotHour < startHour) slotTime.setDate(slotTime.getDate() + 1);
+      const slotTime = buildSlotDateTime(date, slot, start, now);
 
       if (settings.breakStart && settings.breakEnd) {
         const [bStartH, bStartM] = settings.breakStart.split(":").map(Number);
@@ -439,7 +487,14 @@ const getAvailableSlots = async (req, res) => {
 
         if (slotTime >= breakStartTime && slotTime < breakEndTime) return false;
       }
-      return slotTime > now;
+
+      return isSlotBookableByTime({
+        date,
+        timeSlot: slot,
+        startTime: start,
+        bookingSource,
+        now,
+      });
     });
 
     res.status(200).json({ availableSlots });

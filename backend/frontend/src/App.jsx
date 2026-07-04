@@ -14,6 +14,7 @@ import KioskScreen from './pages/KioskScreen';
 import BarberPortal from './pages/BarberPortal';
 import LiveQueueScreen from './pages/LiveQueueScreen';
 import MaintenanceScreen from './pages/MaintenanceScreen';
+import AppUpdatePrompt from './components/AppUpdatePrompt';
 function App() {
   return (
     <Router>
@@ -36,6 +37,7 @@ function App() {
         <Route path="/tv/:slug" element={<LiveQueueScreen />} />
         <Route path="/maintenance" element={<MaintenanceScreen />} />
       </Routes>
+      <AppUpdatePrompt />
     </Router>
   );
 }

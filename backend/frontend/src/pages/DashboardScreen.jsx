@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import API from '../services/api';
-import OneSignal from 'react-onesignal';
+import { initOneSignalForTenant } from '../services/onesignal';
 import * as XLSX from 'xlsx';
 import TourGuide from '../components/dashboard/TourGuide';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -73,14 +73,6 @@ const DashboardScreen = () => {
     const [promoBanner, setPromoBanner] = useState(null);
 
     useEffect(() => {
-        const initOneSignal = async () => {
-            try {
-                await OneSignal.init({ appId: "df2b3be8-ac20-4e4b-9f52-fad5648afd2b", allowLocalhostAsSecureOrigin: true });
-                OneSignal.Slidedown.promptPush();
-            } catch (error) { console.error("OneSignal Error:", error); }
-        };
-        initOneSignal();
-
         // 💡 جلب بيانات العرض الترويجي من السيرفر
         const fetchPromo = async () => {
             try {
@@ -153,7 +145,11 @@ const DashboardScreen = () => {
                     setWafeqApiKey(settingsRes.data.wafeqApiKey || '');
 
                     const currentTenantId = settingsRes.data.tenantId;
-                    if (currentTenantId) OneSignal.User.addTag("tenantId", currentTenantId.toString());
+                    if (currentTenantId) {
+                        initOneSignalForTenant(currentTenantId, { prompt: true }).catch((error) => {
+                            console.error("OneSignal Error:", error);
+                        });
+                    }
                 }
 
                 const reviewsRes = await API.get('/appointments/reviews');

@@ -186,7 +186,7 @@ const KioskScreen = () => {
             try {
                 const today = getLocalDate();
                 const reqDuration = totals.duration;
-                const res = await API.get(`/appointments/available?tenantId=${tenantData._id}&date=${today}&chair=${selectedChair}&requestedDuration=${reqDuration}&t=${new Date().getTime()}`);
+                const res = await API.get(`/appointments/available?tenantId=${tenantData._id}&date=${today}&chair=${selectedChair}&requestedDuration=${reqDuration}&bookingSource=kiosk&t=${new Date().getTime()}`);
                 setAvailableSlots(res.data.availableSlots);
             } catch (error) {
                 console.error(error);
@@ -229,7 +229,8 @@ const KioskScreen = () => {
                 customerPhone: phone,
                 childrenNames: [name],
                 chair: selectedChair,
-                selectedServices: fullSelectedServices
+                selectedServices: fullSelectedServices,
+                bookingSource: 'kiosk'
             });
             setStep(3);
             setTimeout(() => {

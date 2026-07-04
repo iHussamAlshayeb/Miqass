@@ -1,6 +1,10 @@
 {
   "short_name": "نظام مِقَص السحابي",
   "name": "مِقَص",
+  "id": "/",
+  "description": "منصة مِقَص السحابية لإدارة حجوزات الصالونات.",
+  "lang": "ar",
+  "dir": "rtl",
   "icons": [
     {
       "src": "/logo.png",
@@ -20,5 +24,7 @@
   "display": "standalone",
   "theme_color": "#F0F9FF",
   "background_color": "#ffffff",
-  "orientation": "portrait"
+  "orientation": "portrait",
+  "categories": ["business", "productivity"],
+  "prefer_related_applications": false
 }
