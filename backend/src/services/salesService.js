@@ -1,0 +1,203 @@
+const Sale = require("../models/Sale");
+const SaleItem = require("../models/SaleItem");
+const Tenant = require("../models/Tenant");
+const Customer = require("../models/Customer");
+const Appointment = require("../models/Appointment");
+
+const VAT_RATE = 0.15;
+
+const toMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
+
+const calculateVatInclusiveTotals = (grossAmount) => {
+  const totalAmount = toMoney(grossAmount);
+  const subtotal = toMoney(totalAmount / (1 + VAT_RATE));
+  const vatAmount = toMoney(totalAmount - subtotal);
+
+  return { subtotal, vatAmount, totalAmount };
+};
+
+const getSaleStatus = (totalAmount, paidAmount) => {
+  if (paidAmount <= 0) return "Draft";
+  if (paidAmount + 0.001 >= totalAmount) return "Paid";
+  return "Partially_Paid";
+};
+
+const getId = (value) => value?._id || value || null;
+
+const resolveAppointmentCustomer = async (appointment, tenantId) => {
+  if (appointment.customerId && appointment.customerId.phone) {
+    return appointment.customerId;
+  }
+
+  const customerId = getId(appointment.customerId);
+  if (!customerId) return null;
+
+  return Customer.findOne({ _id: customerId, tenantId })
+    .select("phone parentName children")
+    .lean();
+};
+
+const buildAppointmentSaleItems = (appointment) => {
+  const selectedServices = Array.isArray(appointment.selectedServices)
+    ? appointment.selectedServices
+    : [];
+
+  const items = selectedServices
+    .map((service) => {
+      const unitPrice = toMoney(service?.price);
+      const name = String(service?.name || "").trim();
+      if (!name || unitPrice <= 0) return null;
+
+      const totalAmount = unitPrice;
+      const { vatAmount } = calculateVatInclusiveTotals(totalAmount);
+      const serviceId = getId(service?.serviceId);
+
+      return {
+        itemType: serviceId ? "service" : "custom",
+        serviceId,
+        productId: null,
+        name,
+        quantity: 1,
+        unitPrice,
+        unitCost: 0,
+        discountAmount: 0,
+        vatRate: VAT_RATE,
+        vatAmount,
+        totalAmount,
+      };
+    })
+    .filter(Boolean);
+
+  if (items.length === 0 && toMoney(appointment.totalPrice) > 0) {
+    const totalAmount = toMoney(appointment.totalPrice);
+    const { vatAmount } = calculateVatInclusiveTotals(totalAmount);
+
+    items.push({
+      itemType: "custom",
+      serviceId: null,
+      productId: null,
+      name: "خدمة حلاقة",
+      quantity: 1,
+      unitPrice: totalAmount,
+      unitCost: 0,
+      discountAmount: 0,
+      vatRate: VAT_RATE,
+      vatAmount,
+      totalAmount,
+    });
+  }
+
+  const totalAmount = toMoney(
+    items.reduce((sum, item) => sum + item.totalAmount, 0),
+  );
+  const { subtotal, vatAmount } = calculateVatInclusiveTotals(totalAmount);
+
+  return {
+    items,
+    totals: {
+      subtotal,
+      discountAmount: 0,
+      vatAmount,
+      totalAmount,
+    },
+  };
+};
+
+const createSaleFromAppointment = async (appointmentInput) => {
+  if (!appointmentInput) return null;
+
+  const appointment = appointmentInput._doc
+    ? appointmentInput
+    : await Appointment.findById(appointmentInput._id || appointmentInput)
+        .populate("customerId", "phone parentName children")
+        .exec();
+
+  if (!appointment || appointment.status !== "Completed") return null;
+  if (appointment.childName === "Padding Block" || appointment.status === "Blocked") {
+    return null;
+  }
+
+  const tenantId = getId(appointment.tenantId);
+  if (!tenantId) return null;
+
+  if (appointment.saleId) {
+    const linkedSale = await Sale.findOne({
+      _id: getId(appointment.saleId),
+      tenantId,
+    }).lean();
+    if (linkedSale) return linkedSale;
+  }
+
+  const existingSale = await Sale.findOne({
+    tenantId,
+    appointmentId: appointment._id,
+    status: { $ne: "Cancelled" },
+  });
+
+  if (existingSale) {
+    await Appointment.updateOne(
+      { _id: appointment._id, tenantId },
+      { $set: { saleId: existingSale._id } },
+    );
+    appointment.saleId = existingSale._id;
+    return existingSale;
+  }
+
+  const { items, totals } = buildAppointmentSaleItems(appointment);
+  if (items.length === 0 || totals.totalAmount <= 0) return null;
+
+  const customer = await resolveAppointmentCustomer(appointment, tenantId);
+  const customerId = getId(appointment.customerId);
+  const updatedTenant = await Tenant.findByIdAndUpdate(
+    tenantId,
+    { $inc: { invoiceCounter: 1 } },
+    { returnDocument: "after", select: "invoiceCounter" },
+  ).lean();
+
+  if (!updatedTenant) return null;
+
+  const sale = await Sale.create({
+    tenantId,
+    customerId,
+    appointmentId: appointment._id,
+    source:
+      appointment.isWalkIn || appointment.bookingSource === "kiosk_walk_in"
+        ? "walk_in"
+        : "appointment",
+    invoiceNumber: `SALE-${updatedTenant.invoiceCounter}`,
+    customerSnapshot: {
+      name: appointment.childName || customer?.children?.[0] || "عميل نقدي",
+      phone: customer?.phone || "",
+    },
+    subtotal: totals.subtotal,
+    discountAmount: totals.discountAmount,
+    vatAmount: totals.vatAmount,
+    totalAmount: totals.totalAmount,
+    paidAmount: 0,
+    status: getSaleStatus(totals.totalAmount, 0),
+  });
+
+  const saleItems = await SaleItem.insertMany(
+    items.map((item) => ({
+      ...item,
+      tenantId,
+      saleId: sale._id,
+    })),
+  );
+
+  await Appointment.updateOne(
+    { _id: appointment._id, tenantId },
+    { $set: { saleId: sale._id } },
+  );
+  appointment.saleId = sale._id;
+
+  return { sale, saleItems, payments: [] };
+};
+
+module.exports = {
+  VAT_RATE,
+  toMoney,
+  calculateVatInclusiveTotals,
+  getSaleStatus,
+  createSaleFromAppointment,
+};

@@ -2,6 +2,7 @@ const Appointment = require("../models/Appointment");
 const Tenant = require("../models/Tenant");
 const Customer = require("../models/Customer");
 const Barber = require("../models/Barber");
+const { createSaleFromAppointment } = require("../services/salesService");
 
 const {
   sendCancellationMessage,
@@ -124,6 +125,8 @@ const updateAppointmentStatus = async (req, res) => {
             ).catch(() => {});
           }
         }
+
+        await createSaleFromAppointment(updatedAppointment);
       }
     }
 
@@ -232,21 +235,21 @@ const barberUpdateStatus = async (req, res) => {
       updateData.cancelReason = cancelReason;
     }
 
-    const updatedAppointment = await Appointment.findOneAndUpdate(
-      {
-        _id: appointmentId,
-        tenantId: tenant._id,
-        $or: [{ barberId: barber._id }, { barberName: barber.name }],
-      },
-      updateData,
-      { returnDocument: "after" },
-    ).populate("customerId");
+    const updatedAppointment = await Appointment.findOne({
+      _id: appointmentId,
+      tenantId: tenant._id,
+      $or: [{ barberId: barber._id }, { barberName: barber.name }],
+    }).populate("customerId");
 
     if (!updatedAppointment) {
       return res.status(404).json({ message: "الموعد غير موجود" });
     }
 
-    if (status === "Completed") {
+    const previousStatus = updatedAppointment.status;
+    updatedAppointment.set(updateData);
+    await updatedAppointment.save();
+
+    if (status === "Completed" && previousStatus !== status) {
       await Customer.updateOne(
         { _id: updatedAppointment.customerId._id },
         { $inc: { totalVisits: 1 }, $set: { lastVisitDate: new Date() } },
@@ -281,6 +284,8 @@ const barberUpdateStatus = async (req, res) => {
           updatedAppointment._id,
         ).catch(() => {});
       }
+
+      await createSaleFromAppointment(updatedAppointment);
     }
 
     res.status(200).json({

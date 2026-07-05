@@ -1,9 +1,24 @@
-import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useEffect, useState } from 'react';
+import {
+    CalendarDays,
+    CheckCircle2,
+    Clock,
+    MessageCircle,
+    Printer,
+    RefreshCw,
+    Scissors,
+    XCircle,
+} from 'lucide-react';
 import { formatTime12Hour, getTimePeriod } from '../../utils/helpers';
 import API from '../../services/api';
 import InvoiceModal from './InvoiceModal';
 import CancelAppointmentModal from './CancelAppointmentModal';
+
+const statusStyles = {
+    Booked: 'border-slate-200 bg-white',
+    Completed: 'border-emerald-200 bg-emerald-50/50',
+    Cancelled: 'border-red-200 bg-red-50/50 opacity-80',
+};
 
 const DailyTab = ({
     selectedDate,
@@ -13,248 +28,223 @@ const DailyTab = ({
     handleStatusChange,
     handleSingleWhatsApp,
     whatsappSettings,
-    refreshAppointments // 💡 1. استلام دالة التحديث من المكون الأب
+    refreshAppointments,
 }) => {
-
     const [invoiceData, setInvoiceData] = useState(null);
     const [cancelModalConfig, setCancelModalConfig] = useState({ isOpen: false, appointmentId: null });
     const [isCanceling, setIsCanceling] = useState(false);
-
-    // 💡 حالة التحديث الصامت (لكي ندور أيقونة التحديث بدون إخفاء الشاشة)
     const [isSilentRefreshing, setIsSilentRefreshing] = useState(false);
 
-    // ==========================================
-    // 💡 2. سحر التحديث التلقائي الصامت (Auto-Refresh)
-    // ==========================================
     useEffect(() => {
-        // إذا لم يمرر الأب الدالة، لا تفعل شيئاً
-        if (!refreshAppointments) return;
+        if (!refreshAppointments) return undefined;
 
-        // إعداد مؤقت يشتغل كل 30 ثانية
         const interval = setInterval(async () => {
             setIsSilentRefreshing(true);
             try {
-                // نمرر true للدالة (إذا برمجناها في الأب) لتعني "تحديث صامت"
                 await refreshAppointments(true);
             } catch (error) {
-                console.error("خطأ في التحديث التلقائي", error);
+                console.error('خطأ في التحديث التلقائي', error);
             } finally {
                 setIsSilentRefreshing(false);
             }
-        }, 30000); // 30,000 ملي ثانية = 30 ثانية
+        }, 30000);
 
-        // تنظيف المؤقت عند إغلاق المكون أو تغيير التاريخ
         return () => clearInterval(interval);
     }, [refreshAppointments, selectedDate]);
 
-    // دالة تجلب بيانات الفاتورة
-    const fetchAndShowInvoice = async (appointmentId) => {
+    const fetchAndShowInvoice = async (appointment) => {
         try {
-            const res = await API.get(`/appointments/invoice/${appointmentId}`);
+            const saleId = appointment.saleId?._id || appointment.saleId;
+            const endpoint = saleId
+                ? `/sales/${saleId}/invoice`
+                : `/appointments/invoice/${appointment._id}`;
+            const res = await API.get(endpoint);
             setInvoiceData(res.data.invoice);
-        } catch (error) {
-            alert("خطأ في جلب الفاتورة");
+        } catch {
+            alert('خطأ في جلب الفاتورة');
         }
     };
 
-    // دالة تأكيد الإلغاء من النافذة
     const onConfirmCancel = async (reason) => {
         setIsCanceling(true);
         try {
             await handleStatusChange(cancelModalConfig.appointmentId, 'Cancelled', reason);
             setCancelModalConfig({ isOpen: false, appointmentId: null });
         } catch (error) {
-            console.error("خطأ في الإلغاء", error);
+            console.error('خطأ في الإلغاء', error);
         } finally {
             setIsCanceling(false);
         }
     };
 
-    // إعدادات الحركة (Framer Motion)
-    const containerVariants = {
-        hidden: { opacity: 0 },
-        show: { opacity: 1, transition: { staggerChildren: 0.1 } }
-    };
-
-    const itemVariants = {
-        hidden: { opacity: 0, y: 20 },
-        show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } }
-    };
+    const bookedCount = appointments?.filter((appointment) => appointment.status === 'Booked').length || 0;
+    const completedCount = appointments?.filter((appointment) => appointment.status === 'Completed').length || 0;
 
     return (
-        <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-white p-6 rounded-[35px] shadow-sm border border-slate-100 relative"
-        >
-            {/* 1. ترويسة القسم واختيار التاريخ ومؤشر التحديث */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-                <h2 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                    📋 قائمة أبطال اليوم:
-                </h2>
+        <div className="space-y-4">
+            <div className="rounded-lg border border-slate-200 bg-white p-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-600">
+                            <Clock size={15} />
+                            بانتظار الخدمة: {bookedCount}
+                        </span>
+                        <span className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700">
+                            <CheckCircle2 size={15} />
+                            مكتمل: {completedCount}
+                        </span>
+                        <span className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 px-3 py-2 text-xs font-black text-emerald-700">
+                            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                            تحديث تلقائي
+                        </span>
+                    </div>
 
-                <div className="flex items-center gap-2 w-full md:w-auto">
-                    {/* 💡 3. مؤشر البث المباشر (Pulse) */}
-                    <span className="hidden sm:flex items-center gap-1.5 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-100 shadow-sm" title="يتم تحديث المواعيد تلقائياً">
-                        <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-                        مباشر
-                    </span>
+                    <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                        <button
+                            type="button"
+                            onClick={() => refreshAppointments && refreshAppointments(true)}
+                            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 hover:bg-slate-50"
+                            title="تحديث القائمة الآن"
+                        >
+                            <RefreshCw size={16} className={isSilentRefreshing ? 'animate-spin' : ''} />
+                            تحديث
+                        </button>
 
-                    {/* زر التحديث اليدوي (اختياري لو أراد التحديث فوراً) */}
-                    <button
-                        onClick={() => refreshAppointments && refreshAppointments(true)}
-                        className={`p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors shadow-sm flex items-center justify-center ${isSilentRefreshing ? 'animate-spin border-blue-200 text-blue-500' : ''}`}
-                        title="تحديث القائمة الآن"
-                    >
-                        🔄
-                    </button>
-
-                    {/* حقل التاريخ */}
-                    <div className="bg-slate-50 px-4 py-2 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3 flex-1 md:flex-none hover:border-blue-400 transition-colors focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-50">
-                        <span className="text-slate-400">📅</span>
-                        <input
-                            type="date"
-                            value={selectedDate}
-                            onChange={(e) => setSelectedDate(e.target.value)}
-                            className="bg-transparent border-none font-black text-slate-700 outline-none cursor-pointer text-sm w-full py-0.5"
-                        />
+                        <label className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3">
+                            <CalendarDays size={16} className="text-slate-500" />
+                            <input
+                                type="date"
+                                value={selectedDate}
+                                onChange={(e) => setSelectedDate(e.target.value)}
+                                className="w-full bg-transparent text-sm font-black text-slate-700 outline-none sm:w-36"
+                            />
+                        </label>
                     </div>
                 </div>
             </div>
 
-            {/* 2. حالات العرض */}
             {isLoading && !isSilentRefreshing ? (
-                <div className="flex flex-col justify-center items-center h-64 font-black text-slate-300">
-                    <motion.div animate={{ y: [0, -10, 0] }} transition={{ repeat: Infinity }} className="text-4xl mb-4">🎈</motion.div>
-                    جاري جلب القائمة...
+                <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                    {Array.from({ length: 4 }).map((_, index) => (
+                        <div key={index} className="h-44 animate-pulse rounded-lg border border-slate-200 bg-white" />
+                    ))}
                 </div>
             ) : appointments?.length === 0 ? (
-                <motion.div variants={itemVariants} initial="hidden" animate="show" className="bg-slate-50 rounded-3xl p-20 text-center border border-slate-100 border-dashed">
-                    <p className="text-5xl mb-4 grayscale opacity-30">🎈</p>
-                    <p className="text-slate-400 font-bold text-lg">الجدول فارغ لهذا اليوم.</p>
-                </motion.div>
+                <div className="flex min-h-72 flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white p-8 text-center">
+                    <CalendarDays size={28} className="mb-3 text-slate-400" />
+                    <p className="font-black text-slate-600">الجدول فارغ لهذا اليوم.</p>
+                </div>
             ) : (
-                <motion.div variants={containerVariants} initial="hidden" animate="show" className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                    <AnimatePresence>
-                        {appointments.map((app) => (
-                            <motion.div
-                                variants={itemVariants}
-                                layout
-                                key={app._id}
-                                className={`relative p-5 rounded-3xl border transition-all flex flex-col justify-between ${app.status === 'Completed' ? 'bg-emerald-50/30 border-emerald-100 opacity-75' :
-                                    app.status === 'Cancelled' ? 'bg-red-50/30 border-red-100 opacity-50' :
-                                        'bg-white border-slate-200 shadow-sm hover:shadow-md hover:border-blue-200'
-                                    }`}
-                            >
-                                <div>
-                                    <div className="flex justify-between items-start mb-3">
-                                        <div>
-                                            <div className="flex items-baseline gap-1.5 mb-1">
-                                                <span className="text-2xl font-black text-slate-800" dir="ltr">
-                                                    {formatTime12Hour(app.timeSlot)}
-                                                </span>
-                                                <span className="text-xs font-bold text-slate-400">
-                                                    {getTimePeriod(app.timeSlot)}
-                                                </span>
-                                            </div>
-                                            <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
-                                                {app.childName}
-                                                <span className={`text-[10px] px-2 py-0.5 rounded-md bg-blue-50 text-blue-600`}>
-                                                    {app.chair}
-                                                </span>
-                                            </h3>
-
-                                            <div className="flex items-center gap-3 mt-1">
-                                                <p className="text-slate-500 font-bold text-sm" dir="ltr">{app.customerPhone}</p>
-                                                {app.status === 'Booked' && whatsappSettings?.isEnabled && (
-                                                    <button
-                                                        onClick={() => handleSingleWhatsApp(app)}
-                                                        className="text-slate-400 hover:text-emerald-500 bg-slate-50 hover:bg-emerald-50 px-2 py-1 rounded-lg text-xs font-black transition-colors"
-                                                        title="تذكير واتساب"
-                                                    >
-                                                        💬
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        <div className="text-left bg-slate-50 border border-slate-100 px-4 py-2 rounded-2xl flex flex-col items-center justify-center">
-                                            <span className="text-[10px] font-bold text-slate-400 mb-0.5">الفاتورة</span>
-                                            <div className="flex items-baseline gap-1">
-                                                <span className="font-black text-xl text-slate-800">{app.totalPrice > 0 ? app.totalPrice : '--'}</span>
-                                                <span className="text-[10px] font-bold text-slate-500">ر.س</span>
-                                            </div>
-                                        </div>
+                <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                    {appointments.map((app) => (
+                        <article
+                            key={app._id}
+                            className={`flex min-h-44 flex-col justify-between rounded-lg border p-4 ${statusStyles[app.status] || statusStyles.Booked}`}
+                        >
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="flex items-baseline gap-2">
+                                        <span className="text-xl font-black text-slate-950" dir="ltr">
+                                            {formatTime12Hour(app.timeSlot)}
+                                        </span>
+                                        <span className="text-xs font-black text-slate-500">{getTimePeriod(app.timeSlot)}</span>
                                     </div>
-
-                                    {app.selectedServices && app.selectedServices.length > 0 && (
-                                        <div className="flex flex-wrap gap-1.5 mb-4 mt-2">
-                                            {app.selectedServices.map((srv, idx) => (
-                                                <span key={idx} className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-md border border-slate-200">
-                                                    {srv.name}
-                                                </span>
-                                            ))}
-                                            {app.totalDuration && (
-                                                <span className="text-[10px] font-bold bg-amber-50 text-amber-600 px-2 py-1 rounded-md border border-amber-100">
-                                                    ⏱️ {app.totalDuration} دقيقة
-                                                </span>
-                                            )}
-                                        </div>
-                                    )}
+                                    <h3 className="mt-2 truncate text-base font-black text-slate-900">{app.childName}</h3>
+                                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs font-bold text-slate-500">
+                                        <span dir="ltr">{app.customerPhone}</span>
+                                        <span className="rounded-md border border-slate-200 bg-white px-2 py-1">{app.chair}</span>
+                                    </div>
                                 </div>
 
-                                {/* 3. أزرار التحكم وحالة الموعد */}
-                                <div className="flex items-center gap-2 border-t border-slate-100 pt-3 mt-auto">
-                                    {app.status === 'Booked' && (
-                                        <>
-                                            <button
-                                                onClick={() => handleStatusChange(app._id, 'Completed')}
-                                                className="flex-1 bg-emerald-500 text-white px-3 py-2 rounded-xl font-bold text-sm hover:bg-emerald-600 active:scale-95 transition-all"
-                                            >
-                                                تمت الحلاقة ✔️
-                                            </button>
+                                <div className="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left">
+                                    <p className="text-[11px] font-black text-slate-500">الإجمالي</p>
+                                    <p className="mt-1 font-black text-slate-950">
+                                        {app.totalPrice > 0 ? app.totalPrice : '--'}
+                                        <span className="mr-1 text-[10px] text-slate-500">ر.س</span>
+                                    </p>
+                                </div>
+                            </div>
 
-                                            <button
-                                                onClick={() => setCancelModalConfig({ isOpen: true, appointmentId: app._id })}
-                                                className="bg-red-50 text-red-500 px-3 py-2 rounded-xl font-bold text-sm hover:bg-red-100 active:scale-95 transition-all"
-                                            >
-                                                إلغاء ✖️
-                                            </button>
-                                        </>
-                                    )}
-
-                                    {app.status === 'Completed' && (
-                                        <>
-                                            <span className="text-emerald-600 font-black text-sm w-full text-center bg-emerald-50 py-2 rounded-xl">
-                                                مكتمل ✨
-                                            </span>
-                                            <button
-                                                onClick={() => fetchAndShowInvoice(app._id)}
-                                                className="ml-2 bg-slate-800 text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-slate-700 active:scale-95 transition-all flex items-center gap-1 shadow-sm whitespace-nowrap"
-                                                title="طباعة الفاتورة"
-                                            >
-                                                <span>🖨️</span> فاتورة
-                                            </button>
-                                        </>
-                                    )}
-
-                                    {app.status === 'Cancelled' && (
-                                        <div className="w-full bg-red-50 py-2 px-3 rounded-xl flex flex-col justify-center items-center">
-                                            <span className="text-red-500 font-black text-sm">
-                                                ملغي 🚫
-                                            </span>
-                                            {app.cancelReason && (
-                                                <span className="text-[10px] font-bold text-red-400 mt-0.5 text-center line-clamp-1" title={app.cancelReason}>
-                                                    السبب: {app.cancelReason}
-                                                </span>
-                                            )}
-                                        </div>
+                            {app.selectedServices && app.selectedServices.length > 0 && (
+                                <div className="mt-3 flex flex-wrap gap-1.5">
+                                    {app.selectedServices.map((srv, idx) => (
+                                        <span key={idx} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-600">
+                                            {srv.name}
+                                        </span>
+                                    ))}
+                                    {app.totalDuration && (
+                                        <span className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-black text-amber-700">
+                                            {app.totalDuration} دقيقة
+                                        </span>
                                     )}
                                 </div>
-                            </motion.div>
-                        ))}
-                    </AnimatePresence>
-                </motion.div>
+                            )}
+
+                            <div className="mt-4 flex items-center gap-2 border-t border-slate-200 pt-3">
+                                {app.status === 'Booked' && (
+                                    <>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleStatusChange(app._id, 'Completed')}
+                                            className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-sm font-black text-white hover:bg-emerald-700"
+                                        >
+                                            <Scissors size={16} />
+                                            تمت الخدمة
+                                        </button>
+
+                                        {whatsappSettings?.isEnabled && (
+                                            <button
+                                                type="button"
+                                                onClick={() => handleSingleWhatsApp(app)}
+                                                className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                                                title="تذكير واتساب"
+                                            >
+                                                <MessageCircle size={17} />
+                                            </button>
+                                        )}
+
+                                        <button
+                                            type="button"
+                                            onClick={() => setCancelModalConfig({ isOpen: true, appointmentId: app._id })}
+                                            className="flex h-10 w-10 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-600 hover:bg-red-100"
+                                            title="إلغاء"
+                                        >
+                                            <XCircle size={17} />
+                                        </button>
+                                    </>
+                                )}
+
+                                {app.status === 'Completed' && (
+                                    <>
+                                        <span className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-white text-sm font-black text-emerald-700">
+                                            <CheckCircle2 size={16} />
+                                            مكتمل
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => fetchAndShowInvoice(app)}
+                                            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 text-sm font-black text-white hover:bg-slate-800"
+                                        >
+                                            <Printer size={16} />
+                                            فاتورة
+                                        </button>
+                                    </>
+                                )}
+
+                                {app.status === 'Cancelled' && (
+                                    <div className="flex min-h-10 w-full flex-col justify-center rounded-lg border border-red-200 bg-white px-3 text-center">
+                                        <span className="text-sm font-black text-red-700">ملغي</span>
+                                        {app.cancelReason && (
+                                            <span className="truncate text-[11px] font-bold text-red-500" title={app.cancelReason}>
+                                                {app.cancelReason}
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </article>
+                    ))}
+                </div>
             )}
 
             {invoiceData && (
@@ -270,8 +260,7 @@ const DailyTab = ({
                 onConfirm={onConfirmCancel}
                 isCanceling={isCanceling}
             />
-
-        </motion.div>
+        </div>
     );
 };
 

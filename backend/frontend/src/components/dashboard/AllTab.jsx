@@ -1,212 +1,197 @@
-import React, { useState, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useMemo, useState } from 'react';
+import { Download, FileText, Scissors, XCircle } from 'lucide-react';
 import { formatBookingTime, formatTime12Hour, getTimePeriod } from '../../utils/helpers';
-import CancelAppointmentModal from './CancelAppointmentModal'; // 💡 1. استيراد النافذة
+import CancelAppointmentModal from './CancelAppointmentModal';
+
+const statusLabels = {
+    All: 'الكل',
+    Booked: 'محجوز',
+    Completed: 'مكتمل',
+    Cancelled: 'ملغي',
+};
+
+const statusClasses = {
+    Booked: 'bg-blue-50 text-blue-700 border-blue-200',
+    Completed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    Cancelled: 'bg-red-50 text-red-700 border-red-200',
+};
 
 const AllTab = ({ isLoading, allAppointments, exportToExcel, handleStatusChange }) => {
     const [filterStatus, setFilterStatus] = useState('All');
-
-    // 💡 2. حالات النافذة الخاصة بالإلغاء
     const [cancelModalConfig, setCancelModalConfig] = useState({ isOpen: false, appointmentId: null });
     const [isCanceling, setIsCanceling] = useState(false);
 
     const filteredAppointments = useMemo(() => {
         if (!allAppointments) return [];
         if (filterStatus === 'All') return allAppointments;
-        return allAppointments.filter(app => app.status === filterStatus);
+        return allAppointments.filter((app) => app.status === filterStatus);
     }, [allAppointments, filterStatus]);
 
     const stats = useMemo(() => {
-        if (!allAppointments) return { all: 0, booked: 0, completed: 0, cancelled: 0 };
+        if (!allAppointments) return { All: 0, Booked: 0, Completed: 0, Cancelled: 0 };
         return {
-            all: allAppointments.length,
-            booked: allAppointments.filter(a => a.status === 'Booked').length,
-            completed: allAppointments.filter(a => a.status === 'Completed').length,
-            cancelled: allAppointments.filter(a => a.status === 'Cancelled').length,
+            All: allAppointments.length,
+            Booked: allAppointments.filter((appointment) => appointment.status === 'Booked').length,
+            Completed: allAppointments.filter((appointment) => appointment.status === 'Completed').length,
+            Cancelled: allAppointments.filter((appointment) => appointment.status === 'Cancelled').length,
         };
     }, [allAppointments]);
 
-    const filterButtons = [
-        { id: 'All', label: 'الكل', count: stats.all, colorClass: 'bg-slate-800 text-white', activeClass: 'ring-slate-800', defaultClass: 'bg-white text-slate-600 hover:bg-slate-50 border-slate-200' },
-        { id: 'Booked', label: 'محجوز', count: stats.booked, colorClass: 'bg-blue-500 text-white border-blue-500', activeClass: 'ring-blue-500', defaultClass: 'bg-white text-slate-600 hover:bg-blue-50 border-slate-200' },
-        { id: 'Completed', label: 'مكتمل', count: stats.completed, colorClass: 'bg-emerald-500 text-white border-emerald-500', activeClass: 'ring-emerald-500', defaultClass: 'bg-white text-slate-600 hover:bg-emerald-50 border-slate-200' },
-        { id: 'Cancelled', label: 'ملغي', count: stats.cancelled, colorClass: 'bg-red-500 text-white border-red-500', activeClass: 'ring-red-500', defaultClass: 'bg-white text-slate-600 hover:bg-red-50 border-slate-200' }
-    ];
-
-    // 💡 3. دالة معالجة التغيير من القائمة المنسدلة
     const onSelectStatusChange = (appId, newStatus) => {
         if (newStatus === 'Cancelled') {
-            // إذا اختار إلغاء، نفتح النافذة
             setCancelModalConfig({ isOpen: true, appointmentId: appId });
-        } else {
-            // إذا اختار حالة أخرى، نحدث فوراً
-            handleStatusChange(appId, newStatus);
+            return;
         }
+
+        handleStatusChange(appId, newStatus);
     };
 
-    // 💡 4. دالة تأكيد الإلغاء من النافذة
     const onConfirmCancel = async (reason) => {
         setIsCanceling(true);
         try {
             await handleStatusChange(cancelModalConfig.appointmentId, 'Cancelled', reason);
             setCancelModalConfig({ isOpen: false, appointmentId: null });
         } catch (error) {
-            console.error("خطأ في الإلغاء", error);
+            console.error('خطأ في الإلغاء', error);
         } finally {
             setIsCanceling(false);
         }
     };
 
     return (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 relative">
-            <div className="bg-white p-6 md:p-8 rounded-[35px] shadow-sm border border-slate-100">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-                    <div>
-                        <h2 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                            🌍 السجل الشامل للحجوزات
-                        </h2>
-                        <p className="text-xs font-bold text-slate-400 mt-1">
-                            عرض وتصفية وتعديل جميع المواعيد المسجلة في النظام.
-                        </p>
-                    </div>
-                    <button
-                        onClick={exportToExcel}
-                        disabled={!allAppointments || allAppointments.length === 0}
-                        className="bg-emerald-50 text-emerald-600 font-black px-5 py-2.5 rounded-xl hover:bg-emerald-500 hover:text-white active:scale-95 transition-all text-sm flex items-center gap-2 shadow-sm disabled:opacity-50 disabled:pointer-events-none"
-                    >
-                        <span>📊</span> تصدير Excel
-                    </button>
-                </div>
-
-                {!isLoading && allAppointments && allAppointments.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mb-6 pb-6 border-b border-slate-50">
-                        {filterButtons.map((btn) => (
+        <div className="space-y-4">
+            <div className="rounded-lg border border-slate-200 bg-white p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex flex-wrap gap-2">
+                        {Object.keys(statusLabels).map((status) => (
                             <button
-                                key={btn.id}
-                                onClick={() => setFilterStatus(btn.id)}
-                                className={`relative px-4 py-2 rounded-xl text-sm font-black transition-all border flex items-center gap-2 
-                                    ${filterStatus === btn.id ? `${btn.colorClass} shadow-md ring-2 ring-offset-2 ${btn.activeClass}` : btn.defaultClass}
-                                `}
+                                key={status}
+                                type="button"
+                                onClick={() => setFilterStatus(status)}
+                                className={`inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-sm font-black transition-colors ${filterStatus === status
+                                    ? 'border-slate-900 bg-slate-900 text-white'
+                                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                                    }`}
                             >
-                                {btn.label}
-                                <span className={`text-[10px] px-2 py-0.5 rounded-lg ${filterStatus === btn.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                                    {btn.count}
+                                {statusLabels[status]}
+                                <span className={`rounded-md px-2 py-0.5 text-[11px] ${filterStatus === status ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                                    {stats[status]}
                                 </span>
                             </button>
                         ))}
                     </div>
-                )}
 
-                {isLoading ? (
-                    <div className="text-center py-20 font-black text-slate-300 flex flex-col items-center">
-                        <span className="text-4xl animate-spin block mb-4">⏳</span>
-                        جاري تحميل السجل...
-                    </div>
-                ) : filteredAppointments.length === 0 ? (
-                    <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="text-center py-20 bg-slate-50 rounded-3xl border border-dashed border-slate-200">
-                        <span className="text-5xl block mb-4 grayscale opacity-40">📭</span>
-                        <h3 className="text-lg font-black text-slate-500 mb-1">
-                            {filterStatus === 'All' ? 'لا توجد حجوزات مسجلة حالياً' : `لا توجد حجوزات بحالة (${filterButtons.find(b => b.id === filterStatus)?.label})`}
-                        </h3>
-                    </motion.div>
-                ) : (
-                    <div className="overflow-x-auto rounded-2xl border border-slate-100 shadow-sm hide-scrollbar">
-                        <table className="w-full text-right whitespace-nowrap min-w-[1000px]">
-                            <thead>
-                                <tr className="bg-slate-50 text-slate-500 text-xs font-black tracking-wider border-b border-slate-100">
-                                    <th className="p-4 rounded-tr-2xl">تاريخ الطلب</th>
-                                    <th className="p-4">الحضور</th>
-                                    <th className="p-4 text-center">الوقت</th>
-                                    <th className="p-4">اسم العميل</th>
-                                    <th className="p-4">الكرسي / الحلاق</th>
-                                    <th className="p-4">الخدمات المطلوبة</th>
-                                    <th className="p-4 text-center">الفاتورة</th>
-                                    <th className="p-4 rounded-tl-2xl text-center">الحالة</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-50 text-sm">
-                                <AnimatePresence>
-                                    {filteredAppointments.map((app, index) => (
-                                        <motion.tr key={app._id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ delay: index * 0.02 }} className="hover:bg-slate-50/80 transition-colors group">
-                                            <td className="p-4 text-[11px] font-bold text-slate-400" dir="ltr">{formatBookingTime(app.createdAt)}</td>
-                                            <td className="p-4 font-bold text-slate-600 text-xs" dir="ltr">{app.date}</td>
-                                            <td className="p-4 font-black text-slate-800 text-center">
-                                                <div className="bg-slate-100/50 inline-block px-3 py-1.5 rounded-xl border border-slate-100">
-                                                    <span dir="ltr">{formatTime12Hour(app.timeSlot)}</span>{' '}
-                                                    <span className="text-[10px] text-slate-400 font-bold">{getTimePeriod(app.timeSlot)}</span>
-                                                </div>
-                                            </td>
-                                            <td className="p-4 font-black text-slate-800">
-                                                {app.childName}
-                                                <div className="text-[10px] text-slate-400 font-bold mt-0.5" dir="ltr">{app.customerPhone}</div>
-                                            </td>
-                                            <td className="p-4">
-                                                <span className="text-[11px] font-bold text-slate-500 bg-white px-2 py-1 rounded-lg border border-slate-200 shadow-sm">✂️ {app.chair}</span>
-                                            </td>
-
-                                            <td className="p-4 max-w-[200px] truncate whitespace-normal">
-                                                <div className="flex flex-wrap gap-1">
-                                                    {app.selectedServices && app.selectedServices.length > 0 ? (
-                                                        app.selectedServices.map((srv, idx) => (
-                                                            <span key={idx} className="text-[10px] font-bold bg-blue-50 text-blue-600 px-2 py-0.5 rounded-md border border-blue-100">
-                                                                {srv.name}
-                                                            </span>
-                                                        ))
-                                                    ) : (
-                                                        <span className="text-[10px] font-bold text-slate-400">حجز مقعد فقط</span>
-                                                    )}
-                                                </div>
-                                            </td>
-
-                                            <td className="p-4 text-center">
-                                                <span className="font-black text-slate-700 bg-slate-100 px-3 py-1 rounded-lg">
-                                                    {app.totalPrice > 0 ? app.totalPrice : '--'} <span className="text-[9px] text-slate-400">ر.س</span>
-                                                </span>
-                                            </td>
-
-                                            <td className="p-4 text-center">
-                                                <div className="flex flex-col items-center justify-center">
-                                                    {/* 💡 5. ربط الـ Select بالدالة الذكية الجديدة */}
-                                                    <select
-                                                        value={app.status}
-                                                        onChange={(e) => onSelectStatusChange(app._id, e.target.value)}
-                                                        className={`text-xs px-3 py-2 rounded-xl font-black outline-none cursor-pointer shadow-sm text-center transition-all focus:ring-2 appearance-none w-28
-                                                            ${app.status === 'Booked' ? 'bg-blue-50 text-blue-600 border border-blue-100 focus:ring-blue-200' :
-                                                                app.status === 'Completed' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100 focus:ring-emerald-200' :
-                                                                    'bg-red-50 text-red-600 border border-red-100 focus:ring-red-200'
-                                                            }`}
-                                                    >
-                                                        <option value="Booked" className="bg-white text-blue-600">قادم ⏳</option>
-                                                        <option value="Completed" className="bg-white text-emerald-600">مكتمل ✅</option>
-                                                        <option value="Cancelled" className="bg-white text-red-600">ملغي ❌</option>
-                                                    </select>
-
-                                                    {/* عرض سبب الإلغاء إذا وجد تحت القائمة */}
-                                                    {app.status === 'Cancelled' && app.cancelReason && (
-                                                        <span className="text-[9px] font-bold text-red-400 mt-1 line-clamp-1 max-w-[100px]" title={app.cancelReason}>
-                                                            {app.cancelReason}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </td>
-                                        </motion.tr>
-                                    ))}
-                                </AnimatePresence>
-                            </tbody>
-                        </table>
-                    </div>
-                )}
+                    <button
+                        type="button"
+                        onClick={exportToExcel}
+                        disabled={!allAppointments || allAppointments.length === 0}
+                        className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 text-sm font-black text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                    >
+                        <Download size={16} />
+                        تصدير Excel
+                    </button>
+                </div>
             </div>
 
-            {/* 💡 6. وضع النافذة أسفل الصفحة */}
+            {isLoading ? (
+                <div className="rounded-lg border border-slate-200 bg-white p-4">
+                    <div className="space-y-3">
+                        {Array.from({ length: 6 }).map((_, index) => (
+                            <div key={index} className="h-12 animate-pulse rounded-lg bg-slate-100" />
+                        ))}
+                    </div>
+                </div>
+            ) : filteredAppointments.length === 0 ? (
+                <div className="flex min-h-72 flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white p-8 text-center">
+                    <FileText size={28} className="mb-3 text-slate-400" />
+                    <h3 className="font-black text-slate-600">
+                        {filterStatus === 'All' ? 'لا توجد حجوزات مسجلة حالياً' : `لا توجد حجوزات بحالة ${statusLabels[filterStatus]}`}
+                    </h3>
+                </div>
+            ) : (
+                <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                    <table className="w-full min-w-[980px] whitespace-nowrap text-right text-sm">
+                        <thead>
+                            <tr className="border-b border-slate-200 bg-slate-50 text-xs font-black text-slate-500">
+                                <th className="px-4 py-3">تاريخ الطلب</th>
+                                <th className="px-4 py-3">الحضور</th>
+                                <th className="px-4 py-3">الوقت</th>
+                                <th className="px-4 py-3">العميل</th>
+                                <th className="px-4 py-3">الكرسي / الحلاق</th>
+                                <th className="px-4 py-3">الخدمات</th>
+                                <th className="px-4 py-3 text-left">الفاتورة</th>
+                                <th className="px-4 py-3 text-center">الحالة</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {filteredAppointments.map((app) => (
+                                <tr key={app._id} className="hover:bg-slate-50">
+                                    <td className="px-4 py-3 text-xs font-bold text-slate-500" dir="ltr">{formatBookingTime(app.createdAt)}</td>
+                                    <td className="px-4 py-3 font-bold text-slate-600" dir="ltr">{app.date}</td>
+                                    <td className="px-4 py-3 font-black text-slate-900">
+                                        <span dir="ltr">{formatTime12Hour(app.timeSlot)}</span>{' '}
+                                        <span className="text-xs font-bold text-slate-500">{getTimePeriod(app.timeSlot)}</span>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                        <div className="font-black text-slate-900">{app.childName}</div>
+                                        <div className="mt-0.5 text-xs font-bold text-slate-500" dir="ltr">{app.customerPhone}</div>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                        <span className="inline-flex items-center gap-2 rounded-md border border-slate-200 px-2 py-1 text-xs font-bold text-slate-600">
+                                            <Scissors size={13} />
+                                            {app.chair}
+                                        </span>
+                                    </td>
+                                    <td className="max-w-56 whitespace-normal px-4 py-3">
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {app.selectedServices && app.selectedServices.length > 0 ? (
+                                                app.selectedServices.map((srv, idx) => (
+                                                    <span key={idx} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-bold text-slate-600">
+                                                        {srv.name}
+                                                    </span>
+                                                ))
+                                            ) : (
+                                                <span className="text-xs font-bold text-slate-400">حجز مقعد فقط</span>
+                                            )}
+                                        </div>
+                                    </td>
+                                    <td className="px-4 py-3 text-left font-black text-slate-900">
+                                        {app.totalPrice > 0 ? app.totalPrice : '--'} <span className="text-[10px] text-slate-500">ر.س</span>
+                                    </td>
+                                    <td className="px-4 py-3 text-center">
+                                        <div className="flex flex-col items-center justify-center gap-1">
+                                            <select
+                                                value={app.status}
+                                                onChange={(e) => onSelectStatusChange(app._id, e.target.value)}
+                                                className={`h-9 w-28 rounded-lg border px-2 text-center text-xs font-black outline-none ${statusClasses[app.status] || statusClasses.Booked}`}
+                                            >
+                                                <option value="Booked">قادم</option>
+                                                <option value="Completed">مكتمل</option>
+                                                <option value="Cancelled">ملغي</option>
+                                            </select>
+
+                                            {app.status === 'Cancelled' && app.cancelReason && (
+                                                <span className="inline-flex max-w-28 items-center gap-1 truncate text-[10px] font-bold text-red-500" title={app.cancelReason}>
+                                                    <XCircle size={12} />
+                                                    {app.cancelReason}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+
             <CancelAppointmentModal
                 isOpen={cancelModalConfig.isOpen}
                 onClose={() => setCancelModalConfig({ isOpen: false, appointmentId: null })}
                 onConfirm={onConfirmCancel}
                 isCanceling={isCanceling}
             />
-
-        </motion.div>
+        </div>
     );
 };
 

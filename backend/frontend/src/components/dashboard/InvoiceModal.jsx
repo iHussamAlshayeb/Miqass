@@ -100,7 +100,7 @@ const ReceiptContent = ({ invoice, invoiceNumber, formatCurrency, baseAmount, va
         totalVal: isNarrow ? '13px' : '15px',
     };
 
-    // 💡 الاعتماد الكلي على الـ QR القادم من الباك إند
+    // الاعتماد الكلي على QR القادم من الباك إند
     const zatcaBase64 = invoice?.qrCode;
 
     return (
@@ -280,7 +280,7 @@ const ReceiptContent = ({ invoice, invoiceNumber, formatCurrency, baseAmount, va
                 </div>
             )}
 
-            {/* 💡 ─── QR الزكاة ─── */}
+            {/* QR الزكاة */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '10px' }}>
                 {zatcaBase64 ? (
                     <>
@@ -295,10 +295,9 @@ const ReceiptContent = ({ invoice, invoiceNumber, formatCurrency, baseAmount, va
                         </div>
                         <div style={{ fontSize: fs.normal, marginTop: '4px', fontWeight: '900', textAlign: 'center' }}>QR فاتورة ضريبية</div>
 
-                        {/* 💡 شارة احترافية تظهر أن النظام محدث للمرحلة الثانية */}
                         {invoice?.isZatcaPhase2 && (
                             <div style={{ fontSize: '8px', fontWeight: 'bold', border: '1px solid #000', padding: '2px 4px', borderRadius: '2px', marginTop: '2px' }}>
-                                ZATCA Phase 2 ✅
+                                ZATCA Phase 2
                             </div>
                         )}
                     </>
@@ -432,7 +431,7 @@ const InvoiceModal = ({ invoice, onClose, autoPrint = false, defaultPaperSize = 
             className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4"
             style={{ animation: 'fadeIn 0.2s ease' }}
         >
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[90vh]">
+            <div className="bg-white rounded-lg shadow-2xl w-full max-w-md flex flex-col max-h-[90vh]">
 
                 {/* ─── شريط الأدوات ─── */}
                 <div className="flex justify-between items-center p-3 border-b border-slate-100 bg-slate-50 rounded-t-2xl gap-2">
@@ -443,14 +442,14 @@ const InvoiceModal = ({ invoice, onClose, autoPrint = false, defaultPaperSize = 
                         <div className="relative">
                             <button
                                 onClick={() => setShowSizeMenu(v => !v)}
-                                className="flex items-center gap-1 bg-white border border-slate-200 text-slate-600 px-3 py-1.5 rounded-xl text-xs font-bold hover:bg-slate-100 transition"
+                                className="flex items-center gap-1 bg-white border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-100 transition"
                                 title="اختر حجم الورق"
                             >
                                 <Settings size={13} />
                                 {PAPER_SIZES[paperSize]?.label}
                             </button>
                             {showSizeMenu && (
-                                <div className="absolute left-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-50 min-w-[150px] overflow-hidden">
+                                <div className="absolute left-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-50 min-w-[150px] overflow-hidden">
                                     {Object.entries(PAPER_SIZES).map(([key, val]) => (
                                         <button
                                             key={key}
@@ -466,14 +465,14 @@ const InvoiceModal = ({ invoice, onClose, autoPrint = false, defaultPaperSize = 
 
                         <button
                             onClick={handlePrint}
-                            className="bg-slate-900 text-white px-4 py-1.5 rounded-xl flex items-center gap-1.5 hover:bg-slate-700 transition font-black text-sm active:scale-95"
+                            className="bg-slate-900 text-white px-4 py-1.5 rounded-lg flex items-center gap-1.5 hover:bg-slate-700 transition font-black text-sm active:scale-95"
                         >
                             <Printer size={14} /> طباعة
                         </button>
 
                         <button
                             onClick={onClose}
-                            className="bg-white border border-slate-200 text-slate-500 p-1.5 rounded-xl hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition"
+                            className="bg-white border border-slate-200 text-slate-500 p-1.5 rounded-lg hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition"
                         >
                             <X size={16} />
                         </button>

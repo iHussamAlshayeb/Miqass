@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowRight, LockKeyhole, LogIn, Mail } from 'lucide-react';
 import API from '../services/api';
-import { motion } from 'framer-motion';
 
 const LoginScreen = () => {
     const [email, setEmail] = useState('');
@@ -10,20 +10,16 @@ const LoginScreen = () => {
     const [error, setError] = useState('');
     const navigate = useNavigate();
 
-    const handleLogin = async (e) => {
-        e.preventDefault();
+    const handleLogin = async (event) => {
+        event.preventDefault();
         setIsLoading(true);
         setError('');
+
         try {
             const response = await API.post('/auth/login', { email, password });
-
-            // حفظ التوكن في المتصفح
             localStorage.setItem('token', response.data.token);
-
-            // توجيه المستخدم للوحة التحكم فوراً
             navigate('/dashboard');
         } catch (err) {
-            // 💡 عرض رسالة الخطأ الواردة من الباك إند (مثل: كلمة المرور خطأ)
             setError(err.response?.data?.message || 'حدث خطأ أثناء تسجيل الدخول');
         } finally {
             setIsLoading(false);
@@ -31,71 +27,81 @@ const LoginScreen = () => {
     };
 
     return (
-        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-arabic text-right selection:bg-blue-200" dir="rtl">
-            <motion.div
-                initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                className="bg-white w-full max-w-md p-8 rounded-[40px] shadow-xl border border-slate-100 relative"
-            >
-                {/* 💡 زر العودة للرئيسية */}
-                <div className="absolute top-6 left-6">
-                    <Link to="/" className="flex items-center gap-2 text-slate-400 hover:text-blue-600 transition-colors text-sm font-bold bg-slate-50 hover:bg-blue-50 px-4 py-2 rounded-xl">
-                        <span>الرئيسية</span>
-                        <span className="text-lg leading-none">🏠</span>
-                    </Link>
-                </div>
+        <main className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-arabic text-right selection:bg-blue-200" dir="rtl">
+            <section className="bg-white w-full max-w-md p-5 sm:p-6 rounded-lg shadow-sm border border-slate-100">
+                <Link to="/" className="inline-flex items-center gap-2 text-slate-500 hover:text-blue-700 transition-colors text-sm font-bold mb-8">
+                    <ArrowRight size={16} />
+                    الرئيسية
+                </Link>
 
-                <div className="text-center mb-8 mt-4">
-                    <h2 className="text-2xl font-black text-slate-800">بوابة الدخول</h2>
-                    <p className="text-slate-400 font-bold text-sm mt-1">أدخل بيانات صالونك للمتابعة</p>
+                <div className="mb-8">
+                    <div className="w-11 h-11 rounded-lg bg-slate-900 text-white flex items-center justify-center mb-4">
+                        <LockKeyhole size={20} />
+                    </div>
+                    <h1 className="text-2xl font-black text-slate-800">بوابة الدخول</h1>
+                    <p className="text-slate-500 font-bold text-sm mt-2">أدخل بيانات صالونك للمتابعة إلى لوحة الإدارة.</p>
                 </div>
 
                 {error && (
-                    <div className="bg-red-50 text-red-500 p-4 rounded-2xl mb-6 text-sm font-bold text-center border border-red-100">
+                    <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-5 text-sm font-bold border border-red-100">
                         {error}
                     </div>
                 )}
 
                 <form onSubmit={handleLogin} className="space-y-5">
                     <div>
-                        <label className="block text-sm font-black text-slate-500 mb-2">البريد الإلكتروني</label>
-                        <input
-                            type="email" required
-                            value={email} onChange={(e) => setEmail(e.target.value)}
-                            className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:border-blue-400 focus:bg-white transition-all text-slate-700 font-bold"
-                            placeholder="admin@salon.com" dir="ltr"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-black text-slate-500 mb-2">كلمة المرور</label>
-                        <input
-                            type="password" required
-                            value={password} onChange={(e) => setPassword(e.target.value)}
-                            className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:border-blue-400 focus:bg-white transition-all text-slate-700 font-bold"
-                            placeholder="••••••••" dir="ltr"
-                        />
+                        <label className="block text-sm font-black text-slate-600 mb-2">البريد الإلكتروني</label>
+                        <div className="relative">
+                            <input
+                                type="email"
+                                required
+                                value={email}
+                                onChange={(event) => setEmail(event.target.value)}
+                                className="w-full p-4 pl-11 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-400 focus:bg-white transition-all text-slate-700 font-bold"
+                                placeholder="admin@salon.com"
+                                dir="ltr"
+                            />
+                            <Mail size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                        </div>
                     </div>
 
-                    {/* 💡 تم ترتيب زر (نسيت كلمة المرور) */}
+                    <div>
+                        <label className="block text-sm font-black text-slate-600 mb-2">كلمة المرور</label>
+                        <div className="relative">
+                            <input
+                                type="password"
+                                required
+                                value={password}
+                                onChange={(event) => setPassword(event.target.value)}
+                                className="w-full p-4 pl-11 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-400 focus:bg-white transition-all text-slate-700 font-bold"
+                                placeholder="••••••••"
+                                dir="ltr"
+                            />
+                            <LockKeyhole size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                        </div>
+                    </div>
+
                     <div className="flex justify-start">
-                        <Link to="/forgot-password" className="text-xs font-bold text-slate-400 hover:text-blue-600 transition-colors">
+                        <Link to="/forgot-password" className="text-xs font-bold text-slate-500 hover:text-blue-700 transition-colors">
                             نسيت كلمة المرور؟
                         </Link>
                     </div>
 
                     <button
-                        type="submit" disabled={isLoading}
-                        className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl hover:bg-slate-700 active:scale-95 transition-all disabled:opacity-70 mt-4 shadow-xl shadow-slate-200"
+                        type="submit"
+                        disabled={isLoading}
+                        className="w-full bg-slate-900 text-white font-black py-4 rounded-lg hover:bg-slate-700 active:scale-95 transition-all disabled:opacity-70 mt-2 inline-flex items-center justify-center gap-2"
                     >
+                        <LogIn size={17} />
                         {isLoading ? 'جاري التحقق...' : 'دخول للوحة التحكم'}
                     </button>
                 </form>
 
                 <p className="text-center mt-6 text-sm font-bold text-slate-500">
-                    ليس لديك حساب صالون؟ <Link to="/register" className="text-blue-600 hover:text-blue-800 underline underline-offset-4">سجل مجاناً الآن</Link>
+                    ليس لديك حساب صالون؟ <Link to="/register" className="text-blue-700 hover:underline underline-offset-4">سجل مجاناً الآن</Link>
                 </p>
-
-            </motion.div>
-        </div>
+            </section>
+        </main>
     );
 };
 

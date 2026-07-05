@@ -2,16 +2,14 @@ import React, { useState, useEffect } from 'react';
 import Joyride, { STATUS } from 'react-joyride';
 
 const TourGuide = () => {
-    // 💡 حالة تشغيل الجولة
     const [run, setRun] = useState(false);
 
-    // 💡 خطوات الجولة (نستهدف العناصر عبر الكلاسات أو الـ IDs)
     const steps = [
         {
             target: 'body', // الخطوة الأولى تظهر في منتصف الشاشة
             content: (
                 <div className="text-right font-arabic">
-                    <h3 className="text-xl font-black mb-2 text-slate-800">أهلاً بك في منصة مِقَص! ✂️</h3>
+                    <h3 className="text-xl font-black mb-2 text-slate-800">أهلاً بك في منصة مِقَص</h3>
                     <p className="text-slate-600 font-bold">دعنا نأخذك في جولة سريعة لتعريفك بكيفية إدارة صالونك باحترافية.</p>
                 </div>
             ),
@@ -56,7 +54,6 @@ const TourGuide = () => {
         }
     ];
 
-    // 💡 التحقق مما إذا كان المستخدم يزور اللوحة لأول مرة
     useEffect(() => {
         const hasSeenTour = localStorage.getItem('hasSeenTour');
         if (!hasSeenTour) {
@@ -65,7 +62,6 @@ const TourGuide = () => {
         }
     }, []);
 
-    // 💡 ماذا يحدث عند انتهاء الجولة أو تخطيها؟
     const handleJoyrideCallback = (data) => {
         const { status } = data;
         const finishedStatuses = [STATUS.FINISHED, STATUS.SKIPPED];

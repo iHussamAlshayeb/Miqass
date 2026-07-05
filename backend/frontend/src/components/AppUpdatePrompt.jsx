@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { RefreshCcw, X } from 'lucide-react';
 import { applyPwaUpdate, listenForPwaUpdates } from '../services/pwaUpdates';
 
 const AppUpdatePrompt = () => {
@@ -35,28 +36,36 @@ const AppUpdatePrompt = () => {
   if (!isVisible) return null;
 
   return (
-    <div className="fixed bottom-5 left-4 right-4 z-[9999] flex justify-center pointer-events-none" dir="rtl">
-      <div className="pointer-events-auto w-full max-w-md bg-slate-950 text-white border border-white/10 shadow-2xl rounded-2xl p-4 flex items-center gap-3">
-        <div className="flex-1 min-w-0">
+    <div
+      className="pointer-events-none fixed bottom-4 left-3 right-3 z-[9999] flex justify-center sm:bottom-5 sm:left-5 sm:right-auto"
+      dir="rtl"
+      role="alert"
+      aria-live="polite"
+    >
+      <div className="pointer-events-auto flex w-full max-w-sm items-center gap-3 rounded-lg border border-slate-200 bg-white p-3 text-slate-900 shadow-xl">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
+          <RefreshCcw className="h-5 w-5" aria-hidden="true" />
+        </div>
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-black">تحديث جديد متوفر</p>
-          <p className="text-[11px] font-bold text-slate-300 mt-0.5">
+          <p className="mt-0.5 text-xs font-bold text-slate-500">
             حدث التطبيق للحصول على آخر نسخة.
           </p>
         </div>
         <button
           type="button"
           onClick={() => applyPwaUpdate(registration)}
-          className="shrink-0 bg-white text-slate-950 px-4 py-2 rounded-xl text-xs font-black active:scale-95 transition-transform"
+          className="shrink-0 rounded-lg bg-slate-900 px-3 py-2 text-xs font-black text-white transition-colors hover:bg-slate-800 active:scale-95"
         >
           تحديث الآن
         </button>
         <button
           type="button"
           onClick={() => setIsVisible(false)}
-          className="shrink-0 w-8 h-8 rounded-xl bg-white/10 text-white text-sm font-black active:scale-95 transition-transform"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-900 active:scale-95"
           aria-label="إغلاق"
         >
-          ×
+          <X className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>
     </div>

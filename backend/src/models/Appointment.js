@@ -21,6 +21,11 @@ const appointmentSchema = new mongoose.Schema(
       ref: "Invoice",
       default: null,
     },
+    saleId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Sale",
+      default: null,
+    },
 
     date: { type: String, required: true },
     timeSlot: { type: String, required: true },
@@ -98,6 +103,8 @@ appointmentSchema.index(
 );
 
 appointmentSchema.index({ tenantId: 1, customerId: 1 }, { background: true });
+
+appointmentSchema.index({ tenantId: 1, saleId: 1 }, { background: true });
 
 appointmentSchema.index(
   { tenantId: 1, date: 1, barberName: 1, status: 1 },

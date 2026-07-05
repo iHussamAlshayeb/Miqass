@@ -1,19 +1,27 @@
 import React, { useState, useEffect } from "react";
+// eslint-disable-next-line no-unused-vars
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import API from "../services/api";
 import TrustedClients from '../components/TrustedClients'; // 💡 الاستيراد الجديد
+
+const DEFAULT_STATS = {
+    salons: 0,
+    appointments: 0,
+    customers: 0
+};
+
+const toSafeNumber = (value, fallback = 0) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : fallback;
+};
 
 const LandingPage = () => {
     const navigate = useNavigate();
 
     const [isAnnual, setIsAnnual] = useState(false);
 
-    const [stats, setStats] = useState({
-        salons: 0,
-        appointments: 0,
-        customers: 0
-    });
+    const [stats, setStats] = useState(DEFAULT_STATS);
 
     // ==========================================
     // 💡 [NEW] حالة الأسعار والتخفيضات (لجلبها من السيرفر)
@@ -27,9 +35,9 @@ const LandingPage = () => {
                 // 1. جلب الإحصائيات
                 const statsRes = await API.get('/public/stats');
                 setStats({
-                    salons: statsRes.data.salons,
-                    appointments: statsRes.data.appointments,
-                    customers: statsRes.data.customers
+                    salons: toSafeNumber(statsRes.data?.salons, DEFAULT_STATS.salons),
+                    appointments: toSafeNumber(statsRes.data?.appointments, DEFAULT_STATS.appointments),
+                    customers: toSafeNumber(statsRes.data?.customers, DEFAULT_STATS.customers)
                 });
 
                 // 2. جلب الأسعار الحية
@@ -126,15 +134,15 @@ const LandingPage = () => {
                 <div className="max-w-7xl mx-auto px-6">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-8 divide-y md:divide-y-0 md:divide-x md:divide-x-reverse divide-slate-100">
                         <motion.div initial="hidden" whileInView="show" viewport={{ once: true }} variants={fadeUp} className="text-center py-2">
-                            <h3 className="text-4xl lg:text-5xl font-black text-blue-600 mb-2">+{stats.salons.toLocaleString()}</h3>
+                            <h3 className="text-4xl lg:text-5xl font-black text-blue-600 mb-2">+{toSafeNumber(stats.salons).toLocaleString()}</h3>
                             <p className="text-slate-500 font-bold text-base lg:text-lg">صالون يثق بنا </p>
                         </motion.div>
                         <motion.div initial="hidden" whileInView="show" viewport={{ once: true }} variants={fadeUp} className="text-center py-2">
-                            <h3 className="text-4xl lg:text-5xl font-black text-purple-600 mb-2">+{stats.appointments.toLocaleString()}</h3>
+                            <h3 className="text-4xl lg:text-5xl font-black text-purple-600 mb-2">+{toSafeNumber(stats.appointments).toLocaleString()}</h3>
                             <p className="text-slate-500 font-bold text-base lg:text-lg">موعد تم إدارته</p>
                         </motion.div>
                         <motion.div initial="hidden" whileInView="show" viewport={{ once: true }} variants={fadeUp} className="text-center py-2">
-                            <h3 className="text-4xl lg:text-5xl font-black text-emerald-500 mb-2">+{stats.customers.toLocaleString()}</h3>
+                            <h3 className="text-4xl lg:text-5xl font-black text-emerald-500 mb-2">+{toSafeNumber(stats.customers).toLocaleString()}</h3>
                             <p className="text-slate-500 font-bold text-base lg:text-lg">عميل سعيد تمت خدمته</p>
                         </motion.div>
                     </div>

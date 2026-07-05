@@ -1,7 +1,9 @@
 import axios from "axios";
 
+const API_BASE_URL = import.meta.env.VITE_BASE_URL || "/api";
+
 const API = axios.create({
-  baseURL: import.meta.env.VITE_BASE_URL, // تأكد أن هذا هو رابط الباك إند الخاص بك
+  baseURL: API_BASE_URL,
 });
 
 // ==========================================

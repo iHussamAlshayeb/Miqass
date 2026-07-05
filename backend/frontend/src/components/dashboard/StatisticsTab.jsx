@@ -1,32 +1,63 @@
 import React, { useMemo } from 'react';
-import { motion } from 'framer-motion';
+import {
+    Ban,
+    BarChart3,
+    CheckCircle2,
+    Scissors,
+    TrendingDown,
+    Trophy,
+} from 'lucide-react';
+
+const formatMoney = (value) => Number(value || 0).toLocaleString();
+
+const StatCard = ({ label, value, suffix, icon: Icon, tone = 'slate' }) => {
+    const toneClasses = {
+        slate: 'bg-slate-50 text-slate-700 border-slate-200',
+        emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+        red: 'bg-red-50 text-red-700 border-red-200',
+        blue: 'bg-blue-50 text-blue-700 border-blue-200',
+    };
+
+    return (
+        <div className="rounded-lg border border-slate-200 bg-white p-4">
+            <div className="flex items-start justify-between gap-3">
+                <div>
+                    <p className="text-xs font-black text-slate-500">{label}</p>
+                    <div className="mt-2 flex items-baseline gap-2">
+                        <span className="text-2xl font-black text-slate-950">{value}</span>
+                        {suffix && <span className="text-xs font-black text-slate-500">{suffix}</span>}
+                    </div>
+                </div>
+                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border ${toneClasses[tone]}`}>
+                    {React.createElement(Icon, { size: 18 })}
+                </div>
+            </div>
+        </div>
+    );
+};
 
 const StatisticsTab = ({ allAppointments }) => {
-
-    // 💡 1. حساب الإحصائيات الأساسية بذكاء (useMemo) لضمان السرعة
     const stats = useMemo(() => {
         if (!allAppointments || allAppointments.length === 0) return null;
 
         let totalRevenue = 0;
         let completedCount = 0;
         let cancelledCount = 0;
-        let barberStats = {}; // { 'كرسي 1': { revenue: 100, count: 5 }, ... }
-        let cancelReasons = {}; // { 'تأخير': 3, ... }
+        const barberStats = {};
+        const cancelReasons = {};
 
-        allAppointments.forEach(app => {
-            // حساب الإيرادات والمكتملة
+        allAppointments.forEach((app) => {
             if (app.status === 'Completed') {
                 completedCount++;
                 const price = Number(app.totalPrice) || 0;
                 totalRevenue += price;
 
-                // أداء الحلاقين
-                if (!barberStats[app.chair]) barberStats[app.chair] = { revenue: 0, count: 0 };
-                barberStats[app.chair].count++;
-                barberStats[app.chair].revenue += price;
+                const chair = app.chair || app.barberName || 'غير محدد';
+                if (!barberStats[chair]) barberStats[chair] = { revenue: 0, count: 0 };
+                barberStats[chair].count++;
+                barberStats[chair].revenue += price;
             }
 
-            // حساب الإلغاء وأسبابه
             if (app.status === 'Cancelled') {
                 cancelledCount++;
                 const reason = app.cancelReason || 'بدون سبب مسجل';
@@ -34,144 +65,141 @@ const StatisticsTab = ({ allAppointments }) => {
             }
         });
 
-        // ترتيب الحلاقين والأسباب من الأكبر للأصغر
-        const sortedBarbers = Object.entries(barberStats).sort((a, b) => b[1].revenue - a[1].revenue);
-        const sortedCancelReasons = Object.entries(cancelReasons).sort((a, b) => b[1] - a[1]);
-
         return {
             totalRevenue,
             completedCount,
             cancelledCount,
             totalBookings: allAppointments.length,
-            sortedBarbers,
-            sortedCancelReasons
+            sortedBarbers: Object.entries(barberStats).sort((a, b) => b[1].revenue - a[1].revenue),
+            sortedCancelReasons: Object.entries(cancelReasons).sort((a, b) => b[1] - a[1]),
         };
-
     }, [allAppointments]);
 
     if (!stats) {
         return (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-white p-10 rounded-[35px] shadow-sm border border-slate-100 text-center flex flex-col items-center justify-center min-h-[400px]">
-                <span className="text-6xl mb-4 grayscale opacity-30">📊</span>
-                <h3 className="text-xl font-black text-slate-500">لا توجد بيانات كافية لعرض الإحصائيات</h3>
-                <p className="text-sm font-bold text-slate-400 mt-2">ستبدأ الأرقام بالظهور هنا بمجرد تسجيل مواعيد جديدة وإكمالها.</p>
-            </motion.div>
+            <div className="flex min-h-[360px] flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white p-8 text-center">
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
+                    <BarChart3 size={22} />
+                </div>
+                <h3 className="text-lg font-black text-slate-700">لا توجد بيانات كافية</h3>
+                <p className="mt-2 max-w-md text-sm font-bold text-slate-500">
+                    ستظهر مؤشرات الأداء بعد تسجيل الحجوزات وإكمال الخدمات.
+                </p>
+            </div>
         );
     }
 
     return (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-
-            {/* 1. الكروت السريعة العلوية */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 p-6 rounded-[30px] text-white shadow-lg shadow-emerald-500/20 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-10 -mt-10"></div>
-                    <p className="text-sm font-bold text-emerald-100 mb-1 relative z-10">إجمالي المبيعات المحققة</p>
-                    <h3 className="text-4xl font-black relative z-10 flex items-baseline gap-2">
-                        {stats.totalRevenue.toLocaleString()} <span className="text-sm font-bold text-emerald-200">ر.س</span>
-                    </h3>
-                </div>
-
-                <div className="bg-white p-6 rounded-[30px] border border-slate-100 shadow-sm flex items-center justify-between">
-                    <div>
-                        <p className="text-sm font-bold text-slate-400 mb-1">الخدمات المكتملة</p>
-                        <h3 className="text-3xl font-black text-slate-800">{stats.completedCount} <span className="text-xs text-slate-400">طلب</span></h3>
-                    </div>
-                    <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-500 flex items-center justify-center text-2xl">✂️</div>
-                </div>
-
-                <div className="bg-white p-6 rounded-[30px] border border-slate-100 shadow-sm flex items-center justify-between">
-                    <div>
-                        <p className="text-sm font-bold text-slate-400 mb-1">المواعيد الملغية</p>
-                        <h3 className="text-3xl font-black text-red-500">{stats.cancelledCount} <span className="text-xs text-slate-400">طلب</span></h3>
-                    </div>
-                    <div className="w-14 h-14 rounded-2xl bg-red-50 text-red-500 flex items-center justify-center text-2xl">🚫</div>
-                </div>
+        <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <StatCard
+                    label="إجمالي المبيعات المحققة"
+                    value={formatMoney(stats.totalRevenue)}
+                    suffix="ر.س"
+                    icon={BarChart3}
+                    tone="emerald"
+                />
+                <StatCard
+                    label="الخدمات المكتملة"
+                    value={stats.completedCount}
+                    suffix="طلب"
+                    icon={Scissors}
+                    tone="blue"
+                />
+                <StatCard
+                    label="المواعيد الملغية"
+                    value={stats.cancelledCount}
+                    suffix="طلب"
+                    icon={Ban}
+                    tone="red"
+                />
             </div>
 
-            {/* 2. قسم الرسوم البيانية والأداء */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-                {/* أداء الطاقم (الحلاقين) */}
-                <div className="bg-white p-6 md:p-8 rounded-[35px] border border-slate-100 shadow-sm">
-                    <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-2">
-                        <span className="text-2xl">🏆</span> أداء الطاقم (الأعلى دخلاً)
-                    </h3>
-
-                    <div className="space-y-5">
-                        {stats.sortedBarbers.length > 0 ? stats.sortedBarbers.map(([barberName, data], index) => {
-                            // حساب النسبة المئوية لشريط التقدم بناءً على الأعلى دخلاً
-                            const maxRevenue = stats.sortedBarbers[0][1].revenue || 1;
-                            const percentage = (data.revenue / maxRevenue) * 100;
-
-                            return (
-                                <div key={barberName}>
-                                    <div className="flex justify-between text-sm mb-2">
-                                        <span className="font-black text-slate-700 flex items-center gap-2">
-                                            {index === 0 && <span className="text-amber-400">👑</span>}
-                                            {barberName} <span className="text-[10px] text-slate-400 font-bold bg-slate-100 px-2 py-0.5 rounded-md">{data.count} خدمة</span>
-                                        </span>
-                                        <span className="font-black text-emerald-600">{data.revenue} ر.س</span>
-                                    </div>
-                                    <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                                        <motion.div
-                                            initial={{ width: 0 }}
-                                            animate={{ width: `${percentage}%` }}
-                                            transition={{ duration: 1, delay: 0.2 }}
-                                            className={`h-2.5 rounded-full ${index === 0 ? 'bg-amber-400' : 'bg-blue-500'}`}
-                                        ></motion.div>
-                                    </div>
-                                </div>
-                            );
-                        }) : (
-                            <p className="text-sm font-bold text-slate-400 text-center py-4">لا توجد بيانات للموظفين بعد.</p>
-                        )}
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                <section className="rounded-lg border border-slate-200 bg-white">
+                    <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                        <div className="flex items-center gap-2">
+                            <Trophy size={18} className="text-slate-500" />
+                            <h3 className="font-black text-slate-900">أداء الطاقم</h3>
+                        </div>
+                        <span className="text-xs font-black text-slate-500">حسب الإيراد</span>
                     </div>
-                </div>
 
-                {/* تحليل أسباب الإلغاء */}
-                <div className="bg-white p-6 md:p-8 rounded-[35px] border border-slate-100 shadow-sm">
-                    <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-2">
-                        <span className="text-2xl">📉</span> تحليل أسباب الإلغاء
-                    </h3>
-
-                    <div className="space-y-4">
-                        {stats.sortedCancelReasons.length > 0 ? stats.sortedCancelReasons.map(([reason, count], index) => {
-                            // حساب النسبة المئوية من إجمالي الإلغاءات
-                            const percentage = Math.round((count / stats.cancelledCount) * 100);
+                    <div className="space-y-4 p-4">
+                        {stats.sortedBarbers.length > 0 ? stats.sortedBarbers.map(([barberName, data], index) => {
+                            const maxRevenue = stats.sortedBarbers[0][1].revenue || 1;
+                            const percentage = Math.round((data.revenue / maxRevenue) * 100);
 
                             return (
-                                <div key={reason} className="bg-slate-50 border border-slate-100 p-4 rounded-2xl flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-xl bg-red-100 text-red-500 flex items-center justify-center font-black text-sm">
-                                            {percentage}%
+                                <div key={barberName} className="space-y-2">
+                                    <div className="flex items-center justify-between gap-3 text-sm">
+                                        <div className="flex min-w-0 items-center gap-2">
+                                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-black text-slate-600">
+                                                {index + 1}
+                                            </span>
+                                            <div className="min-w-0">
+                                                <p className="truncate font-black text-slate-800">{barberName}</p>
+                                                <p className="text-xs font-bold text-slate-500">{data.count} خدمة مكتملة</p>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <p className="font-black text-slate-700 text-sm">{reason}</p>
-                                            <p className="text-[10px] font-bold text-slate-400 mt-0.5">تكرر {count} مرات</p>
-                                        </div>
+                                        <span className="shrink-0 font-black text-slate-900">{formatMoney(data.revenue)} ر.س</span>
                                     </div>
-                                    <div className="w-1/3 bg-slate-200 rounded-full h-1.5 overflow-hidden">
-                                        <motion.div
-                                            initial={{ width: 0 }}
-                                            animate={{ width: `${percentage}%` }}
-                                            transition={{ duration: 1, delay: 0.4 }}
-                                            className="bg-red-400 h-1.5 rounded-full"
-                                        ></motion.div>
+                                    <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                                        <div
+                                            className="h-full rounded-full bg-slate-900"
+                                            style={{ width: `${percentage}%` }}
+                                        />
                                     </div>
                                 </div>
                             );
                         }) : (
-                            <div className="text-center py-10 bg-emerald-50 rounded-2xl border border-emerald-100">
-                                <span className="text-3xl mb-2 block">🎉</span>
-                                <p className="text-sm font-black text-emerald-600">أداء مثالي! لا توجد مواعيد ملغية.</p>
+                            <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-bold text-slate-500">
+                                <CheckCircle2 size={18} />
+                                لا توجد بيانات أداء للطاقم بعد.
                             </div>
                         )}
                     </div>
-                </div>
+                </section>
 
+                <section className="rounded-lg border border-slate-200 bg-white">
+                    <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                        <div className="flex items-center gap-2">
+                            <TrendingDown size={18} className="text-slate-500" />
+                            <h3 className="font-black text-slate-900">أسباب الإلغاء</h3>
+                        </div>
+                        <span className="text-xs font-black text-slate-500">{stats.cancelledCount} عملية</span>
+                    </div>
+
+                    <div className="space-y-3 p-4">
+                        {stats.sortedCancelReasons.length > 0 ? stats.sortedCancelReasons.map(([reason, count]) => {
+                            const percentage = stats.cancelledCount ? Math.round((count / stats.cancelledCount) * 100) : 0;
+
+                            return (
+                                <div key={reason} className="rounded-lg border border-slate-200 p-3">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <p className="truncate text-sm font-black text-slate-800">{reason}</p>
+                                            <p className="mt-1 text-xs font-bold text-slate-500">تكرر {count} مرات</p>
+                                        </div>
+                                        <span className="shrink-0 rounded-md bg-red-50 px-2 py-1 text-xs font-black text-red-700">
+                                            {percentage}%
+                                        </span>
+                                    </div>
+                                    <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                                        <div className="h-full rounded-full bg-red-500" style={{ width: `${percentage}%` }} />
+                                    </div>
+                                </div>
+                            );
+                        }) : (
+                            <div className="flex items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-black text-emerald-700">
+                                <CheckCircle2 size={18} />
+                                لا توجد مواعيد ملغية.
+                            </div>
+                        )}
+                    </div>
+                </section>
             </div>
-        </motion.div>
+        </div>
     );
 };
 

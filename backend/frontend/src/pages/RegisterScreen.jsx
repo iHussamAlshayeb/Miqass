@@ -1,55 +1,74 @@
-import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import React, { useMemo, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowRight, Building2, CheckCircle2, Link2, LockKeyhole, Mail, Phone, UserRound } from 'lucide-react';
 import API from '../services/api';
-import { motion } from 'framer-motion';
+
+const emptyForm = {
+    salonName: '',
+    slug: '',
+    ownerName: '',
+    ownerPhone: '',
+    email: '',
+    password: '',
+};
+
+const sanitizeSlug = (value) =>
+    value
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9-]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
 
 const RegisterScreen = () => {
     const navigate = useNavigate();
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
+    const [formData, setFormData] = useState(emptyForm);
 
-    const [formData, setFormData] = useState({
-        salonName: '',
-        slug: '',
-        ownerName: '',
-        ownerPhone: '',
-        email: '',
-        password: ''
-    });
+    const bookingPathPreview = useMemo(
+        () => sanitizeSlug(formData.slug) || 'your-business',
+        [formData.slug],
+    );
 
-    const handleChange = (e) => {
-        setFormData({ ...formData, [e.target.name]: e.target.value });
+    const handleChange = (event) => {
+        const { name, value } = event.target;
+        setFormData((prev) => ({
+            ...prev,
+            [name]: name === 'slug' ? sanitizeSlug(value) : value,
+        }));
     };
 
-    const handleRegister = async (e) => {
-        e.preventDefault();
+    const handleRegister = async (event) => {
+        event.preventDefault();
         setIsLoading(true);
         setError('');
         setSuccess('');
 
-        // التحقق من أن الرابط (slug) لا يحتوي على مسافات
-        if (formData.slug.includes(' ')) {
-            setError('رابط الصالون (Slug) يجب ألا يحتوي على مسافات. استخدم الحروف الإنجليزية والشرطات فقط.');
+        const payload = {
+            ...formData,
+            slug: sanitizeSlug(formData.slug),
+            ownerPhone: formData.ownerPhone.replace(/\D/g, ''),
+        };
+
+        if (!payload.slug) {
+            setError('اكتب رابطاً مخصصاً بالإنجليزية والأرقام.');
             setIsLoading(false);
             return;
         }
 
         try {
-            const response = await API.post('/auth/register', formData);
+            const response = await API.post('/auth/register', payload);
+            setSuccess('تم إنشاء الحساب بنجاح. جاري فتح لوحة الإدارة...');
 
-            setSuccess('تم إنشاء حساب صالونك المجاني بنجاح! جاري دخول النظام... 🚀');
-
-            // 💡 1. حفظ التوكن في المتصفح لكي يتعرف عليه النظام كمدير مسجل
             if (response.data.token) {
                 localStorage.setItem('token', response.data.token);
             }
 
-            // 💡 2. توجيه للوحة التحكم مباشرة (بدون المرور بصفحة الدفع)
             setTimeout(() => {
                 navigate('/dashboard');
-            }, 2000);
-
+            }, 900);
         } catch (err) {
             setError(err.response?.data?.message || 'حدث خطأ أثناء التسجيل. تأكد من البيانات.');
         } finally {
@@ -58,119 +77,173 @@ const RegisterScreen = () => {
     };
 
     return (
-        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-arabic text-right selection:bg-blue-200" dir="rtl">
-            <motion.div
-                initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                className="bg-white w-full max-w-2xl p-6 md:p-10 rounded-[40px] shadow-xl border border-slate-100 relative"
-            >
-                {/* زر العودة للرئيسية */}
-                <div className="absolute top-6 left-6 md:top-8 md:left-8">
-                    <Link to="/" className="flex items-center gap-2 text-slate-400 hover:text-blue-600 transition-colors text-sm font-bold bg-slate-50 hover:bg-blue-50 px-4 py-2 rounded-xl">
-                        <span>الرئيسية</span>
-                        <span className="text-lg leading-none">🏠</span>
-                    </Link>
-                </div>
+        <main className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-arabic text-right selection:bg-blue-200" dir="rtl">
+            <section className="bg-white w-full max-w-3xl p-5 sm:p-6 rounded-lg shadow-sm border border-slate-100">
+                <Link to="/" className="inline-flex items-center gap-2 text-slate-500 hover:text-blue-700 transition-colors text-sm font-bold mb-8">
+                    <ArrowRight size={16} />
+                    الرئيسية
+                </Link>
 
-                <div className="text-center mb-8 mt-4 md:mt-0">
-                    <h2 className="text-2xl md:text-3xl font-black text-slate-800">ابدأ مجاناً الآن</h2>
-                    <p className="text-slate-400 font-bold text-sm mt-2">سجل صالونك وابدأ باستقبال الحجوزات (لا يتطلب بطاقة ائتمانية).</p>
-                </div>
-
-                {error && (
-                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-red-50 text-red-500 p-4 rounded-2xl mb-6 text-sm font-bold text-center border border-red-100">
-                        {error}
-                    </motion.div>
-                )}
-
-                {success && (
-                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-emerald-50 text-emerald-600 p-4 rounded-2xl mb-6 text-sm font-black text-center border border-emerald-100">
-                        {success}
-                    </motion.div>
-                )}
-
-                <form onSubmit={handleRegister} className="space-y-5">
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                        {/* اسم الصالون */}
-                        <div>
-                            <label className="block text-sm font-black text-slate-500 mb-2">اسم الصالون</label>
-                            <input
-                                type="text" name="salonName" required placeholder="مثال: صالون الأبطال"
-                                value={formData.salonName} onChange={handleChange}
-                                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:border-blue-400 focus:bg-white transition-all text-slate-700 font-bold"
-                            />
-                        </div>
-
-                        {/* الرابط المخصص */}
-                        <div>
-                            <label className="block text-sm font-black text-slate-500 mb-2">الرابط المخصص (Slug) بالإنجليزي</label>
-                            <div className="flex relative">
-                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm" dir="ltr">miqass.app/</span>
-                                <input
-                                    type="text" name="slug" required placeholder="heroes-salon"
-                                    value={formData.slug} onChange={handleChange}
-                                    className="w-full p-4 pr-24 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:border-blue-400 focus:bg-white transition-all text-slate-700 font-bold" dir="ltr"
-                                />
+                <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-6">
+                    <div>
+                        <div className="mb-6">
+                            <div className="w-11 h-11 rounded-lg bg-slate-900 text-white flex items-center justify-center mb-4">
+                                <Building2 size={20} />
                             </div>
+                            <h1 className="text-2xl font-black text-slate-800">إنشاء حساب منشأة</h1>
+                            <p className="text-slate-500 font-bold text-sm mt-2">
+                                جهّز الحساب الأساسي وابدأ بإدارة الحجوزات من لوحة التحكم.
+                            </p>
                         </div>
 
-                        {/* اسم المالك */}
-                        <div>
-                            <label className="block text-sm font-black text-slate-500 mb-2">اسم المالك / المدير</label>
-                            <input
-                                type="text" name="ownerName" required placeholder="مثال: عبدالله"
-                                value={formData.ownerName} onChange={handleChange}
-                                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:border-blue-400 focus:bg-white transition-all text-slate-700 font-bold"
-                            />
-                        </div>
+                        {error && (
+                            <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-5 text-sm font-bold border border-red-100">
+                                {error}
+                            </div>
+                        )}
 
-                        {/* رقم الجوال */}
-                        <div>
-                            <label className="block text-sm font-black text-slate-500 mb-2">رقم جوال الإدارة</label>
-                            <input
-                                type="tel" name="ownerPhone" required placeholder="05XXXXXXXX" pattern="^05[0-9]{8}$" maxLength="10"
-                                value={formData.ownerPhone} onChange={handleChange}
-                                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:border-blue-400 focus:bg-white transition-all text-slate-700 font-bold tracking-widest" dir="ltr"
-                            />
-                        </div>
+                        {success && (
+                            <div className="bg-emerald-50 text-emerald-700 p-4 rounded-lg mb-5 text-sm font-black border border-emerald-100">
+                                {success}
+                            </div>
+                        )}
+
+                        <form onSubmit={handleRegister} className="space-y-5">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-black text-slate-600 mb-2">اسم المنشأة</label>
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            name="salonName"
+                                            required
+                                            placeholder="مثال: صالون الأبطال"
+                                            value={formData.salonName}
+                                            onChange={handleChange}
+                                            className="w-full p-4 pl-11 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-400 focus:bg-white transition-all text-slate-700 font-bold"
+                                        />
+                                        <Building2 size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-black text-slate-600 mb-2">الرابط المخصص</label>
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            name="slug"
+                                            required
+                                            placeholder="heroes-salon"
+                                            value={formData.slug}
+                                            onChange={handleChange}
+                                            className="w-full p-4 pl-11 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-400 focus:bg-white transition-all text-slate-700 font-bold"
+                                            dir="ltr"
+                                        />
+                                        <Link2 size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-black text-slate-600 mb-2">اسم المدير</label>
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            name="ownerName"
+                                            required
+                                            placeholder="مثال: عبدالله"
+                                            value={formData.ownerName}
+                                            onChange={handleChange}
+                                            className="w-full p-4 pl-11 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-400 focus:bg-white transition-all text-slate-700 font-bold"
+                                        />
+                                        <UserRound size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-black text-slate-600 mb-2">رقم جوال الإدارة</label>
+                                    <div className="relative">
+                                        <input
+                                            type="tel"
+                                            name="ownerPhone"
+                                            required
+                                            placeholder="05XXXXXXXX"
+                                            pattern="^05[0-9]{8}$"
+                                            maxLength="10"
+                                            value={formData.ownerPhone}
+                                            onChange={(event) => setFormData((prev) => ({ ...prev, ownerPhone: event.target.value.replace(/\D/g, '') }))}
+                                            className="w-full p-4 pl-11 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-400 focus:bg-white transition-all text-slate-700 font-bold tracking-widest"
+                                            dir="ltr"
+                                        />
+                                        <Phone size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="pt-5 border-t border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-black text-slate-600 mb-2">البريد الإلكتروني</label>
+                                    <div className="relative">
+                                        <input
+                                            type="email"
+                                            name="email"
+                                            required
+                                            placeholder="admin@example.com"
+                                            value={formData.email}
+                                            onChange={handleChange}
+                                            className="w-full p-4 pl-11 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-400 focus:bg-white transition-all text-slate-700 font-bold"
+                                            dir="ltr"
+                                        />
+                                        <Mail size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-black text-slate-600 mb-2">كلمة المرور</label>
+                                    <div className="relative">
+                                        <input
+                                            type="password"
+                                            name="password"
+                                            required
+                                            minLength="6"
+                                            placeholder="••••••••"
+                                            value={formData.password}
+                                            onChange={handleChange}
+                                            className="w-full p-4 pl-11 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-400 focus:bg-white transition-all text-slate-700 font-bold"
+                                            dir="ltr"
+                                        />
+                                        <LockKeyhole size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button
+                                type="submit"
+                                disabled={isLoading || Boolean(success)}
+                                className="w-full bg-slate-900 text-white font-black py-4 rounded-lg hover:bg-slate-700 active:scale-95 transition-all disabled:opacity-70 inline-flex items-center justify-center gap-2"
+                            >
+                                <CheckCircle2 size={17} />
+                                {isLoading ? 'جاري إنشاء الحساب...' : 'إنشاء الحساب'}
+                            </button>
+                        </form>
+
+                        <p className="text-center mt-6 text-sm font-bold text-slate-500">
+                            لديك حساب مسبقاً؟ <Link to="/login" className="text-blue-700 hover:underline underline-offset-4">تسجيل الدخول</Link>
+                        </p>
                     </div>
 
-                    <div className="pt-4 border-t border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-5">
-                        {/* البريد الإلكتروني */}
-                        <div>
-                            <label className="block text-sm font-black text-slate-500 mb-2">البريد الإلكتروني (للدخول)</label>
-                            <input
-                                type="email" name="email" required placeholder="admin@salon.com"
-                                value={formData.email} onChange={handleChange}
-                                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:border-blue-400 focus:bg-white transition-all text-slate-700 font-bold" dir="ltr"
-                            />
+                    <aside className="bg-slate-50 border border-slate-100 rounded-lg p-4 h-fit">
+                        <p className="text-xs font-black text-slate-400">رابط الحجز</p>
+                        <div className="mt-3 bg-white border border-slate-100 rounded-lg p-3 text-sm font-black text-slate-800 break-all" dir="ltr">
+                            /{bookingPathPreview}
                         </div>
-
-                        {/* كلمة المرور */}
-                        <div>
-                            <label className="block text-sm font-black text-slate-500 mb-2">كلمة المرور</label>
-                            <input
-                                type="password" name="password" required minLength="6" placeholder="••••••••"
-                                value={formData.password} onChange={handleChange}
-                                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:border-blue-400 focus:bg-white transition-all text-slate-700 font-bold" dir="ltr"
-                            />
+                        <div className="mt-5 space-y-3 text-xs font-bold text-slate-500 leading-relaxed">
+                            <p>سيتم إنشاء حساب مجاني وتسجيل دخولك مباشرة بعد نجاح العملية.</p>
+                            <p>يمكنك تعديل الهوية، الخدمات، والطاقم من داخل لوحة الإدارة لاحقاً.</p>
                         </div>
-                    </div>
-
-                    <motion.button
-                        whileTap={{ scale: 0.98 }}
-                        type="submit" disabled={isLoading || success}
-                        className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl hover:bg-slate-700 transition-all disabled:opacity-70 mt-6 shadow-xl shadow-slate-200"
-                    >
-                        {isLoading ? 'جاري التجهيز...' : 'إنشاء حساب مجاني'}
-                    </motion.button>
-                </form>
-
-                <p className="text-center mt-6 text-sm font-bold text-slate-500">
-                    لديك حساب صالون مسبقاً؟ <Link to="/login" className="text-blue-600 hover:text-blue-800 underline underline-offset-4">تسجيل الدخول</Link>
-                </p>
-            </motion.div>
-        </div>
+                    </aside>
+                </div>
+            </section>
+        </main>
     );
 };
 

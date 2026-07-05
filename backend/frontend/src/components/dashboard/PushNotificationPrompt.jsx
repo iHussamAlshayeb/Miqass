@@ -62,6 +62,19 @@ const PushNotificationPrompt = ({ tenantId }) => {
 
         if (!status) return null;
 
+        if (!status.isOriginAllowed) {
+            return {
+                tone: 'border-slate-200 bg-white text-slate-700',
+                icon: <AlertTriangle className="w-5 h-5" />,
+                title: 'الإشعارات غير مفعلة على هذا النطاق',
+                description: status.originBlockReason === 'localhost-disabled'
+                    ? 'في بيئة التطوير المحلية يتم تعطيل OneSignal لتجنب أخطاء النطاق. اختبر الإشعارات من نطاق التطبيق الإنتاجي.'
+                    : 'هذا النطاق غير مضاف في إعدادات OneSignal. أضفه من لوحة OneSignal ثم أعد تحميل التطبيق.',
+                actionLabel: '',
+                canRequest: false,
+            };
+        }
+
         if (status.needsInstallForIos) {
             return {
                 tone: 'border-amber-200 bg-amber-50 text-amber-900',

@@ -4,7 +4,14 @@ import API from '../services/api';
 import { initOneSignalForTenant } from '../services/onesignal';
 import * as XLSX from 'xlsx';
 import TourGuide from '../components/dashboard/TourGuide';
-import { motion, AnimatePresence } from 'framer-motion';
+import {
+    BadgePercent,
+    ExternalLink,
+    Headphones,
+    LogOut,
+    Menu,
+    X,
+} from 'lucide-react';
 
 import { getLocalDate, formatBookingTime, formatTime12Hour, getTimePeriod } from '../utils/helpers';
 
@@ -18,11 +25,62 @@ import CustomersTab from '../components/dashboard/CustomersTab';
 import BroadcastsTab from '../components/dashboard/BroadcastsTab';
 import StatisticsTab from '../components/dashboard/StatisticsTab';
 import PushNotificationPrompt from '../components/dashboard/PushNotificationPrompt';
+import SalesTab from '../components/dashboard/SalesTab';
+import ProductsTab from '../components/dashboard/ProductsTab';
+import ExpensesTab from '../components/dashboard/ExpensesTab';
+
+const pageMeta = {
+    statistics: {
+        title: 'لوحة الأداء',
+        description: 'نظرة تنفيذية على الحجوزات، الإيرادات، وأداء الفريق.',
+    },
+    appointments: {
+        title: 'مواعيد اليوم',
+        description: 'إدارة الطابور اليومي، إكمال الخدمات، وطباعة الفواتير.',
+    },
+    all: {
+        title: 'سجل الحجوزات',
+        description: 'بحث ومراجعة كل الحجوزات القادمة والسابقة.',
+    },
+    sales: {
+        title: 'نقطة البيع',
+        description: 'بيع الخدمات والمنتجات وتسجيل الدفعات.',
+    },
+    products: {
+        title: 'المنتجات والمخزون',
+        description: 'إدارة المنتجات، الأسعار، وحركات المخزون.',
+    },
+    expenses: {
+        title: 'المصروفات',
+        description: 'تسجيل مصروفات التشغيل ومتابعة التكلفة اليومية.',
+    },
+    reviews: {
+        title: 'التقييمات',
+        description: 'متابعة رضا العملاء والتعليقات الجديدة.',
+    },
+    customers: {
+        title: 'العملاء والولاء',
+        description: 'قاعدة العملاء، الزيارات، وبرامج الولاء.',
+    },
+    broadcasts: {
+        title: 'الحملات',
+        description: 'إدارة حملات التواصل والعروض.',
+    },
+    settings: {
+        title: 'إعدادات النظام',
+        description: 'أوقات العمل، الخدمات، الدفع، والهوية البصرية.',
+    },
+    billing: {
+        title: 'الاشتراك',
+        description: 'إدارة الباقة، الرصيد، والترقية.',
+    },
+};
 
 const DashboardScreen = () => {
     const navigate = useNavigate();
 
     const [activeTab, setActiveTab] = useState('statistics');
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [selectedDate, setSelectedDate] = useState(getLocalDate());
     const [isLoading, setIsLoading] = useState(true);
     const [apiStatus, setApiStatus] = useState('CHECKING');
@@ -48,9 +106,7 @@ const DashboardScreen = () => {
         startTime: '16:00', endTime: '22:00', slotDuration: 30, closedDates: [], breakStart: '', breakEnd: '', maxBookingDate: '', locationUrl: '', googleReviewLink: '', enableGoogleReviews: false
     });
 
-    // ==========================================
-    // 💡 [NEW] حالة إعدادات الدفع الإلكتروني (Moyasar)
-    // ==========================================
+    // إعدادات الدفع الإلكتروني (Moyasar)
     const [paymentSettings, setPaymentSettings] = useState({
         isOnlinePaymentEnabled: false,
         depositAmount: 0,
@@ -68,13 +124,9 @@ const DashboardScreen = () => {
     const [taxNumber, setTaxNumber] = useState('');
     const [wafeqApiKey, setWafeqApiKey] = useState('');
 
-    // ==========================================
-    // 💡 حالة شريط الإعلانات العلوي
-    // ==========================================
     const [promoBanner, setPromoBanner] = useState(null);
 
     useEffect(() => {
-        // 💡 جلب بيانات العرض الترويجي من السيرفر
         const fetchPromo = async () => {
             try {
                 const res = await API.get('/public/pricing');
@@ -135,7 +187,6 @@ const DashboardScreen = () => {
                         });
                     }
 
-                    // 💡 تعبئة إعدادات الدفع إذا كانت موجودة
                     if (settingsRes.data.paymentSettings) {
                         setPaymentSettings(settingsRes.data.paymentSettings);
                     }
@@ -159,7 +210,7 @@ const DashboardScreen = () => {
                 try {
                     const statusRes = await API.get('/appointments/whatsapp-status');
                     setApiStatus(statusRes.data.status === 'API_ACTIVE' ? 'ONLINE' : 'ERROR');
-                } catch (e) { setApiStatus('ERROR'); }
+                } catch { setApiStatus('ERROR'); }
 
             } catch (error) {
                 if (error.response?.status === 401) { localStorage.removeItem('token'); navigate('/login'); }
@@ -178,7 +229,9 @@ const DashboardScreen = () => {
             try {
                 const res = await API.get('/appointments/reviews');
                 setReviews(res.data || []);
-            } catch (e) { }
+            } catch {
+                // تجاهل أخطاء التحديث اللحظية حتى لا تنقطع لوحة التحكم.
+            }
         }, 20000);
         return () => clearInterval(interval);
     }, []);
@@ -190,9 +243,9 @@ const DashboardScreen = () => {
             await API.put('/appointments/settings', {
                 ...settings, salonName, ownerName, ownerPhone, barbers, services, taxNumber, wafeqApiKey, bio, socialLinks,
                 branding: { logoUrl, primaryColor: themeColors.primaryColor, secondaryColor: themeColors.secondaryColor },
-                paymentSettings // 💳 إرسال إعدادات الدفع للباك إند
+                paymentSettings
             });
-            alert('تم حفظ إعدادات الصالون بنجاح! ✅');
+            alert('تم حفظ إعدادات الصالون بنجاح');
         } catch (error) {
             alert(error.response?.data?.message || 'حدث خطأ أثناء حفظ الإعدادات');
         } finally { setIsSavingSettings(false); }
@@ -202,17 +255,18 @@ const DashboardScreen = () => {
         setIsSavingSettings(true);
         try {
             await API.put('/appointments/settings/whatsapp', whatsappSettings);
-            alert('تم تحديث ربط الواتساب بنجاح! 💬✅');
-        } catch (error) { alert('حدث خطأ أثناء التحديث'); } finally { setIsSavingSettings(false); }
+            alert('تم تحديث ربط الواتساب بنجاح');
+        } catch { alert('حدث خطأ أثناء التحديث'); } finally { setIsSavingSettings(false); }
     };
 
     const handleStatusChange = async (id, newStatus, reason = null) => {
         try {
             const payload = newStatus === 'Cancelled' && reason ? { status: newStatus, cancelReason: reason } : { status: newStatus };
-            await API.put(`/appointments/status/${id}`, payload);
-            setAppointments(prev => prev.map(app => app._id === id ? { ...app, status: newStatus, cancelReason: reason } : app));
-            setAllAppointments(prev => prev.map(app => app._id === id ? { ...app, status: newStatus, cancelReason: reason } : app));
-        } catch (error) { alert('حدث خطأ أثناء تحديث حالة الموعد.'); }
+            const res = await API.put(`/appointments/status/${id}`, payload);
+            const updatedAppointment = res.data?.appointment || { _id: id, status: newStatus, cancelReason: reason };
+            setAppointments(prev => prev.map(app => app._id === id ? { ...app, ...updatedAppointment, status: newStatus, cancelReason: reason } : app));
+            setAllAppointments(prev => prev.map(app => app._id === id ? { ...app, ...updatedAppointment, status: newStatus, cancelReason: reason } : app));
+        } catch { alert('حدث خطأ أثناء تحديث حالة الموعد.'); }
     };
 
     const handleSingleWhatsApp = async (app) => {
@@ -220,7 +274,7 @@ const DashboardScreen = () => {
         try {
             const res = await API.post(`/appointments/resend-whatsapp/${app._id}`);
             alert(res.data.message || 'تم إرسال التذكير بنجاح');
-        } catch (error) { alert('حدث خطأ، تأكد من اتصال الخدمة.'); }
+        } catch { alert('حدث خطأ، تأكد من اتصال الخدمة.'); }
     };
 
     const exportToExcel = () => {
@@ -240,30 +294,33 @@ const DashboardScreen = () => {
     };
 
     const handleLogout = () => { localStorage.removeItem('token'); navigate('/login'); };
+    const activePage = pageMeta[activeTab] || pageMeta.statistics;
+    const dashboardLink = slug ? `https://miqass.app/${slug}` : '';
+    const handleSetActiveTab = (tab) => {
+        setActiveTab(tab);
+        setIsSidebarOpen(false);
+    };
 
     if (isLoading && !appointments.length && !salonName) {
         return (
-            <div className="min-h-screen bg-slate-50 font-arabic text-right overflow-hidden" dir="rtl">
-                <nav className="bg-white border-b border-slate-100 px-6 py-4 flex justify-between items-center shadow-sm">
-                    <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 bg-slate-200 rounded-xl animate-pulse"></div>
-                        <div className="space-y-2 hidden sm:block">
-                            <div className="h-5 w-32 bg-slate-200 rounded-md animate-pulse"></div>
-                            <div className="h-3 w-20 bg-slate-200 rounded-md animate-pulse"></div>
+            <div className="min-h-screen bg-slate-100 font-arabic text-right" dir="rtl">
+                <div className="flex min-h-screen">
+                    <div className="hidden w-72 border-l border-slate-200 bg-white p-4 lg:block">
+                        <div className="h-10 w-40 animate-pulse rounded-lg bg-slate-200" />
+                        <div className="mt-8 space-y-2">
+                            {Array.from({ length: 9 }).map((_, index) => (
+                                <div key={index} className="h-11 animate-pulse rounded-lg bg-slate-100" />
+                            ))}
                         </div>
                     </div>
-                    <div className="flex items-center gap-2 md:gap-3">
-                        <div className="h-10 w-24 md:w-32 bg-slate-200 rounded-xl animate-pulse"></div>
-                        <div className="h-10 w-10 md:w-32 bg-slate-200 rounded-xl animate-pulse"></div>
-                    </div>
-                </nav>
-                <div className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
-                    <div className="lg:col-span-3 space-y-4">
-                        <div className="h-12 bg-slate-200 rounded-xl animate-pulse"></div>
-                        <div className="h-12 bg-slate-200 rounded-xl animate-pulse"></div>
-                        <div className="h-12 bg-slate-200 rounded-xl animate-pulse"></div>
-                    </div>
-                    <div className="lg:col-span-9 bg-white rounded-[2rem] p-6 h-[600px] animate-pulse border border-slate-100">
+                    <div className="flex-1 p-4 sm:p-6 lg:p-8">
+                        <div className="h-16 animate-pulse rounded-lg border border-slate-200 bg-white" />
+                        <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+                            {Array.from({ length: 3 }).map((_, index) => (
+                                <div key={index} className="h-28 animate-pulse rounded-lg border border-slate-200 bg-white" />
+                            ))}
+                        </div>
+                        <div className="mt-6 h-[520px] animate-pulse rounded-lg border border-slate-200 bg-white" />
                     </div>
                 </div>
             </div>
@@ -271,101 +328,155 @@ const DashboardScreen = () => {
     }
 
     return (
-        <div className="min-h-screen bg-slate-50 font-arabic text-right selection:bg-blue-200" dir="rtl">
+        <div className="min-h-screen bg-slate-100 font-arabic text-right text-slate-900 selection:bg-slate-300" dir="rtl">
             <TourGuide />
 
-            {/* ========================================== */}
-            {/* شريط الإعلانات العلوي (Announcement Bar) */}
-            {/* ========================================== */}
-            <AnimatePresence>
-                {promoBanner && (
-                    <motion.div
-                        initial={{ y: -50, opacity: 0 }}
-                        animate={{ y: 0, opacity: 1 }}
-                        exit={{ y: -50, opacity: 0 }}
-                        className="bg-gradient-to-r from-amber-500 to-orange-500 text-white px-4 py-2.5 flex justify-between items-center text-sm font-bold z-[60] relative shadow-md"
-                    >
-                        <div className="flex-1 text-center flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-4">
-                            <div className="flex items-center gap-2">
-                                <span className="animate-bounce text-lg">🔥</span>
-                                <span>عرض خاص: <strong className="text-amber-950 bg-amber-400/80 px-2 py-0.5 rounded-md mx-1">{promoBanner.name}</strong></span>
+            {isSidebarOpen && (
+                <button
+                    type="button"
+                    aria-label="إغلاق القائمة"
+                    onClick={() => setIsSidebarOpen(false)}
+                    className="fixed inset-0 z-[80] bg-slate-950/40 lg:hidden"
+                />
+            )}
+
+            <div className="flex min-h-screen">
+                <Sidebar
+                    activeTab={activeTab}
+                    setActiveTab={handleSetActiveTab}
+                    appointments={appointments}
+                    allAppointments={allAppointments}
+                    apiStatus={apiStatus}
+                    whatsappSettings={whatsappSettings}
+                    slug={slug}
+                    subscription={subscription}
+                    salonName={salonName}
+                    logoUrl={logoUrl}
+                    isOpen={isSidebarOpen}
+                    onClose={() => setIsSidebarOpen(false)}
+                />
+
+                <div className="flex min-w-0 flex-1 flex-col">
+                    {promoBanner && (
+                        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-black text-amber-900">
+                            <div className="mx-auto flex max-w-screen-2xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="flex min-w-0 items-center gap-2">
+                                    <BadgePercent size={18} className="shrink-0 text-amber-700" />
+                                    <span className="truncate">
+                                        عرض {promoBanner.name}: خصم {promoBanner.percentage}% على الترقية
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => { handleSetActiveTab('billing'); setPromoBanner(null); }}
+                                        className="h-8 rounded-lg bg-amber-900 px-3 text-xs font-black text-white hover:bg-amber-800"
+                                    >
+                                        عرض الاشتراك
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setPromoBanner(null)}
+                                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-200 text-amber-700 hover:bg-amber-100"
+                                        aria-label="إغلاق العرض"
+                                    >
+                                        <X size={16} />
+                                    </button>
+                                </div>
                             </div>
-                            <div className="flex items-center gap-3 mt-1 sm:mt-0">
-                                <span>استفد من خصم {promoBanner.percentage}% على ترقية باقتك!</span>
+                        </div>
+                    )}
+
+                    <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
+                        <div className="mx-auto flex min-h-16 max-w-screen-2xl items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
+                            <div className="flex min-w-0 items-center gap-3">
                                 <button
-                                    onClick={() => { setActiveTab('billing'); setPromoBanner(null); }}
-                                    className="bg-white text-orange-600 hover:bg-orange-50 px-4 py-1 rounded-lg transition-all border border-transparent shadow-sm text-xs font-black active:scale-95"
+                                    type="button"
+                                    onClick={() => setIsSidebarOpen(true)}
+                                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 lg:hidden"
+                                    aria-label="فتح القائمة"
                                 >
-                                    رقي الآن 🚀
+                                    <Menu size={20} />
+                                </button>
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-2">
+                                        <h1 className="truncate text-lg font-black text-slate-950 sm:text-xl">{activePage.title}</h1>
+                                        <span className="hidden rounded-md border border-slate-200 px-2 py-1 text-[11px] font-black text-slate-500 sm:inline-flex">
+                                            {subscription?.plan || 'Free'}
+                                        </span>
+                                    </div>
+                                    <p className="mt-0.5 hidden truncate text-xs font-bold text-slate-500 sm:block">{activePage.description}</p>
+                                </div>
+                            </div>
+
+                            <div className="flex shrink-0 items-center gap-2">
+                                {dashboardLink && (
+                                    <a
+                                        href={dashboardLink}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="hidden h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 hover:bg-slate-50 md:flex"
+                                    >
+                                        <ExternalLink size={16} />
+                                        رابط الحجز
+                                    </a>
+                                )}
+                                <a
+                                    href="https://wa.me/966541993290"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="hidden h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 hover:bg-slate-50 sm:flex"
+                                >
+                                    <Headphones size={16} />
+                                    الدعم
+                                </a>
+                                <button
+                                    onClick={handleLogout}
+                                    className="flex h-10 items-center gap-2 rounded-lg bg-slate-900 px-3 text-sm font-black text-white hover:bg-slate-800"
+                                >
+                                    <LogOut size={16} />
+                                    <span className="hidden sm:inline">خروج</span>
                                 </button>
                             </div>
                         </div>
-                        <button
-                            onClick={() => setPromoBanner(null)}
-                            className="text-white hover:bg-black/10 w-8 h-8 flex items-center justify-center rounded-full transition-colors absolute left-2 top-1/2 -translate-y-1/2"
-                            title="إغلاق"
-                        >
-                            ✕
-                        </button>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+                    </header>
 
-            <nav className="bg-white border-b border-slate-100 px-6 py-4 flex justify-between items-center sticky top-0 z-50 shadow-sm">
-                <div className="flex items-center gap-3">
-                    <span className="text-3xl bg-blue-50 p-2 rounded-xl hidden sm:block">✂️</span>
-                    <div>
-                        <h1 className="font-black text-xl text-slate-800">إدارة الصالون</h1>
-                        <p className="text-xs font-bold text-slate-400" dir="ltr">{slug ? `miqass.app/${slug}` : 'لوحة التحكم'}</p>
-                    </div>
-                </div>
+                    <main className="mx-auto w-full max-w-screen-2xl flex-1 px-4 py-4 sm:px-6 lg:px-8 lg:py-6">
+                        <PushNotificationPrompt tenantId={tenantId} />
 
-                <div className="flex items-center gap-2 md:gap-3">
-                    <a href="https://wa.me/966541993290" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 md:gap-2 bg-emerald-50 text-emerald-600 font-bold px-3 py-2 md:px-4 md:py-2 rounded-xl hover:bg-emerald-500 hover:text-white transition-all text-xs md:text-sm active:scale-95 shadow-sm">
-                        <span className="hidden md:inline">الدعم الفني</span><span className="text-base">🎧</span>
-                    </a>
-                    <button onClick={handleLogout} className="flex items-center gap-1.5 text-red-500 font-bold bg-red-50 px-3 py-2 md:px-4 md:py-2 rounded-xl hover:bg-red-50 hover:text-white transition-all text-xs md:text-sm active:scale-95 shadow-sm">
-                        <span className="hidden md:inline">تسجيل الخروج</span><span className="text-base md:hidden">🚪</span>
-                    </button>
-                </div>
-            </nav>
-
-            <div className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
-                <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} appointments={appointments} allAppointments={allAppointments} apiStatus={apiStatus} whatsappSettings={whatsappSettings} slug={slug} subscription={subscription} />
-
-                <div className="lg:col-span-9">
-                    <PushNotificationPrompt tenantId={tenantId} />
-
-                    {activeTab === 'statistics' && <StatisticsTab allAppointments={allAppointments} />}
-                    {activeTab === 'appointments' && <DailyTab selectedDate={selectedDate} setSelectedDate={setSelectedDate} isLoading={isLoading} appointments={appointments} handleStatusChange={handleStatusChange} handleSingleWhatsApp={handleSingleWhatsApp} whatsappSettings={whatsappSettings} refreshAppointments={fetchAppointments} />}
-                    {activeTab === 'all' && <AllTab isLoading={isLoading} allAppointments={allAppointments} exportToExcel={exportToExcel} handleStatusChange={handleStatusChange} />}
-                    {activeTab === 'reviews' && <ReviewsTab reviews={reviews} isLoading={isLoading} />}
-                    {activeTab === 'customers' && <CustomersTab />}
-                    {activeTab === 'broadcasts' && <BroadcastsTab tenantId={tenantId} />}
-                    {activeTab === 'settings' &&
-                        <SettingsTab
-                            salonName={salonName} setSalonName={setSalonName}
-                            ownerName={ownerName} setOwnerName={setOwnerName}
-                            ownerPhone={ownerPhone} setOwnerPhone={setOwnerPhone}
-                            logoUrl={logoUrl} setLogoUrl={setLogoUrl}
-                            settings={settings} setSettings={setSettings}
-                            whatsappSettings={whatsappSettings} setWhatsappSettings={setWhatsappSettings}
-                            handleSaveSettings={handleSaveSettings} handleSaveWhatsappSettings={handleSaveWhatsappSettings}
-                            isSavingSettings={isSavingSettings}
-                            newClosedDate={newClosedDate} setNewClosedDate={setNewClosedDate}
-                            barbers={barbers} setBarbers={setBarbers}
-                            subscription={subscription}
-                            services={services} setServices={setServices}
-                            taxNumber={taxNumber} setTaxNumber={setTaxNumber}
-                            wafeqApiKey={wafeqApiKey} setWafeqApiKey={setWafeqApiKey}
-                            bio={bio} setBio={setBio}
-                            socialLinks={socialLinks} setSocialLinks={setSocialLinks}
-                            themeColors={themeColors} setThemeColors={setThemeColors}
-                            // 💳 💡 تمرير حالات الدفع إلى SettingsTab
-                            paymentSettings={paymentSettings} setPaymentSettings={setPaymentSettings}
-                        />
-                    }
-                    {activeTab === 'billing' && <BillingTab subscription={subscription} tenantId={tenantId} campaignCredits={campaignCredits} promoBanner={promoBanner} />}
+                        {activeTab === 'statistics' && <StatisticsTab allAppointments={allAppointments} />}
+                        {activeTab === 'appointments' && <DailyTab selectedDate={selectedDate} setSelectedDate={setSelectedDate} isLoading={isLoading} appointments={appointments} handleStatusChange={handleStatusChange} handleSingleWhatsApp={handleSingleWhatsApp} whatsappSettings={whatsappSettings} refreshAppointments={fetchAppointments} />}
+                        {activeTab === 'all' && <AllTab isLoading={isLoading} allAppointments={allAppointments} exportToExcel={exportToExcel} handleStatusChange={handleStatusChange} />}
+                        {activeTab === 'sales' && <SalesTab services={services} />}
+                        {activeTab === 'products' && <ProductsTab />}
+                        {activeTab === 'expenses' && <ExpensesTab />}
+                        {activeTab === 'reviews' && <ReviewsTab reviews={reviews} isLoading={isLoading} />}
+                        {activeTab === 'customers' && <CustomersTab />}
+                        {activeTab === 'broadcasts' && <BroadcastsTab tenantId={tenantId} />}
+                        {activeTab === 'settings' &&
+                            <SettingsTab
+                                salonName={salonName} setSalonName={setSalonName}
+                                ownerName={ownerName} setOwnerName={setOwnerName}
+                                ownerPhone={ownerPhone} setOwnerPhone={setOwnerPhone}
+                                logoUrl={logoUrl} setLogoUrl={setLogoUrl}
+                                settings={settings} setSettings={setSettings}
+                                whatsappSettings={whatsappSettings} setWhatsappSettings={setWhatsappSettings}
+                                handleSaveSettings={handleSaveSettings} handleSaveWhatsappSettings={handleSaveWhatsappSettings}
+                                isSavingSettings={isSavingSettings}
+                                newClosedDate={newClosedDate} setNewClosedDate={setNewClosedDate}
+                                barbers={barbers} setBarbers={setBarbers}
+                                subscription={subscription}
+                                services={services} setServices={setServices}
+                                taxNumber={taxNumber} setTaxNumber={setTaxNumber}
+                                wafeqApiKey={wafeqApiKey} setWafeqApiKey={setWafeqApiKey}
+                                bio={bio} setBio={setBio}
+                                socialLinks={socialLinks} setSocialLinks={setSocialLinks}
+                                themeColors={themeColors} setThemeColors={setThemeColors}
+                                paymentSettings={paymentSettings} setPaymentSettings={setPaymentSettings}
+                            />
+                        }
+                        {activeTab === 'billing' && <BillingTab subscription={subscription} tenantId={tenantId} campaignCredits={campaignCredits} promoBanner={promoBanner} />}
+                    </main>
                 </div>
             </div>
         </div>

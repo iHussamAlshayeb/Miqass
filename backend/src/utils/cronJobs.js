@@ -3,6 +3,7 @@ const Appointment = require("../models/Appointment");
 const Tenant = require("../models/Tenant");
 const Campaign = require("../models/Campaign");
 const Customer = require("../models/Customer");
+const { createSaleFromAppointment } = require("../services/salesService");
 
 const {
   sendReminderMessage,
@@ -175,6 +176,13 @@ const processReviewRequests = async () => {
           if (app.status === "Booked") updateData.$set.status = "Completed";
 
           await Appointment.updateOne({ _id: app._id }, updateData);
+
+          if (app.status === "Booked") {
+            const completedAppointment = await Appointment.findById(app._id)
+              .populate("customerId", "phone parentName children")
+              .exec();
+            await createSaleFromAppointment(completedAppointment);
+          }
         }
         await new Promise((resolve) => setTimeout(resolve, 3000));
       }

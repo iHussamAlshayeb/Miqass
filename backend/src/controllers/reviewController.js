@@ -3,6 +3,7 @@ const Appointment = require("../models/Appointment");
 const Tenant = require("../models/Tenant");
 const Customer = require("../models/Customer");
 const { sendReviewNotification } = require("../utils/onesignal");
+const { createSaleFromAppointment } = require("../services/salesService");
 
 const getReviewPageData = async (req, res) => {
   try {
@@ -74,6 +75,8 @@ const submitReview = async (req, res) => {
         ).catch((err) => console.error("Loyalty update error:", err));
       }
     }
+
+    await createSaleFromAppointment(appointment);
 
     await Review.create({
       tenantId: tenant._id,

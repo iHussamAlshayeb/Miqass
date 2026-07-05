@@ -49,6 +49,9 @@ app.use(checkMaintenanceMode);
 // مسارات الـ API
 app.use("/api/tenants", require("./routes/tenantRoutes"));
 app.use("/api/appointments", require("./routes/appointmentRoutes"));
+app.use("/api/sales", require("./routes/salesRoutes"));
+app.use("/api/products", require("./routes/productsRoutes"));
+app.use("/api/expenses", require("./routes/expensesRoutes"));
 app.use("/api/auth", require("./routes/authRoutes"));
 app.use("/api/admin", require("./routes/superAdminRoutes"));
 app.use("/api/public", require("./routes/publicRoutes"));

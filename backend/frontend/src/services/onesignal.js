@@ -4,9 +4,47 @@ const ONESIGNAL_APP_ID =
   import.meta.env.VITE_ONESIGNAL_APP_ID ||
   'df2b3be8-ac20-4e4b-9f52-fad5648afd2b';
 
+const DEFAULT_ALLOWED_ORIGINS = ['https://www.miqass.app', 'https://miqass.app'];
+const LOCAL_HOSTNAMES = ['localhost', '127.0.0.1', '[::1]'];
+const LOCALHOST_OPT_IN = import.meta.env.VITE_ONESIGNAL_ENABLE_LOCALHOST === 'true';
+
 let oneSignalInitPromise = null;
 
 const isBrowser = () => typeof window !== 'undefined' && typeof navigator !== 'undefined';
+
+const getAllowedOrigins = () => {
+  const configuredOrigins = import.meta.env.VITE_ONESIGNAL_ALLOWED_ORIGINS;
+  if (!configuredOrigins) return DEFAULT_ALLOWED_ORIGINS;
+
+  return configuredOrigins
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+};
+
+const getOriginSupport = () => {
+  if (!isBrowser()) {
+    return { ok: false, reason: 'not-browser' };
+  }
+
+  const { origin, hostname } = window.location;
+  const isLocalOrigin = LOCAL_HOSTNAMES.includes(hostname);
+
+  if (isLocalOrigin && !LOCALHOST_OPT_IN) {
+    return { ok: false, reason: 'localhost-disabled' };
+  }
+
+  const allowedOrigins = getAllowedOrigins();
+  const isAllowed =
+    allowedOrigins.length === 0 ||
+    allowedOrigins.includes(origin) ||
+    allowedOrigins.includes(hostname);
+
+  return {
+    ok: isAllowed,
+    reason: isAllowed ? null : 'origin-not-allowed',
+  };
+};
 
 export const isAppleMobileDevice = () => {
   if (!isBrowser()) return false;
@@ -57,16 +95,20 @@ const buildOneSignalStatus = ({
   const appleMobile = isAppleMobileDevice();
   const standalone = isStandalonePwa();
   const permission = getNativePermission();
+  const originSupport = getOriginSupport();
   const hasNotificationApi = permission !== 'unsupported';
   const needsInstallForIos = appleMobile && !standalone;
 
   return {
     initialized,
     isSupported:
+      originSupport.ok &&
       !needsInstallForIos &&
       hasNotificationApi &&
       canUseServiceWorker() &&
       sdkSupportsPush,
+    isOriginAllowed: originSupport.ok,
+    originBlockReason: originSupport.reason,
     isAppleMobileDevice: appleMobile,
     isStandalonePwa: standalone,
     needsInstallForIos,
@@ -79,6 +121,7 @@ const buildOneSignalStatus = ({
 
 export const initOneSignalForTenant = async (tenantId) => {
   if (!isBrowser() || !ONESIGNAL_APP_ID || !canUseServiceWorker()) return false;
+  if (!getOriginSupport().ok) return false;
 
   if (!oneSignalInitPromise) {
     oneSignalInitPromise = OneSignal.init({
@@ -127,7 +170,7 @@ export const initOneSignalForTenant = async (tenantId) => {
 export const getOneSignalStatus = async (tenantId) => {
   const currentStatus = buildOneSignalStatus();
 
-  if (tenantId && !currentStatus.needsInstallForIos) {
+  if (tenantId && currentStatus.isOriginAllowed && !currentStatus.needsInstallForIos) {
     try {
       const initialized = await initOneSignalForTenant(tenantId);
       return buildOneSignalStatus({ initialized });
@@ -150,6 +193,10 @@ export const requestOneSignalPermission = async (tenantId) => {
 
   if (statusBeforeRequest.needsInstallForIos) {
     return { ok: false, reason: 'ios-home-screen-required', status: statusBeforeRequest };
+  }
+
+  if (!statusBeforeRequest.isOriginAllowed) {
+    return { ok: false, reason: statusBeforeRequest.originBlockReason || 'origin-not-allowed', status: statusBeforeRequest };
   }
 
   if (!oneSignalInitPromise) {

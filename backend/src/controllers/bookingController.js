@@ -11,6 +11,7 @@ const {
   sendLoyaltyRewardMessage,
 } = require("../utils/whatsapp");
 const { sendAdminNotification } = require("../utils/onesignal");
+const { createSaleFromAppointment } = require("../services/salesService");
 
 // ==========================================
 // 🛠️ دوال مساعدة (Helpers)
@@ -384,6 +385,12 @@ const createAppointment = async (req, res) => {
     const newAppointments = await Appointment.insertMany(appointmentsToCreate);
 
     if (isWalkInBooking) {
+      await Promise.all(
+        newAppointments.map((appointment) =>
+          createSaleFromAppointment(appointment),
+        ),
+      );
+
       await Customer.updateOne(
         { _id: customer._id },
         {
