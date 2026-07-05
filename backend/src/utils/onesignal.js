@@ -34,7 +34,7 @@ const sendAdminNotification = async (
 
     const targetUrl = process.env.FRONTEND_URL
       ? `${process.env.FRONTEND_URL}/dashboard`
-      : "https://miqass.app/dashboard";
+      : "https://www.miqass.app/dashboard";
 
     await axios.post(
       "https://onesignal.com/api/v1/notifications",
@@ -90,7 +90,7 @@ const sendReviewNotification = async (
 
     const targetUrl = process.env.FRONTEND_URL
       ? `${process.env.FRONTEND_URL}/dashboard`
-      : "https://miqass.app/dashboard";
+      : "https://www.miqass.app/dashboard";
 
     await axios.post(
       "https://onesignal.com/api/v1/notifications",

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import API from '../services/api';
-import { initOneSignalForTenant } from '../services/onesignal';
 import * as XLSX from 'xlsx';
 import TourGuide from '../components/dashboard/TourGuide';
 import {
@@ -196,12 +195,6 @@ const DashboardScreen = () => {
                     setTaxNumber(settingsRes.data.taxNumber || '');
                     setWafeqApiKey(settingsRes.data.wafeqApiKey || '');
 
-                    const currentTenantId = settingsRes.data.tenantId;
-                    if (currentTenantId) {
-                        initOneSignalForTenant(currentTenantId).catch((error) => {
-                            console.error("OneSignal Error:", error);
-                        });
-                    }
                 }
 
                 const reviewsRes = await API.get('/appointments/reviews');
