@@ -28,6 +28,16 @@ const appointmentSchema = new mongoose.Schema(
     childName: { type: String, required: true },
     barberName: { type: String, required: true },
 
+    bookingSource: {
+      type: String,
+      enum: ["public", "kiosk", "kiosk_walk_in"],
+      default: "public",
+    },
+    isWalkIn: {
+      type: Boolean,
+      default: false,
+    },
+
     selectedServices: [
       {
         serviceId: { type: mongoose.Schema.Types.ObjectId, ref: "Service" },

@@ -8,6 +8,7 @@ const mongoose = require("mongoose");
 const {
   sendWhatsAppMessage,
   sendCancellationMessage,
+  sendLoyaltyRewardMessage,
 } = require("../utils/whatsapp");
 const { sendAdminNotification } = require("../utils/onesignal");
 
@@ -15,6 +16,9 @@ const { sendAdminNotification } = require("../utils/onesignal");
 // 🛠️ دوال مساعدة (Helpers)
 // ==========================================
 const KIOSK_PAST_BOOKING_GRACE_MINUTES = 10;
+const BOOKING_SOURCE_KIOSK = "kiosk";
+const BOOKING_SOURCE_KIOSK_WALK_IN = "kiosk_walk_in";
+const WALK_IN_BARBER_NAME = "حلاقة مباشرة";
 
 const mapAppointmentForFrontend = (app) => {
   return {
@@ -68,7 +72,24 @@ const buildSlotDateTime = (date, timeSlot, startTime, now = getKsaNow()) => {
   return slotTime;
 };
 
-const isKioskBookingSource = (bookingSource) => bookingSource === "kiosk";
+const isKioskBookingSource = (bookingSource) =>
+  bookingSource === BOOKING_SOURCE_KIOSK;
+
+const isKioskWalkInBookingSource = (bookingSource) =>
+  bookingSource === BOOKING_SOURCE_KIOSK_WALK_IN;
+
+const formatKsaDate = (date = getKsaNow()) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+
+const formatWalkInTimeSlot = (date = getKsaNow(), offsetMs = 0) => {
+  const time = new Date(date.getTime() + offsetMs);
+  const hh = String(time.getHours()).padStart(2, "0");
+  const mm = String(time.getMinutes()).padStart(2, "0");
+  const ss = String(time.getSeconds()).padStart(2, "0");
+  const ms = String(time.getMilliseconds()).padStart(3, "0");
+  const suffix = Math.random().toString(36).slice(2, 6);
+  return `${hh}:${mm}:${ss}.${ms}-${suffix}`;
+};
 
 const isSlotBookableByTime = ({
   date,
@@ -116,14 +137,15 @@ const createAppointment = async (req, res) => {
       selectedServices,
       bookingSource,
     } = req.body;
+    const isWalkInBooking = isKioskWalkInBookingSource(bookingSource);
+    const effectiveDate = isWalkInBooking ? formatKsaDate() : date;
 
     if (
       !tenantId ||
-      !date ||
-      !timeSlot ||
       !customerPhone ||
       !childrenNames ||
-      childrenNames.length === 0
+      childrenNames.length === 0 ||
+      (!isWalkInBooking && (!date || !timeSlot || !chair))
     ) {
       return res
         .status(400)
@@ -137,6 +159,7 @@ const createAppointment = async (req, res) => {
 
     const start = tenant.settings?.startTime || "16:00";
     if (
+      !isWalkInBooking &&
       !isSlotBookableByTime({
         date,
         timeSlot,
@@ -190,21 +213,30 @@ const createAppointment = async (req, res) => {
         );
       }
     }
+    const previousTotalVisits = Number(customer.totalVisits || 0);
 
     // تجهيز الحلاق
-    let barber = await Barber.findOne({
-      tenantId: tenant._id,
-      name: chair,
-    }).select("_id name");
-    if (!barber) {
-      barber = await Barber.create({
+    const effectiveChair = isWalkInBooking
+      ? WALK_IN_BARBER_NAME
+      : chair.trim();
+    let barber = null;
+    if (!isWalkInBooking) {
+      barber = await Barber.findOne({
         tenantId: tenant._id,
-        name: chair,
-        pin: "",
-      });
+        name: effectiveChair,
+      }).select("_id name");
+      if (!barber) {
+        barber = await Barber.create({
+          tenantId: tenant._id,
+          name: effectiveChair,
+          pin: "",
+        });
+      }
     }
 
-    const requestedServiceIds = normalizeSelectedServiceIds(selectedServices);
+    const requestedServiceIds = isWalkInBooking
+      ? []
+      : normalizeSelectedServiceIds(selectedServices);
     if (
       requestedServiceIds.some((id) => !mongoose.Types.ObjectId.isValid(id))
     ) {
@@ -245,7 +277,9 @@ const createAppointment = async (req, res) => {
     // حساب المدة والسعر من قاعدة البيانات فقط
     let totalDuration = 0;
     let totalPrice = 0;
-    if (selectedServicesSnapshot.length > 0) {
+    if (isWalkInBooking) {
+      totalDuration = 0;
+    } else if (selectedServicesSnapshot.length > 0) {
       selectedServicesSnapshot.forEach((srv) => {
         totalDuration += Number(srv.duration || 0);
         totalPrice += Number(srv.price || 0);
@@ -259,21 +293,25 @@ const createAppointment = async (req, res) => {
 
     let neededSlots = [];
     let currentSlot = timeSlot;
-    for (let i = 0; i < childrenNames.length; i++) {
-      for (let j = 0; j < slotsNeededPerPerson; j++) {
-        neededSlots.push(currentSlot);
-        currentSlot = getNextTimeSlot(currentSlot, slotStep);
+    if (!isWalkInBooking) {
+      for (let i = 0; i < childrenNames.length; i++) {
+        for (let j = 0; j < slotsNeededPerPerson; j++) {
+          neededSlots.push(currentSlot);
+          currentSlot = getNextTimeSlot(currentSlot, slotStep);
+        }
       }
     }
 
     // التحقق من التعارض
-    const existingAppointments = await Appointment.find({
-      tenantId: tenant._id,
-      date: date,
-      barberId: barber._id,
-      status: { $in: ["Pending_Payment", "Booked", "Blocked", "Completed"] },
-      timeSlot: { $in: neededSlots },
-    }).lean();
+    const existingAppointments = isWalkInBooking
+      ? []
+      : await Appointment.find({
+          tenantId: tenant._id,
+          date: effectiveDate,
+          barberId: barber._id,
+          status: { $in: ["Pending_Payment", "Booked", "Blocked", "Completed"] },
+          timeSlot: { $in: neededSlots },
+        }).lean();
 
     if (existingAppointments.length > 0) {
       return res.status(409).json({
@@ -283,9 +321,14 @@ const createAppointment = async (req, res) => {
 
     // التحقق من متطلبات الدفع
     const isPaymentRequired =
+      !isWalkInBooking &&
       tenant.paymentSettings?.isOnlinePaymentEnabled &&
       tenant.paymentSettings?.depositAmount > 0;
-    const appointmentStatus = isPaymentRequired ? "Pending_Payment" : "Booked";
+    const appointmentStatus = isWalkInBooking
+      ? "Completed"
+      : isPaymentRequired
+        ? "Pending_Payment"
+        : "Booked";
     const paymentStatus = isPaymentRequired ? "Pending" : "Not_Required";
     const depositAmount = isPaymentRequired
       ? tenant.paymentSettings.depositAmount
@@ -304,17 +347,25 @@ const createAppointment = async (req, res) => {
     let currentInvoiceCounter =
       updatedTenant.invoiceCounter - childrenNames.length + 1;
     let startSlotForPerson = timeSlot;
+    const walkInBaseTime = getKsaNow();
 
     // تجهيز المواعيد للحفظ
-    const appointmentsToCreate = childrenNames.map((name) => {
+    const appointmentsToCreate = childrenNames.map((name, index) => {
+      const appointmentTimeSlot = isWalkInBooking
+        ? formatWalkInTimeSlot(walkInBaseTime, index)
+        : startSlotForPerson;
       const appointmentData = {
         tenantId: tenant._id,
         customerId: customer._id,
-        barberId: barber._id,
-        barberName: barber.name,
-        date: date,
-        timeSlot: startSlotForPerson,
+        barberId: barber?._id || null,
+        barberName: barber?.name || effectiveChair,
+        date: effectiveDate,
+        timeSlot: appointmentTimeSlot,
         childName: name,
+        bookingSource: isWalkInBooking
+          ? BOOKING_SOURCE_KIOSK_WALK_IN
+          : bookingSource || "public",
+        isWalkIn: isWalkInBooking,
         selectedServices: selectedServicesSnapshot,
         totalPrice: totalPrice,
         totalDuration: totalDuration,
@@ -322,43 +373,60 @@ const createAppointment = async (req, res) => {
         status: appointmentStatus,
         payment: { status: paymentStatus, amount: depositAmount },
       };
-      for (let s = 0; s < slotsNeededPerPerson; s++) {
-        startSlotForPerson = getNextTimeSlot(startSlotForPerson, slotStep);
+      if (!isWalkInBooking) {
+        for (let s = 0; s < slotsNeededPerPerson; s++) {
+          startSlotForPerson = getNextTimeSlot(startSlotForPerson, slotStep);
+        }
       }
       return appointmentData;
     });
 
     const newAppointments = await Appointment.insertMany(appointmentsToCreate);
 
+    if (isWalkInBooking) {
+      await Customer.updateOne(
+        { _id: customer._id },
+        {
+          $inc: { totalVisits: childrenNames.length },
+          $set: { lastVisitDate: new Date() },
+        },
+      );
+    }
+
     // تجهيز الـ Padding Blocks
-    let systemCustomer = await Customer.findOne({
-      tenantId: tenant._id,
-      phone: "0000000000",
-    }).select("_id");
-    if (!systemCustomer) {
-      systemCustomer = await Customer.create({
+    let systemCustomer = null;
+    if (!isWalkInBooking) {
+      systemCustomer = await Customer.findOne({
         tenantId: tenant._id,
         phone: "0000000000",
-        parentName: "نظام الحجز التلقائي",
-      });
+      }).select("_id");
+      if (!systemCustomer) {
+        systemCustomer = await Customer.create({
+          tenantId: tenant._id,
+          phone: "0000000000",
+          parentName: "نظام الحجز التلقائي",
+        });
+      }
     }
 
     const paddingBlocksToCreate = [];
     let paddingPointer = timeSlot;
-    for (let i = 0; i < childrenNames.length; i++) {
-      paddingPointer = getNextTimeSlot(paddingPointer, slotStep);
-      for (let j = 1; j < slotsNeededPerPerson; j++) {
-        paddingBlocksToCreate.push({
-          tenantId: tenant._id,
-          customerId: systemCustomer._id,
-          barberId: barber._id,
-          barberName: barber.name,
-          date: date,
-          timeSlot: paddingPointer,
-          childName: "Padding Block",
-          status: "Blocked",
-        });
+    if (!isWalkInBooking) {
+      for (let i = 0; i < childrenNames.length; i++) {
         paddingPointer = getNextTimeSlot(paddingPointer, slotStep);
+        for (let j = 1; j < slotsNeededPerPerson; j++) {
+          paddingBlocksToCreate.push({
+            tenantId: tenant._id,
+            customerId: systemCustomer._id,
+            barberId: barber._id,
+            barberName: barber.name,
+            date: effectiveDate,
+            timeSlot: paddingPointer,
+            childName: "Padding Block",
+            status: "Blocked",
+          });
+          paddingPointer = getNextTimeSlot(paddingPointer, slotStep);
+        }
       }
     }
     if (paddingBlocksToCreate.length > 0)
@@ -367,6 +435,37 @@ const createAppointment = async (req, res) => {
     const combinedNames = childrenNames.join(" و ");
 
     // الاستجابة
+    if (isWalkInBooking) {
+      const nextTotalVisits = previousTotalVisits + childrenNames.length;
+      const requiredVisits = updatedTenant.settings?.loyaltyVisitsRequired || 5;
+
+      if (
+        updatedTenant.settings?.isLoyaltyEnabled &&
+        Math.floor(previousTotalVisits / requiredVisits) <
+          Math.floor(nextTotalVisits / requiredVisits)
+      ) {
+        sendLoyaltyRewardMessage(
+          customerPhone,
+          childrenNames[0],
+          updatedTenant,
+        ).catch(console.error);
+      }
+
+      sendAdminNotification(
+        combinedNames,
+        effectiveDate,
+        newAppointments[0].timeSlot,
+        WALK_IN_BARBER_NAME,
+        tenantId,
+      ).catch(console.error);
+
+      return res.status(201).json({
+        message: "تم تسجيل الحلاقة المباشرة بنجاح.",
+        walkIn: true,
+        appointments: newAppointments,
+      });
+    }
+
     if (isPaymentRequired) {
       return res.status(201).json({
         message: "تم حجز الموعد مؤقتاً، يرجى دفع العربون لتأكيده.",
@@ -382,16 +481,16 @@ const createAppointment = async (req, res) => {
       sendWhatsAppMessage(
         customerPhone,
         combinedNames,
-        date,
+        effectiveDate,
         timeSlot,
         barber.name,
         updatedTenant,
       ).catch(console.error);
       sendAdminNotification(
         combinedNames,
-        date,
+        effectiveDate,
         timeSlot,
-        chair,
+        effectiveChair,
         tenantId,
       ).catch(console.error);
 

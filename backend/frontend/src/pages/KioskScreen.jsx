@@ -1,19 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import API from '../services/api';
+// eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from 'framer-motion';
 import { getLocalDate, formatTime12Hour, getTimePeriod } from '../utils/helpers';
 import { FaPhone } from "react-icons/fa";
-
-// 💡 دالة مساعدة لحساب الوقت المتتالي
-const getNextTimeSlot = (time, durationMinutes) => {
-    if (!time) return null;
-    const [hours, minutes] = time.split(":").map(Number);
-    const date = new Date(2000, 0, 1, hours, minutes + durationMinutes);
-    const hh = String(date.getHours()).padStart(2, "0");
-    const mm = String(date.getMinutes()).padStart(2, "0");
-    return `${hh}:${mm}`;
-};
 
 // ==========================================
 // 💡 مكون بطاقة الولاء (تم ترقيته بالكامل)
@@ -98,6 +89,7 @@ const KioskScreen = () => {
     const [isLoading, setIsLoading] = useState(true);
 
     const [step, setStep] = useState(0);
+    const [successMode, setSuccessMode] = useState('scheduled');
     const [phone, setPhone] = useState('');
     const [name, setName] = useState('');
     const [selectedChair, setSelectedChair] = useState('');
@@ -144,7 +136,7 @@ const KioskScreen = () => {
                     const res = await API.get(`/appointments/loyalty/${tenantData._id}/${phone}`);
                     setLoyaltyVisits(res.data.visits);
                     setSavedChildren(res.data.children || []);
-                } catch (error) {
+                } catch {
                     setLoyaltyVisits(null);
                     setSavedChildren([]);
                 } finally {
@@ -209,12 +201,36 @@ const KioskScreen = () => {
 
     const resetKiosk = () => {
         setStep(0);
+        setSuccessMode('scheduled');
         setPhone('');
         setName('');
         setSelectedTime('');
         setSelectedServicesIds([]);
         setLoyaltyVisits(null);
         setSavedChildren([]);
+    };
+
+    const handleWalkInBooking = async () => {
+        if (phone.length !== 10 || name.trim().length < 2 || !tenantData) return;
+
+        setIsLoading(true);
+        try {
+            await API.post('/appointments/book', {
+                tenantId: tenantData._id,
+                customerPhone: phone,
+                childrenNames: [name.trim()],
+                bookingSource: 'kiosk_walk_in'
+            });
+            setSuccessMode('walkIn');
+            setStep(3);
+            setTimeout(() => {
+                resetKiosk();
+            }, 5000);
+        } catch (error) {
+            alert(error.response?.data?.message || 'حدث خطأ، يرجى المحاولة.');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const handleBooking = async () => {
@@ -232,6 +248,7 @@ const KioskScreen = () => {
                 selectedServices: fullSelectedServices,
                 bookingSource: 'kiosk'
             });
+            setSuccessMode('scheduled');
             setStep(3);
             setTimeout(() => {
                 resetKiosk();
@@ -269,7 +286,7 @@ const KioskScreen = () => {
                             <motion.img animate={{ y: [0, -15, 0] }} transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }} src={tenantData.branding?.logoUrl || '/default-logo.png'} alt="Logo" className="h-40 w-40 md:h-48 md:w-48 object-cover rounded-[2rem] border-2 border-white shadow-xl relative z-10 bg-white" />
                         </motion.div>
                         <h1 className="text-4xl md:text-6xl lg:text-7xl font-black text-slate-800 mb-4 md:mb-6 tracking-tight px-4">أهلاً بك في {tenantData.salonName}</h1>
-                        <p className="text-lg md:text-2xl lg:text-3xl font-bold text-slate-500 mb-10 md:mb-16 px-4">سجل حضورك الآن لجمع النقاط وحجز دورك</p>
+                        <p className="text-lg md:text-2xl lg:text-3xl font-bold text-slate-500 mb-10 md:mb-16 px-4">سجل حضورك الآن لجمع النقاط أو حجز موعدك</p>
                         <button className="text-xl md:text-3xl lg:text-4xl font-black text-white px-10 py-4 md:px-16 md:py-6 rounded-full md:rounded-[35px] shadow-2xl transition-transform active:scale-95 animate-pulse w-[90%] sm:w-auto" style={{ backgroundColor: brandPrimary, boxShadow: `0 20px 40px ${brandPrimary}50` }}>
                             اضغط هنا للبدء 👈
                         </button>
@@ -326,9 +343,25 @@ const KioskScreen = () => {
                                 </AnimatePresence>
                             </div>
 
-                            <button onClick={() => setStep(2)} disabled={phone.length !== 10 || name.length < 2} className="w-full py-4 md:py-6 text-white rounded-2xl md:rounded-3xl text-xl md:text-2xl font-black transition-all disabled:opacity-50 disabled:scale-100 active:scale-95 mt-4 md:mt-8 shadow-xl flex justify-center items-center gap-2" style={{ backgroundColor: brandPrimary, boxShadow: `0 10px 25px ${brandPrimary}40` }}>
-                                المتابعة لاختيار الخدمة ✂️
-                            </button>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 mt-4 md:mt-8">
+                                <button
+                                    onClick={handleWalkInBooking}
+                                    disabled={phone.length !== 10 || name.trim().length < 2 || isLoading}
+                                    className="w-full py-4 md:py-6 text-white rounded-2xl md:rounded-3xl text-lg md:text-2xl font-black transition-all disabled:opacity-50 disabled:scale-100 active:scale-95 shadow-xl flex justify-center items-center gap-2"
+                                    style={{ backgroundColor: '#059669', boxShadow: '0 10px 25px rgba(5,150,105,0.25)' }}
+                                >
+                                    {isLoading ? <span className="animate-pulse">جاري التسجيل...</span> : 'حلاقة مباشرة بدون موعد'}
+                                </button>
+
+                                <button
+                                    onClick={() => setStep(2)}
+                                    disabled={phone.length !== 10 || name.trim().length < 2 || isLoading}
+                                    className="w-full py-4 md:py-6 text-white rounded-2xl md:rounded-3xl text-lg md:text-2xl font-black transition-all disabled:opacity-50 disabled:scale-100 active:scale-95 shadow-xl flex justify-center items-center gap-2"
+                                    style={{ backgroundColor: brandPrimary, boxShadow: `0 10px 25px ${brandPrimary}40` }}
+                                >
+                                    حجز موعد محدد
+                                </button>
+                            </div>
                         </div>
                     </motion.div>
                 )}
@@ -493,8 +526,16 @@ const KioskScreen = () => {
                         <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", damping: 10, stiffness: 100 }} className="text-7xl md:text-8xl lg:text-9xl mb-6 md:mb-8 relative z-10">
                             ✅
                         </motion.div>
-                        <h2 className="text-3xl md:text-4xl lg:text-5xl font-black mb-3 md:mb-4 relative z-10" style={{ color: activeThemeColor }}>تم حجز دورك بنجاح!</h2>
-                        <p className="text-lg md:text-xl lg:text-2xl font-bold text-slate-500 mb-6 md:mb-8 relative z-10">موعدك مع <span className="text-slate-800 font-black">{selectedChair}</span> الساعة <span dir="ltr" className="text-slate-800 font-black">{formatTime12Hour(selectedTime)}</span> {getTimePeriod(selectedTime)}</p>
+                        <h2 className="text-3xl md:text-4xl lg:text-5xl font-black mb-3 md:mb-4 relative z-10" style={{ color: activeThemeColor }}>
+                            {successMode === 'walkIn' ? 'تم تسجيل بياناتك بنجاح!' : 'تم حجز دورك بنجاح!'}
+                        </h2>
+                        {successMode === 'walkIn' ? (
+                            <p className="text-lg md:text-xl lg:text-2xl font-bold text-slate-500 mb-6 md:mb-8 relative z-10">
+                                يمكنك البدء بالحلاقة مباشرة. تم احتساب زيارتك في سجل الولاء.
+                            </p>
+                        ) : (
+                            <p className="text-lg md:text-xl lg:text-2xl font-bold text-slate-500 mb-6 md:mb-8 relative z-10">موعدك مع <span className="text-slate-800 font-black">{selectedChair}</span> الساعة <span dir="ltr" className="text-slate-800 font-black">{formatTime12Hour(selectedTime)}</span> {getTimePeriod(selectedTime)}</p>
+                        )}
 
                         <p className="text-sm md:text-base font-black text-slate-400 bg-slate-50 py-3 md:py-4 px-6 rounded-xl md:rounded-2xl inline-block mt-4 relative z-10 border border-slate-100">ستتم إعادتك للشاشة الرئيسية تلقائياً لخدمة العميل التالي...</p>
                     </motion.div>
