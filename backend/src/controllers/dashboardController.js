@@ -46,9 +46,23 @@ const getBarberSettings = async (req, res) => {
       isOnlinePaymentEnabled:
         tenant.paymentSettings?.isOnlinePaymentEnabled || false,
       depositAmount: tenant.paymentSettings?.depositAmount || 0,
+      provider: tenant.paymentSettings?.provider || "stc_bank",
       moyasarPublishableKey:
         tenant.paymentSettings?.moyasarPublishableKey || "",
       hasSecretKey: !!tenant.paymentSettings?.moyasarSecretKey,
+      stcBank: {
+        environment:
+          tenant.paymentSettings?.stcBank?.environment || "production",
+        merchantId: tenant.paymentSettings?.stcBank?.merchantId || "",
+        terminalId: tenant.paymentSettings?.stcBank?.terminalId || "",
+        clientId: tenant.paymentSettings?.stcBank?.clientId || "",
+        createPaymentUrl:
+          tenant.paymentSettings?.stcBank?.createPaymentUrl || "",
+        statusInquiryUrl:
+          tenant.paymentSettings?.stcBank?.statusInquiryUrl || "",
+        hasClientSecret: !!tenant.paymentSettings?.stcBank?.clientSecret,
+        hasWebhookSecret: !!tenant.paymentSettings?.stcBank?.webhookSecret,
+      },
     };
 
     res.status(200).json({
@@ -177,6 +191,12 @@ const updateBarberSettings = async (req, res) => {
         tenant.paymentSettings.depositAmount = Number(
           paymentSettings.depositAmount,
         );
+      if (paymentSettings.provider !== undefined)
+        tenant.paymentSettings.provider = ["stc_bank", "moyasar"].includes(
+          paymentSettings.provider,
+        )
+          ? paymentSettings.provider
+          : "stc_bank";
       if (paymentSettings.moyasarPublishableKey !== undefined)
         tenant.paymentSettings.moyasarPublishableKey =
           paymentSettings.moyasarPublishableKey.trim();
@@ -189,6 +209,45 @@ const updateBarberSettings = async (req, res) => {
         tenant.paymentSettings.moyasarSecretKey = encrypt(
           paymentSettings.moyasarSecretKey.trim(),
         );
+      }
+
+      if (paymentSettings.stcBank) {
+        if (!tenant.paymentSettings.stcBank) tenant.paymentSettings.stcBank = {};
+        const stcBank = paymentSettings.stcBank;
+        const currentStcBank = tenant.paymentSettings.stcBank;
+
+        if (stcBank.environment !== undefined)
+          currentStcBank.environment = ["sandbox", "production"].includes(
+            stcBank.environment,
+          )
+            ? stcBank.environment
+            : "production";
+        if (stcBank.merchantId !== undefined)
+          currentStcBank.merchantId = stcBank.merchantId.trim();
+        if (stcBank.terminalId !== undefined)
+          currentStcBank.terminalId = stcBank.terminalId.trim();
+        if (stcBank.clientId !== undefined)
+          currentStcBank.clientId = stcBank.clientId.trim();
+        if (stcBank.createPaymentUrl !== undefined)
+          currentStcBank.createPaymentUrl = stcBank.createPaymentUrl.trim();
+        if (stcBank.statusInquiryUrl !== undefined)
+          currentStcBank.statusInquiryUrl = stcBank.statusInquiryUrl.trim();
+
+        if (
+          stcBank.clientSecret &&
+          stcBank.clientSecret.trim() !== "" &&
+          !stcBank.clientSecret.includes("****")
+        ) {
+          currentStcBank.clientSecret = encrypt(stcBank.clientSecret.trim());
+        }
+
+        if (
+          stcBank.webhookSecret &&
+          stcBank.webhookSecret.trim() !== "" &&
+          !stcBank.webhookSecret.includes("****")
+        ) {
+          currentStcBank.webhookSecret = encrypt(stcBank.webhookSecret.trim());
+        }
       }
     }
 

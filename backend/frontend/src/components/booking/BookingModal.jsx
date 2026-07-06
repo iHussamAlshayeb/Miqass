@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { formatTime12Hour, getTimePeriod } from '../../utils/helpers';
 import LoyaltyCard from './LoyaltyCard';
 
@@ -51,7 +51,7 @@ const BookingModal = ({
             {isOpen && (
                 <>
                     {/* الخلفية المعتمة */}
-                    <motion.div
+                    <Motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
@@ -62,7 +62,7 @@ const BookingModal = ({
 
                     {/* النافذة المنبثقة */}
                     <div className="fixed inset-x-0 bottom-0 z-50 flex justify-center pointer-events-none">
-                        <motion.div
+                        <Motion.div
                             initial={{ y: "100%" }}
                             animate={{ y: 0 }}
                             exit={{ y: "100%" }}
@@ -99,9 +99,9 @@ const BookingModal = ({
                                 {/* بطاقة الولاء */}
                                 <AnimatePresence>
                                     {tenantData?.settings?.isLoyaltyEnabled && isCheckingLoyalty && (
-                                        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="text-center text-xs text-slate-400 font-bold py-2">
+                                        <Motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="text-center text-xs text-slate-400 font-bold py-2">
                                             جاري التحقق من الولاء... ⏳
-                                        </motion.div>
+                                        </Motion.div>
                                     )}
                                     {tenantData?.settings?.isLoyaltyEnabled && loyaltyVisits !== null && !isCheckingLoyalty && (
                                         <LoyaltyCard visits={loyaltyVisits} primaryColor={activeThemeColor} requiredVisits={tenantData.settings.loyaltyVisitsRequired || 5} />
@@ -128,7 +128,7 @@ const BookingModal = ({
 
                                     <AnimatePresence>
                                         {childrenNames.map((name, index) => (
-                                            <motion.div key={index} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, scale: 0.9 }} className="flex gap-2 relative">
+                                            <Motion.div key={index} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, scale: 0.9 }} className="flex gap-2 relative">
                                                 <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 font-black">{index + 1}</div>
                                                 <input
                                                     type="text" required placeholder={index === 0 ? "الاسم الكريم (مثال: محمد)" : "اسم المرافق (مثال: علي)"} value={name}
@@ -137,14 +137,14 @@ const BookingModal = ({
                                                     style={{ '--tw-ring-color': `${activeThemeColor}40` }}
                                                 />
                                                 {index > 0 && <button type="button" onClick={() => setChildrenNames(childrenNames.filter((_, i) => i !== index))} className="w-14 shrink-0 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center text-lg hover:bg-red-100 transition-colors shadow-sm">🗑️</button>}
-                                            </motion.div>
+                                            </Motion.div>
                                         ))}
                                     </AnimatePresence>
 
                                     {/* 💡 أزرار الاستكمال السريع (تظهر فقط إذا كان هناك أسماء محفوظة) */}
                                     <AnimatePresence>
                                         {savedChildren && savedChildren.length > 0 && (
-                                            <motion.div
+                                            <Motion.div
                                                 initial={{ opacity: 0, y: -10 }}
                                                 animate={{ opacity: 1, y: 0 }}
                                                 exit={{ opacity: 0, height: 0 }}
@@ -173,7 +173,7 @@ const BookingModal = ({
                                                         );
                                                     })}
                                                 </div>
-                                            </motion.div>
+                                            </Motion.div>
                                         )}
                                     </AnimatePresence>
 
@@ -194,7 +194,7 @@ const BookingModal = ({
 
                                 {/* زر التأكيد */}
                                 <div className="pt-2 pb-safe">
-                                    <motion.button
+                                    <Motion.button
                                         whileTap={{ scale: 0.95 }} type="submit" disabled={isLoading}
                                         className="w-full py-4 text-white rounded-2xl font-black text-lg transition-all duration-300 disabled:opacity-70 disabled:scale-100 flex justify-center items-center gap-2"
                                         style={{ backgroundColor: activeThemeColor, boxShadow: `0 8px 25px ${activeThemeColor}40` }}
@@ -205,14 +205,14 @@ const BookingModal = ({
                                             <>
                                                 {/* 💡 تغيير نص الزر بذكاء إذا كان الصالون يفعل الدفع الإلكتروني */}
                                                 {tenantData?.paymentSettings?.isOnlinePaymentEnabled && tenantData?.paymentSettings?.depositAmount > 0
-                                                    ? `دفع عربون (${tenantData.paymentSettings.depositAmount} ر.س) 💳`
+                                                    ? `دفع عربون (${tenantData.paymentSettings.depositAmount} ر.س)`
                                                     : `تأكيد الحجز ✨`}
                                             </>
                                         )}
-                                    </motion.button>
+                                    </Motion.button>
                                 </div>
                             </form>
-                        </motion.div>
+                        </Motion.div>
                     </div>
                 </>
             )}

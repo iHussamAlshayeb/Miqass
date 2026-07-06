@@ -12,7 +12,7 @@ const getTenantBySlug = async (req, res) => {
       "subscription.status": "Active",
     })
       .select(
-        "-password -email -resetPasswordToken -resetPasswordExpires -taxSettings.zatcaCredentials -invoiceCounter -whatsappSettings.webhookSecret -paymentSettings.moyasarSecretKey",
+        "-password -email -resetPasswordToken -resetPasswordExpires -taxSettings.zatcaCredentials -invoiceCounter -whatsappSettings.webhookSecret -paymentSettings.moyasarSecretKey -paymentSettings.stcBank.clientSecret -paymentSettings.stcBank.webhookSecret",
       )
       .lean();
 
@@ -20,6 +20,13 @@ const getTenantBySlug = async (req, res) => {
       return res
         .status(404)
         .json({ message: "الصالون غير موجود أو أن اشتراكه منتهي." });
+
+    tenant.paymentSettings = {
+      isOnlinePaymentEnabled:
+        tenant.paymentSettings?.isOnlinePaymentEnabled || false,
+      depositAmount: tenant.paymentSettings?.depositAmount || 0,
+      provider: tenant.paymentSettings?.provider || "stc_bank",
+    };
 
     const [barbers, services, reviews] = await Promise.all([
       Barber.find({ tenantId: tenant._id, isActive: { $ne: false } })

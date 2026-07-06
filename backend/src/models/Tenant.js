@@ -93,8 +93,27 @@ const tenantSchema = new mongoose.Schema(
     paymentSettings: {
       isOnlinePaymentEnabled: { type: Boolean, default: false },
       depositAmount: { type: Number, default: 0 },
+      provider: {
+        type: String,
+        enum: ["stc_bank", "moyasar"],
+        default: "stc_bank",
+      },
       moyasarPublishableKey: { type: String, default: "" },
       moyasarSecretKey: { type: String, default: "" },
+      stcBank: {
+        environment: {
+          type: String,
+          enum: ["sandbox", "production"],
+          default: "production",
+        },
+        merchantId: { type: String, default: "" },
+        terminalId: { type: String, default: "" },
+        clientId: { type: String, default: "" },
+        clientSecret: { type: String, default: "" },
+        createPaymentUrl: { type: String, default: "" },
+        statusInquiryUrl: { type: String, default: "" },
+        webhookSecret: { type: String, default: "" },
+      },
     },
 
     campaignCredits: { type: Number, default: 0 },

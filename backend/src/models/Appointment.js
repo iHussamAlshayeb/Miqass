@@ -90,6 +90,8 @@ const appointmentSchema = new mongoose.Schema(
         default: "Not_Required",
       },
       amount: { type: Number, default: 0 },
+      provider: { type: String, default: null },
+      providerPaymentId: { type: String, default: null },
       moyasarPaymentId: { type: String, default: null },
       method: { type: String, default: null },
     },

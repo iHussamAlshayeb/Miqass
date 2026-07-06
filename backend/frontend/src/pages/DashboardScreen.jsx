@@ -105,13 +105,23 @@ const DashboardScreen = () => {
         startTime: '16:00', endTime: '22:00', slotDuration: 30, closedDates: [], breakStart: '', breakEnd: '', maxBookingDate: '', locationUrl: '', googleReviewLink: '', enableGoogleReviews: false
     });
 
-    // إعدادات الدفع الإلكتروني (Moyasar)
+    // إعدادات الدفع الإلكتروني للصالون
     const [paymentSettings, setPaymentSettings] = useState({
         isOnlinePaymentEnabled: false,
         depositAmount: 0,
-        moyasarPublishableKey: '',
-        moyasarSecretKey: '',
-        hasSecretKey: false
+        provider: 'stc_bank',
+        stcBank: {
+            environment: 'production',
+            merchantId: '',
+            terminalId: '',
+            clientId: '',
+            clientSecret: '',
+            createPaymentUrl: '',
+            statusInquiryUrl: '',
+            webhookSecret: '',
+            hasClientSecret: false,
+            hasWebhookSecret: false,
+        },
     });
 
     const [whatsappSettings, setWhatsappSettings] = useState({ apiKey: '', isEnabled: false });

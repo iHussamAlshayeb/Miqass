@@ -109,8 +109,11 @@ const buildAppointmentSaleItems = (appointment) => {
 };
 
 const getAppointmentPaymentProviderId = (appointment) => {
-  const providerPaymentId = String(appointment.payment?.moyasarPaymentId || "")
-    .trim();
+  const providerPaymentId = String(
+    appointment.payment?.providerPaymentId ||
+      appointment.payment?.moyasarPaymentId ||
+      "",
+  ).trim();
 
   return providerPaymentId || `appointment:${appointment._id}:deposit`;
 };
@@ -158,7 +161,9 @@ const syncAppointmentSalePayment = async ({ tenantId, sale, appointment }) => {
           method: normalizePaymentMethod(appointmentPayment.method),
           amount: paymentAmount,
           status: "Paid",
-          provider: appointmentPayment.moyasarPaymentId ? "moyasar" : "appointment",
+          provider:
+            appointmentPayment.provider ||
+            (appointmentPayment.moyasarPaymentId ? "moyasar" : "appointment"),
           providerPaymentId,
           paidAt: appointment.updatedAt || new Date(),
         });

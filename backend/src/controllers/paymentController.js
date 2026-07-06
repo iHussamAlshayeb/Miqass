@@ -10,6 +10,10 @@ const { generateZatcaQR } = require("../utils/zatca");
 
 const { sendWhatsAppMessage } = require("../utils/whatsapp");
 const { sendAdminNotification } = require("../utils/onesignal");
+const {
+  getStcWebhookContext,
+  isPaidWebhookStatus,
+} = require("../services/paymentGatewayService");
 
 const toMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
@@ -33,6 +37,88 @@ const allocatePaymentAcrossAppointments = (paidAmount, appointments = []) => {
     remainingAmount = toMoney(remainingAmount - allocation);
     return allocation;
   });
+};
+
+const confirmPaidAppointmentGroup = async ({
+  appointment,
+  tenant,
+  provider,
+  providerPaymentId,
+  amount,
+  method = "online",
+}) => {
+  const createdAt = appointment.createdAt
+    ? new Date(appointment.createdAt)
+    : new Date();
+  const groupWindowStart = new Date(createdAt.getTime() - 2 * 60 * 1000);
+  const groupWindowEnd = new Date(createdAt.getTime() + 2 * 60 * 1000);
+
+  const pendingAppointments = await Appointment.find({
+    tenantId: tenant._id,
+    customerId: appointment.customerId._id,
+    date: appointment.date,
+    status: "Pending_Payment",
+    createdAt: { $gte: groupWindowStart, $lte: groupWindowEnd },
+  })
+    .sort({ createdAt: 1, _id: 1 })
+    .lean();
+
+  const appointmentsToConfirm =
+    pendingAppointments.length > 0
+      ? pendingAppointments
+      : [appointment.toObject ? appointment.toObject() : appointment];
+  const paymentAllocations = allocatePaymentAcrossAppointments(
+    amount,
+    appointmentsToConfirm,
+  );
+  const paymentMethod = getNormalizedPaymentMethod(method);
+
+  await Appointment.bulkWrite(
+    appointmentsToConfirm.map((currentAppointment, index) => ({
+      updateOne: {
+        filter: { _id: currentAppointment._id, tenantId: tenant._id },
+        update: {
+          $set: {
+            status: "Booked",
+            "payment.status": "Paid",
+            "payment.amount": paymentAllocations[index],
+            "payment.provider": provider,
+            "payment.providerPaymentId": providerPaymentId,
+            "payment.moyasarPaymentId":
+              provider === "moyasar" ? providerPaymentId : null,
+            "payment.method": paymentMethod,
+          },
+        },
+      },
+    })),
+  );
+
+  const bookedAppointments = await Appointment.find({
+    _id: { $in: appointmentsToConfirm.map((currentAppointment) => currentAppointment._id) },
+    tenantId: tenant._id,
+  }).lean();
+
+  const childrenNames = bookedAppointments.map((app) => app.childName);
+  const combinedNames = childrenNames.join(" و ");
+
+  sendWhatsAppMessage(
+    appointment.customerId.phone,
+    combinedNames,
+    appointment.date,
+    appointment.timeSlot,
+    appointment.barberName,
+    tenant,
+  ).catch((e) => console.error("WhatsApp Error:", e));
+
+  sendAdminNotification(
+    combinedNames,
+    appointment.date,
+    appointment.timeSlot,
+    appointment.barberName,
+    String(tenant._id),
+  ).catch((e) => console.error("OneSignal Error:", e));
+
+  return bookedAppointments;
 };
 
 const getInvoiceData = async (req, res) => {
@@ -270,75 +356,16 @@ const moyasarWebhook = async (req, res) => {
         return res.status(200).send("Already processed");
       }
 
-      const createdAt = primaryAppointment.createdAt
-        ? new Date(primaryAppointment.createdAt)
-        : new Date();
-      const groupWindowStart = new Date(createdAt.getTime() - 2 * 60 * 1000);
-      const groupWindowEnd = new Date(createdAt.getTime() + 2 * 60 * 1000);
-
-      const pendingAppointments = await Appointment.find({
-        tenantId: tenant._id,
-        customerId: primaryAppointment.customerId._id,
-        date: primaryAppointment.date,
-        status: "Pending_Payment",
-        createdAt: { $gte: groupWindowStart, $lte: groupWindowEnd },
-      })
-        .sort({ createdAt: 1, _id: 1 })
-        .lean();
-
-      const appointmentsToConfirm =
-        pendingAppointments.length > 0
-          ? pendingAppointments
-          : [primaryAppointment.toObject()];
-      const paymentAllocations = allocatePaymentAcrossAppointments(
-        verifiedPayment.amount / 100,
-        appointmentsToConfirm,
-      );
-      const paymentMethod = getNormalizedPaymentMethod(
-        verifiedPayment.source?.type,
-      );
-
-      await Appointment.bulkWrite(
-        appointmentsToConfirm.map((appointment, index) => ({
-          updateOne: {
-            filter: { _id: appointment._id, tenantId: tenant._id },
-            update: {
-              $set: {
-                status: "Booked",
-                "payment.status": "Paid",
-                "payment.amount": paymentAllocations[index],
-                "payment.moyasarPaymentId": verifiedPayment.id,
-                "payment.method": paymentMethod,
-              },
-            },
-          },
-        })),
-      );
-
-      const bookedAppointments = await Appointment.find({
-        _id: { $in: appointmentsToConfirm.map((appointment) => appointment._id) },
-        tenantId: tenant._id,
-      }).lean();
-
-      const childrenNames = bookedAppointments.map((app) => app.childName);
-      const combinedNames = childrenNames.join(" و ");
-
-      sendWhatsAppMessage(
-        primaryAppointment.customerId.phone,
-        combinedNames,
-        primaryAppointment.date,
-        primaryAppointment.timeSlot,
-        primaryAppointment.barberName,
+      const bookedAppointments = await confirmPaidAppointmentGroup({
+        appointment: primaryAppointment,
         tenant,
-      ).catch((e) => console.error("WhatsApp Error:", e));
+        provider: "moyasar",
+        providerPaymentId: verifiedPayment.id,
+        amount: verifiedPayment.amount / 100,
+        method: verifiedPayment.source?.type || "online",
+      });
 
-      sendAdminNotification(
-        combinedNames,
-        primaryAppointment.date,
-        primaryAppointment.timeSlot,
-        primaryAppointment.barberName,
-        tenantId,
-      ).catch((e) => console.error("OneSignal Error:", e));
+      const combinedNames = bookedAppointments.map((app) => app.childName).join(" و ");
 
       console.log(
         `✅ [Webhook] تم تأكيد حجز ${combinedNames} لصالون ${tenant.salonName} بعد استلام العربون!`,
@@ -356,4 +383,53 @@ const moyasarWebhook = async (req, res) => {
   }
 };
 
-module.exports = { getInvoiceData, moyasarWebhook };
+const stcBankWebhook = async (req, res) => {
+  try {
+    const {
+      appointment,
+      tenant,
+      providerPaymentId,
+      amount,
+      status,
+    } = await getStcWebhookContext(req);
+
+    if (!isPaidWebhookStatus(status)) {
+      return res.status(200).send("Payment not paid yet");
+    }
+
+    if (
+      appointment.status === "Booked" &&
+      appointment.payment?.status === "Paid"
+    ) {
+      return res.status(200).send("Already processed");
+    }
+
+    const paidAmount = amount || appointment.payment?.amount || 0;
+    if (paidAmount <= 0) {
+      return res.status(400).send("Missing paid amount");
+    }
+
+    const bookedAppointments = await confirmPaidAppointmentGroup({
+      appointment,
+      tenant,
+      provider: "stc_bank",
+      providerPaymentId,
+      amount: paidAmount,
+      method: "card",
+    });
+
+    const combinedNames = bookedAppointments.map((app) => app.childName).join(" و ");
+    console.log(
+      `✅ [STC Bank] تم تأكيد حجز ${combinedNames} بعد استلام العربون.`,
+    );
+
+    return res.status(200).send("Webhook processed successfully");
+  } catch (error) {
+    console.error("STC Bank Webhook Error:", error.message);
+    return res
+      .status(error.statusCode || 500)
+      .send(error.message || "Internal Server Error");
+  }
+};
+
+module.exports = { getInvoiceData, moyasarWebhook, stcBankWebhook };

@@ -15,6 +15,7 @@ const {
 
 const {
   moyasarWebhook,
+  stcBankWebhook,
   getInvoiceData,
 } = require("../controllers/paymentController");
 
@@ -64,6 +65,7 @@ router.get("/live-queue/:slug", queueLimiter, getLiveQueue);
 router.post("/barber-portal/queue", barberLimiter, getBarberQueue);
 router.put("/barber-portal/status/:appointmentId", barberUpdateStatus);
 router.post("/webhook/moyasar", moyasarWebhook);
+router.post("/webhook/stc-bank", stcBankWebhook);
 
 // 🔒 Middleware الحماية (الراوتس التي تلي هذا السطر تتطلب Token)
 router.use(protect);

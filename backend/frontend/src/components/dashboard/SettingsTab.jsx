@@ -603,7 +603,7 @@ const SettingsTab = ({
                             <div>
                                 <label className="block text-sm font-black text-indigo-900">تفعيل الدفع الإلكتروني</label>
                                 <p className="text-xs font-bold text-indigo-700/70 mt-1 max-w-sm">
-                                    اطلب من عملائك دفع عربون لتأكيد الحجز. يتم تحويل الأموال مباشرة إلى حسابك في "ميسر".
+                                    اطلب من عملائك دفع عربون لتأكيد الحجز. الربط يتم بحساب STC Bank الخاص بالصالون.
                                 </p>
                             </div>
                             <label className="relative inline-flex items-center cursor-pointer">
@@ -634,62 +634,170 @@ const SettingsTab = ({
                                     <div className="pt-4 border-t border-indigo-100/50 space-y-5">
 
                                         {/* قيمة العربون */}
-                                        <div>
-                                            <label className="block text-xs font-bold text-slate-500 mb-2">مبلغ العربون المطلوب لتأكيد الحجز</label>
-                                            <div className="relative w-full md:w-1/3">
-                                                <input
-                                                    type="number"
-                                                    min="1"
-                                                    value={paymentSettings?.depositAmount || ''}
-                                                    onChange={(e) => setPaymentSettings({ ...paymentSettings, depositAmount: Number(e.target.value) })}
-                                                    className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-lg font-black text-slate-800 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 text-sm"
-                                                    dir="ltr"
-                                                />
-                                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">ر.س</span>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-500 mb-2">مبلغ العربون المطلوب لتأكيد الحجز</label>
+                                                <div className="relative">
+                                                    <input
+                                                        type="number"
+                                                        min="1"
+                                                        value={paymentSettings?.depositAmount || ''}
+                                                        onChange={(e) => setPaymentSettings({ ...paymentSettings, depositAmount: Number(e.target.value) })}
+                                                        className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-lg font-black text-slate-800 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 text-sm"
+                                                        dir="ltr"
+                                                    />
+                                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">ر.س</span>
+                                                </div>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-500 mb-2">مزود الدفع</label>
+                                                <select
+                                                    value={paymentSettings?.provider || 'stc_bank'}
+                                                    onChange={(e) => setPaymentSettings({ ...paymentSettings, provider: e.target.value })}
+                                                    className="w-full p-3 bg-white border border-slate-200 rounded-lg font-black text-slate-800 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 text-sm"
+                                                >
+                                                    <option value="stc_bank">STC Bank eCommerce</option>
+                                                </select>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-500 mb-2">بيئة التشغيل</label>
+                                                <select
+                                                    value={paymentSettings?.stcBank?.environment || 'production'}
+                                                    onChange={(e) => setPaymentSettings({
+                                                        ...paymentSettings,
+                                                        stcBank: { ...(paymentSettings?.stcBank || {}), environment: e.target.value }
+                                                    })}
+                                                    className="w-full p-3 bg-white border border-slate-200 rounded-lg font-black text-slate-800 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 text-sm"
+                                                >
+                                                    <option value="production">إنتاجي</option>
+                                                    <option value="sandbox">تجريبي</option>
+                                                </select>
                                             </div>
                                         </div>
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                                            {/* المفتاح العام */}
                                             <div>
-                                                <label className="block text-xs font-bold text-slate-500 mb-2">المفتاح العام (Publishable Key)</label>
+                                                <label className="block text-xs font-bold text-slate-500 mb-2">Merchant ID</label>
                                                 <input
                                                     type="text"
-                                                    value={paymentSettings?.moyasarPublishableKey || ''}
-                                                    onChange={(e) => setPaymentSettings({ ...paymentSettings, moyasarPublishableKey: e.target.value })}
+                                                    value={paymentSettings?.stcBank?.merchantId || ''}
+                                                    onChange={(e) => setPaymentSettings({
+                                                        ...paymentSettings,
+                                                        stcBank: { ...(paymentSettings?.stcBank || {}), merchantId: e.target.value }
+                                                    })}
                                                     className="w-full p-3 bg-white border border-slate-200 rounded-lg font-mono font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 text-xs"
-                                                    placeholder="pk_live_..."
+                                                    placeholder="Merchant ID"
                                                     dir="ltr"
                                                 />
                                             </div>
-
-                                            {/* المفتاح السري */}
                                             <div>
-                                                <label className="block text-xs font-bold text-slate-500 mb-2">المفتاح السري (Secret Key)</label>
+                                                <label className="block text-xs font-bold text-slate-500 mb-2">Terminal ID</label>
+                                                <input
+                                                    type="text"
+                                                    value={paymentSettings?.stcBank?.terminalId || ''}
+                                                    onChange={(e) => setPaymentSettings({
+                                                        ...paymentSettings,
+                                                        stcBank: { ...(paymentSettings?.stcBank || {}), terminalId: e.target.value }
+                                                    })}
+                                                    className="w-full p-3 bg-white border border-slate-200 rounded-lg font-mono font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 text-xs"
+                                                    placeholder="اختياري حسب متطلبات STC Bank"
+                                                    dir="ltr"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-500 mb-2">Client ID</label>
+                                                <input
+                                                    type="text"
+                                                    value={paymentSettings?.stcBank?.clientId || ''}
+                                                    onChange={(e) => setPaymentSettings({
+                                                        ...paymentSettings,
+                                                        stcBank: { ...(paymentSettings?.stcBank || {}), clientId: e.target.value }
+                                                    })}
+                                                    className="w-full p-3 bg-white border border-slate-200 rounded-lg font-mono font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 text-xs"
+                                                    placeholder="Client ID"
+                                                    dir="ltr"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-500 mb-2">Client Secret</label>
                                                 <input
                                                     type="password"
-                                                    value={paymentSettings?.moyasarSecretKey || ''}
-                                                    onChange={(e) => setPaymentSettings({ ...paymentSettings, moyasarSecretKey: e.target.value })}
+                                                    value={paymentSettings?.stcBank?.clientSecret || ''}
+                                                    onChange={(e) => setPaymentSettings({
+                                                        ...paymentSettings,
+                                                        stcBank: { ...(paymentSettings?.stcBank || {}), clientSecret: e.target.value }
+                                                    })}
                                                     className="w-full p-3 bg-white border border-slate-200 rounded-lg font-mono font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 text-xs"
-                                                    placeholder={paymentSettings?.hasSecretKey ? "مفتاحك السري محفوظ بأمان (اكتب لتغييره)" : "sk_live_..."}
+                                                    placeholder={paymentSettings?.stcBank?.hasClientSecret ? "محفوظ بأمان (اكتب لتغييره)" : "Client Secret"}
                                                     dir="ltr"
                                                 />
                                                 <p className="text-[10px] text-slate-400 mt-1 font-bold">
-                                                    {paymentSettings?.hasSecretKey ? "تم حفظ المفتاح السري مسبقاً." : "سيتم تشفير المفتاح تلقائياً بمجرد الحفظ."}
+                                                    {paymentSettings?.stcBank?.hasClientSecret ? "تم حفظ السر مسبقاً." : "سيتم تشفير السر تلقائياً بمجرد الحفظ."}
                                                 </p>
                                             </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-500 mb-2">رابط API لإنشاء الدفع</label>
+                                                <input
+                                                    type="url"
+                                                    value={paymentSettings?.stcBank?.createPaymentUrl || ''}
+                                                    onChange={(e) => setPaymentSettings({
+                                                        ...paymentSettings,
+                                                        stcBank: { ...(paymentSettings?.stcBank || {}), createPaymentUrl: e.target.value }
+                                                    })}
+                                                    className="w-full p-3 bg-white border border-slate-200 rounded-lg font-mono font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 text-xs"
+                                                    placeholder="https://..."
+                                                    dir="ltr"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-500 mb-2">رابط الاستعلام عن حالة الدفع</label>
+                                                <input
+                                                    type="url"
+                                                    value={paymentSettings?.stcBank?.statusInquiryUrl || ''}
+                                                    onChange={(e) => setPaymentSettings({
+                                                        ...paymentSettings,
+                                                        stcBank: { ...(paymentSettings?.stcBank || {}), statusInquiryUrl: e.target.value }
+                                                    })}
+                                                    className="w-full p-3 bg-white border border-slate-200 rounded-lg font-mono font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 text-xs"
+                                                    placeholder="اختياري حسب وثيقة STC Bank"
+                                                    dir="ltr"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 mb-2">Webhook Secret</label>
+                                            <input
+                                                type="password"
+                                                value={paymentSettings?.stcBank?.webhookSecret || ''}
+                                                onChange={(e) => setPaymentSettings({
+                                                    ...paymentSettings,
+                                                    stcBank: { ...(paymentSettings?.stcBank || {}), webhookSecret: e.target.value }
+                                                })}
+                                                className="w-full p-3 bg-white border border-slate-200 rounded-lg font-mono font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 text-xs"
+                                                placeholder={paymentSettings?.stcBank?.hasWebhookSecret ? "محفوظ بأمان (اكتب لتغييره)" : "Webhook Secret"}
+                                                dir="ltr"
+                                            />
+                                            <p className="text-[10px] text-slate-400 mt-1 font-bold">
+                                                رابط استقبال الإشعارات في النظام: /appointments/webhook/stc-bank
+                                            </p>
                                         </div>
 
                                         <div className="bg-white p-4 rounded-lg flex items-center justify-between border border-indigo-50">
                                             <div className="flex items-center gap-3">
                                                 <CircleDollarSign size={20} className="text-indigo-600" />
                                                 <div>
-                                                    <p className="text-xs font-black text-slate-800">ليس لديك حساب في ميسر؟</p>
-                                                    <p className="text-[10px] font-bold text-slate-500 mt-0.5">أنشئ حسابك الآن وابدأ باستقبال المدفوعات.</p>
+                                                    <p className="text-xs font-black text-slate-800">متطلبات الربط من STC Bank</p>
+                                                    <p className="text-[10px] font-bold text-slate-500 mt-0.5">كل صالون يستخدم بيانات حساب الأعمال الخاص به، ولا يتم استخدام حساب المنصة.</p>
                                                 </div>
                                             </div>
-                                            <a href="https://moyasar.com" target="_blank" rel="noopener noreferrer" className="bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white px-4 py-2 rounded-lg text-xs font-black transition-colors">
-                                                إنشاء حساب
+                                            <a href="https://merchant.stcbank.com.sa/login" target="_blank" rel="noopener noreferrer" className="bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white px-4 py-2 rounded-lg text-xs font-black transition-colors">
+                                                بوابة الأعمال
                                             </a>
                                         </div>
 

@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import API from '../services/api';
 import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { getLocalDate, formatTime12Hour, getTimePeriod } from '../utils/helpers';
 import { FaInstagram, FaTiktok, FaSnapchatGhost, FaPhone, FaStar, FaMapMarkerAlt } from "react-icons/fa";
 import TimeSlotsSkeleton from '../components/booking/TimeSlotsSkeleton';
@@ -93,7 +93,7 @@ const BookingScreen = () => {
                 }
                 if (tenant.settings.maxBookingDate) setMaxDate(new Date(tenant.settings.maxBookingDate));
                 if (tenant.settings.closedDates) setClosedDatesList(tenant.settings.closedDates.map(dateStr => new Date(dateStr)));
-            } catch (error) {
+            } catch {
                 setTenantError('عذراً، هذا الصالون غير موجود أو الرابط غير صحيح.');
             } finally {
                 setIsTenantLoading(false);
@@ -113,6 +113,10 @@ const BookingScreen = () => {
         return { price: totalP, duration: totalD };
     };
     const totals = calculateTotals();
+    const filledChildrenCount = useMemo(
+        () => childrenNames.filter(name => name.trim() !== '').length,
+        [childrenNames],
+    );
 
     useEffect(() => {
         const fetchAvailableSlots = async () => {
@@ -120,7 +124,7 @@ const BookingScreen = () => {
             setIsFetchingSlots(true);
             setIsClosed(false);
             try {
-                const reqDuration = totals.duration * childrenNames.filter(n => n.trim() !== '').length || totals.duration;
+                const reqDuration = totals.duration * filledChildrenCount || totals.duration;
                 const response = await API.get('/appointments/available', {
                     params: {
                         tenantId: tenantData._id, date: selectedDate, chair: selectedChair,
@@ -133,7 +137,7 @@ const BookingScreen = () => {
             finally { setIsFetchingSlots(false); }
         };
         fetchAvailableSlots();
-    }, [selectedDate, selectedChair, tenantData, selectedServicesIds, childrenNames.length]);
+    }, [selectedDate, selectedChair, tenantData, selectedServicesIds, filledChildrenCount, totals.duration]);
 
     useEffect(() => {
         const checkLoyaltyAndFetchData = async () => {
@@ -143,7 +147,7 @@ const BookingScreen = () => {
                     const res = await API.get(`/appointments/loyalty/${tenantData._id}/${phone}`);
                     setLoyaltyVisits(res.data.visits);
                     setSavedChildren(res.data.children || []);
-                } catch (error) {
+                } catch {
                     setLoyaltyVisits(null); setSavedChildren([]);
                 } finally { setIsCheckingLoyalty(false); }
             } else {
@@ -197,38 +201,14 @@ const BookingScreen = () => {
         }
     }
 
-    useEffect(() => {
-        if (showPaymentForm && paymentDetails && window.Moyasar) {
-            const formContainer = document.querySelector('.mysr-form-booking');
-            if (formContainer) formContainer.innerHTML = '';
-            window.Moyasar.init({
-                element: '.mysr-form-booking',
-                amount: paymentDetails.amount * 100,
-                currency: 'SAR',
-                description: `عربون حجز موعد - ${tenantData?.salonName}`,
-                publishable_api_key: paymentDetails.publishableKey,
-                callback_url: window.location.href,
-                methods: ['creditcard', 'stcpay'],
-                metadata: { appointmentId: paymentDetails.appointmentId, tenantId: paymentDetails.tenantId },
-                on_completed: function (payment) {
-                    return new Promise((resolve, reject) => {
-                        if (payment.status === 'initiated') { resolve(); return; }
-                        if (payment.status !== 'paid') {
-                            alert('تم رفض العملية: ' + (payment.source?.message || 'تأكد من بيانات البطاقة'));
-                            reject(); return;
-                        }
-                        setIsVerifyingPayment(true);
-                        setTimeout(() => {
-                            alert("تم استلام العربون وتأكيد موعدك بنجاح! ستصلك رسالة واتساب قريباً. 🎉");
-                            setShowPaymentForm(false);
-                            window.location.reload();
-                            resolve();
-                        }, 3000);
-                    });
-                }
-            });
+    const handleGoToPayment = () => {
+        if (!paymentDetails?.paymentUrl) {
+            alert('تعذر تجهيز رابط الدفع. يرجى التواصل مع الصالون.');
+            return;
         }
-    }, [showPaymentForm, paymentDetails, tenantData]);
+        setIsVerifyingPayment(true);
+        window.location.href = paymentDetails.paymentUrl;
+    };
 
     const groupedSlots = useMemo(() => {
         const groups = { 'صباحاً': [], 'ظهراً': [], 'مساءً': [] };
@@ -269,7 +249,7 @@ const BookingScreen = () => {
         <div className="min-h-screen bg-slate-50 font-arabic text-right selection:bg-pink-200 overflow-x-hidden relative pb-32" dir="rtl">
 
             {/* ─── الهيدر المضغوط ─── */}
-            <motion.header
+            <Motion.header
                 initial={{ y: -16, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 transition={{ duration: 0.35, ease: "easeOut" }}
@@ -300,12 +280,12 @@ const BookingScreen = () => {
                         )}
                     </div>
                 </div>
-            </motion.header>
+            </Motion.header>
 
             <main className="max-w-md mx-auto px-4 pt-5">
 
                 {/* ─── بطاقة النبذة + روابط التواصل ─── */}
-                <motion.section
+                <Motion.section
                     initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
                     className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm mb-6"
                 >
@@ -328,11 +308,11 @@ const BookingScreen = () => {
                             )}
                         </div>
                     )}
-                </motion.section>
+                </Motion.section>
 
                 {/* ─── التقييمات ─── */}
                 {topReviews.length > 0 && (
-                    <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="mb-6">
+                    <Motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="mb-6">
                         <div className="flex items-center justify-between mb-2.5 px-1">
                             <h2 className="text-slate-900 font-black text-base">تجارب العملاء</h2>
                             <span className="text-xs font-bold text-slate-400">⭐️ {topReviews.length}+</span>
@@ -360,19 +340,19 @@ const BookingScreen = () => {
                                 );
                             })}
                         </div>
-                    </motion.section>
+                    </Motion.section>
                 )}
 
                 {/* ─── الحلاقين (طاقم العمل) ─── */}
                 {tenantData.barbers && tenantData.barbers.length === 0 ? (
-                    <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+                    <Motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
                         className="bg-red-50 text-red-500 p-6 rounded-3xl text-center border border-red-100 mb-6">
                         <span className="text-4xl mb-2 block">🏖️</span>
                         <h3 className="font-black text-lg mb-1">الطاقم في إجازة</h3>
                         <p className="text-xs font-bold opacity-80">نعتذر منك، لا يوجد حلاقين متاحين حالياً.</p>
-                    </motion.div>
+                    </Motion.div>
                 ) : (
-                    <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="mb-8">
+                    <Motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="mb-8">
                         <div className="flex items-center justify-between mb-4 px-1">
                             <h2 className="text-slate-900 font-black text-base">اختر الحلاق</h2>
                             <span className="text-xs font-bold text-slate-400">{tenantData.barbers.length} متاحين</span>
@@ -427,9 +407,9 @@ const BookingScreen = () => {
                                             </svg>
 
                                             {isSelected && (
-                                                <motion.div layoutId="barberCheck"
+                                                <Motion.div layoutId="barberCheck"
                                                     className={`absolute -bottom-1 -left-1 ${checkSize} rounded-full bg-white shadow-md flex items-center justify-center font-black border-white`}
-                                                    style={{ color: chairColor }}>✓</motion.div>
+                                                    style={{ color: chairColor }}>✓</Motion.div>
                                             )}
                                         </div>
 
@@ -438,11 +418,11 @@ const BookingScreen = () => {
                                 );
                             })}
                         </div>
-                    </motion.section>
+                    </Motion.section>
                 )}
 
                 {/* ─── التاريخ ─── */}
-                <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="mb-6">
+                <Motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="mb-6">
                     <div className="flex justify-between items-center mb-3 px-1">
                         <h2 className="text-slate-900 font-black text-base">تاريخ الزيارة</h2>
                         <div className="custom-datepicker-inline">
@@ -482,11 +462,11 @@ const BookingScreen = () => {
                             );
                         })}
                     </div>
-                </motion.section>
+                </Motion.section>
 
                 {/* ─── الخدمات ─── */}
                 {tenantData?.services && tenantData.services.length > 0 && (
-                    <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="mb-6">
+                    <Motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="mb-6">
                         <div className="flex justify-between items-center mb-3 px-1">
                             <h2 className="text-slate-900 font-black text-base">الخدمات المطلوبة</h2>
                             {servicesCount > 0 && (
@@ -525,29 +505,29 @@ const BookingScreen = () => {
                                 );
                             })}
                         </div>
-                    </motion.section>
+                    </Motion.section>
                 )}
 
                 {/* ─── الأوقات المتاحة ─── */}
-                <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="mb-8">
+                <Motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="mb-8">
                     <h2 className="text-slate-900 font-black text-base mb-3 px-1">الوقت المناسب</h2>
                     {isFetchingSlots ? (
                         <TimeSlotsSkeleton />
                     ) : isClosed ? (
-                        <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+                        <Motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
                             className="p-8 rounded-3xl text-center border flex flex-col items-center transition-colors duration-300"
                             style={{ backgroundColor: `${activeThemeColor}10`, borderColor: `${activeThemeColor}30` }}>
                             <span className="text-5xl mb-3">🏖️</span>
                             <h3 className="font-black text-lg mb-1 transition-colors duration-300" style={{ color: activeThemeColor }}>الصالون في إجازة</h3>
                             <p className="font-bold text-sm transition-colors duration-300" style={{ color: activeThemeColor, opacity: 0.8 }}>نراكم في يوم آخر!</p>
-                        </motion.div>
+                        </Motion.div>
                     ) : availableSlots.length === 0 ? (
-                        <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+                        <Motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
                             className="bg-white p-8 rounded-3xl text-center border border-slate-100 flex flex-col items-center">
                             <span className="text-5xl mb-3 grayscale opacity-60">😴</span>
                             <h3 className="text-slate-700 font-black text-base mb-1">لا توجد أوقات متاحة</h3>
                             <p className="text-slate-400 font-bold text-xs leading-relaxed">جرب يوم آخر، حلاق آخر، أو قلل الخدمات.</p>
-                        </motion.div>
+                        </Motion.div>
                     ) : (
                         <div className="space-y-5">
                             {Object.entries(groupedSlots).map(([period, slots]) => (
@@ -561,14 +541,14 @@ const BookingScreen = () => {
                                         <div className="grid grid-cols-3 gap-2">
                                             <AnimatePresence>
                                                 {slots.map((time, index) => (
-                                                    <motion.button key={time}
+                                                    <Motion.button key={time}
                                                         initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.85 }}
                                                         transition={{ duration: 0.18, delay: index * 0.03 }} whileTap={{ scale: 0.94 }}
                                                         onClick={() => { setSelectedTime(time); setIsModalOpen(true); }}
                                                         className="py-3 bg-white rounded-2xl border border-slate-100 active:border-slate-300 transition-colors flex flex-col items-center justify-center gap-0.5 hover:border-slate-200">
                                                         <span className="font-black text-base text-slate-900 leading-tight" dir="ltr">{formatTime12Hour(time)}</span>
                                                         <span className="text-[10px] font-bold text-slate-400">{getTimePeriod(time)}</span>
-                                                    </motion.button>
+                                                    </Motion.button>
                                                 ))}
                                             </AnimatePresence>
                                         </div>
@@ -577,7 +557,7 @@ const BookingScreen = () => {
                             ))}
                         </div>
                     )}
-                </motion.section>
+                </Motion.section>
 
                 <footer className="text-center opacity-60 pb-4">
                     <p className="text-slate-400 font-bold text-xs transition-colors duration-300" dir="ltr">
@@ -589,7 +569,7 @@ const BookingScreen = () => {
             {/* ─── شريط ملخص ثابت أسفل الشاشة ─── */}
             <AnimatePresence>
                 {servicesCount > 0 && (
-                    <motion.div
+                    <Motion.div
                         initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 100, opacity: 0 }}
                         transition={{ type: 'spring', stiffness: 280, damping: 26 }}
                         className="fixed bottom-10 left-0 right-0 z-30 px-4 pointer-events-none">
@@ -606,7 +586,7 @@ const BookingScreen = () => {
                                 </div>
                             </div>
                         </div>
-                    </motion.div>
+                    </Motion.div>
                 )}
             </AnimatePresence>
 
@@ -623,13 +603,14 @@ const BookingScreen = () => {
             <AnimatePresence>
                 {showPaymentForm && paymentDetails && (
                     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-end sm:items-center justify-center sm:p-4">
-                        <motion.div
+                        <Motion.div
                             initial={{ y: '100%', opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: '100%', opacity: 0 }}
                             transition={{ type: 'spring', stiffness: 260, damping: 28 }}
                             className="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl relative max-h-[92vh] overflow-y-auto">
                             <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-4 sm:hidden"></div>
                             <button onClick={() => {
                                 setShowPaymentForm(false);
+                                setIsVerifyingPayment(false);
                                 alert("تم إلغاء عملية الدفع. سيتم مسح الموعد المعلق تلقائياً.");
                                 window.location.reload();
                             }}
@@ -641,23 +622,37 @@ const BookingScreen = () => {
                                 </p>
                             </div>
                             <AnimatePresence mode="wait">
-                                <motion.div key="online" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-                                    <div className={isVerifyingPayment ? 'hidden' : 'block'}>
-                                        <div className="mysr-form-booking" dir="ltr"></div>
-                                    </div>
-                                    {isVerifyingPayment && (
+                                <Motion.div key="online" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+                                    {isVerifyingPayment ? (
                                         <div className="text-center py-10">
-                                            <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }} className="text-4xl mb-4 inline-block">⏳</motion.div>
-                                            <h3 className="font-black text-slate-900 text-lg">جاري التحقق من الدفع وتأكيد الموعد...</h3>
-                                            <p className="text-slate-400 text-xs font-bold mt-2">الرجاء عدم إغلاق هذه الصفحة.</p>
+                                            <Motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }} className="w-10 h-10 mx-auto mb-4 rounded-full border-4 border-slate-200 border-t-slate-900" />
+                                            <h3 className="font-black text-slate-900 text-lg">جاري تحويلك لبوابة الدفع...</h3>
+                                            <p className="text-slate-400 text-xs font-bold mt-2">سيتم تأكيد الموعد بعد استلام إشعار الدفع من البنك.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-4">
+                                            <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 text-right">
+                                                <p className="text-xs font-bold text-slate-500 mb-1">مزود الدفع</p>
+                                                <p className="text-sm font-black text-slate-900">
+                                                    {paymentDetails.provider === 'stc_bank' ? 'STC Bank eCommerce' : 'بوابة الدفع'}
+                                                </p>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={handleGoToPayment}
+                                                className="w-full py-4 text-white rounded-2xl font-black text-lg transition-all duration-300"
+                                                style={{ backgroundColor: activeThemeColor, boxShadow: `0 8px 25px ${activeThemeColor}40` }}
+                                            >
+                                                الانتقال للدفع
+                                            </button>
                                         </div>
                                     )}
-                                </motion.div>
+                                </Motion.div>
                             </AnimatePresence>
                             <p className="text-center text-[10px] text-slate-400 font-bold mt-4 flex items-center justify-center gap-1">
                                 🔒 مدفوعات آمنة ومحمية بالكامل عبر بوابات البنك المركزي
                             </p>
-                        </motion.div>
+                        </Motion.div>
                     </div>
                 )}
             </AnimatePresence>

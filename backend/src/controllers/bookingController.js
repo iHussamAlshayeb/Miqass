@@ -12,6 +12,12 @@ const {
 } = require("../utils/whatsapp");
 const { sendAdminNotification } = require("../utils/onesignal");
 const { createSaleFromAppointment } = require("../services/salesService");
+const {
+  createBookingPaymentSession,
+  getEnabledProvider,
+  isOnlinePaymentConfigured,
+  toMoney,
+} = require("../services/paymentGatewayService");
 
 // ==========================================
 // 🛠️ دوال مساعدة (Helpers)
@@ -321,10 +327,20 @@ const createAppointment = async (req, res) => {
     }
 
     // التحقق من متطلبات الدفع
-    const isPaymentRequired =
+    const wantsOnlinePayment =
       !isWalkInBooking &&
+      totalPrice > 0 &&
       tenant.paymentSettings?.isOnlinePaymentEnabled &&
-      tenant.paymentSettings?.depositAmount > 0;
+      Number(tenant.paymentSettings?.depositAmount || 0) > 0;
+
+    if (wantsOnlinePayment && !isOnlinePaymentConfigured(tenant.paymentSettings)) {
+      return res.status(400).json({
+        message:
+          "إعدادات الدفع الإلكتروني غير مكتملة لدى الصالون. يرجى التواصل مع الصالون أو اختيار وقت لاحق.",
+      });
+    }
+
+    const isPaymentRequired = wantsOnlinePayment;
     const appointmentStatus = isWalkInBooking
       ? "Completed"
       : isPaymentRequired
@@ -332,7 +348,7 @@ const createAppointment = async (req, res) => {
         : "Booked";
     const paymentStatus = isPaymentRequired ? "Pending" : "Not_Required";
     const depositAmount = isPaymentRequired
-      ? tenant.paymentSettings.depositAmount
+      ? toMoney(Math.min(tenant.paymentSettings.depositAmount, totalPrice))
       : 0;
 
     const updatedTenant = await Tenant.findByIdAndUpdate(
@@ -474,12 +490,45 @@ const createAppointment = async (req, res) => {
     }
 
     if (isPaymentRequired) {
+      let paymentSession;
+      try {
+        const paymentAppointment = newAppointments[0].toObject
+          ? newAppointments[0].toObject()
+          : newAppointments[0];
+        paymentAppointment.customerId = customer;
+        paymentSession = await createBookingPaymentSession({
+          tenant: updatedTenant,
+          appointment: paymentAppointment,
+          amount: depositAmount,
+          req,
+        });
+      } catch (paymentError) {
+        await Appointment.updateMany(
+          { _id: { $in: newAppointments.map((appointment) => appointment._id) } },
+          {
+            $set: {
+              status: "Cancelled",
+              cancelReason: "تعذر تجهيز رابط دفع العربون",
+            },
+          },
+        );
+
+        return res.status(paymentError.statusCode || 502).json({
+          message:
+            paymentError.message ||
+            "تعذر تجهيز رابط دفع العربون. يرجى التواصل مع الصالون.",
+        });
+      }
+
       return res.status(201).json({
         message: "تم حجز الموعد مؤقتاً، يرجى دفع العربون لتأكيده.",
         requiresPayment: true,
         paymentDetails: {
+          provider: getEnabledProvider(updatedTenant.paymentSettings),
           amount: depositAmount,
-          publishableKey: tenant.paymentSettings.moyasarPublishableKey,
+          paymentUrl: paymentSession.paymentUrl,
+          reference: paymentSession.reference,
+          providerPaymentId: paymentSession.providerPaymentId,
           appointmentId: newAppointments[0]._id,
           tenantId: tenant._id,
         },
