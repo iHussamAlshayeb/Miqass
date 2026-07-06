@@ -25,6 +25,24 @@ const getStatusErrorMessage = (status) => {
     return 'تعذر تجهيز خدمة الإشعارات حالياً. أعد تحميل التطبيق ثم حاول مرة أخرى.';
 };
 
+const getReadinessMessage = (status) => {
+    if (!status?.readinessBlockReason) return '';
+
+    if (status.readinessBlockReason === 'missing-app-id') {
+        return 'معرّف OneSignal غير مضبوط في إعدادات الواجهة.';
+    }
+
+    if (status.readinessBlockReason === 'service-worker-unavailable') {
+        return 'هذا المتصفح لا يتيح Service Worker، لذلك لا يمكن تشغيل إشعارات الويب.';
+    }
+
+    if (status.readinessBlockReason === 'insecure-context') {
+        return 'الإشعارات تحتاج اتصال HTTPS آمن من نفس نطاق التطبيق.';
+    }
+
+    return '';
+};
+
 const PushNotificationPrompt = ({ tenantId }) => {
     const [status, setStatus] = useState(null);
     const [isChecking, setIsChecking] = useState(true);
@@ -139,6 +157,7 @@ const PushNotificationPrompt = ({ tenantId }) => {
         }
 
         if (!status.isSupported && status.permission !== 'granted') {
+            const readinessMessage = getReadinessMessage(status);
             const description = status.isAppleMobileDevice
                 ? 'تأكد أن الجهاز iOS 16.4 أو أحدث، وأن التطبيق مفتوح من أيقونة الشاشة الرئيسية بعد إضافته من Safari.'
                 : 'استخدم متصفحاً يدعم Web Push، وتأكد من HTTPS وخدمة Service Worker.';
@@ -147,7 +166,7 @@ const PushNotificationPrompt = ({ tenantId }) => {
                 tone: 'border-slate-200 bg-white text-slate-700',
                 icon: <AlertTriangle className="w-5 h-5" />,
                 title: 'الإشعارات غير متاحة في هذا المتصفح',
-                description,
+                description: readinessMessage || description,
                 actionLabel: '',
                 canRequest: false,
             };
@@ -183,6 +202,8 @@ const PushNotificationPrompt = ({ tenantId }) => {
                 setErrorMessage('تم منح الإذن، لكن لم يكتمل ربط الاشتراك بعد. حاول مرة أخرى.');
             } else if (result.reason === 'unsupported') {
                 setErrorMessage('هذا المتصفح لا يدعم إشعارات الويب لهذا التطبيق.');
+            } else if (result.status?.readinessBlockReason) {
+                setErrorMessage(getReadinessMessage(result.status));
             } else {
                 setErrorMessage(getStatusErrorMessage(result.status));
             }

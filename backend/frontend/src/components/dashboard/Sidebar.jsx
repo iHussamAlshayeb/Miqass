@@ -212,7 +212,7 @@ const Sidebar = ({
                             <div className="space-y-2">
                                 <button
                                     type="button"
-                                    onClick={() => copyLink(`https://miqass.app/${slug}`, 'تم نسخ رابط الحجز للعملاء.')}
+                                    onClick={() => copyLink(`https://www.miqass.app/${slug}`, 'تم نسخ رابط الحجز للعملاء.')}
                                     className="flex h-10 w-full items-center justify-between rounded-lg border border-slate-200 px-3 text-xs font-black text-slate-700 hover:bg-slate-50"
                                 >
                                     <span>رابط الحجز</span>
@@ -241,7 +241,7 @@ const Sidebar = ({
                                             openPremiumLink('', 'بوابة الطاقم');
                                             return;
                                         }
-                                        copyLink(`https://miqass.app/barber/${slug}`, 'تم نسخ رابط بوابة الطاقم.');
+                                        copyLink(`https://www.miqass.app/barber/${slug}`, 'تم نسخ رابط بوابة الطاقم.');
                                     }}
                                     className="flex h-10 w-full items-center justify-between rounded-lg border border-slate-200 px-3 text-xs font-black text-slate-700 hover:bg-slate-50"
                                 >

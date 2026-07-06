@@ -288,7 +288,7 @@ const DashboardScreen = () => {
 
     const handleLogout = () => { localStorage.removeItem('token'); navigate('/login'); };
     const activePage = pageMeta[activeTab] || pageMeta.statistics;
-    const dashboardLink = slug ? `https://miqass.app/${slug}` : '';
+    const dashboardLink = slug ? `https://www.miqass.app/${slug}` : '';
     const handleSetActiveTab = (tab) => {
         setActiveTab(tab);
         setIsSidebarOpen(false);

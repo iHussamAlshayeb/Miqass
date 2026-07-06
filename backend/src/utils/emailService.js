@@ -25,7 +25,7 @@ try {
   console.log("⚠️ تم تخطي فحص SMTP لتجنب إيقاف السيرفر.");
 }
 
-const FRONTEND_URL = process.env.FRONTEND_URL || "https://miqass.app";
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://www.miqass.app";
 
 const baseTemplate = (title, content, buttonText, buttonLink) => `
 <div dir="rtl" style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f8fafc; padding: 40px 20px; text-align: right;">

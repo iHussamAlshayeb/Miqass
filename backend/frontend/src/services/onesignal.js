@@ -146,6 +146,14 @@ const getErrorInfo = (error) => {
   return { reason: 'initialization-failed', message };
 };
 
+const getReadinessBlockReason = () => {
+  if (!isBrowser()) return 'not-browser';
+  if (!ONESIGNAL_APP_ID) return 'missing-app-id';
+  if (!canUseServiceWorker()) return 'service-worker-unavailable';
+  if (window.isSecureContext === false) return 'insecure-context';
+  return null;
+};
+
 const buildOneSignalStatus = ({
   initialized = false,
   sdkSupportsPush = doesSdkSupportPush(),
@@ -184,6 +192,7 @@ const buildOneSignalStatus = ({
     nativePushAvailable,
     sdkSupportsPush,
     isSecureContext: isSecure,
+    readinessBlockReason: getReadinessBlockReason(),
     errorReason: errorInfo?.reason || null,
     errorMessage: errorInfo?.message || '',
     error,
@@ -191,7 +200,7 @@ const buildOneSignalStatus = ({
 };
 
 export const initOneSignalForTenant = async (tenantId) => {
-  if (!isBrowser() || !ONESIGNAL_APP_ID || !canUseServiceWorker()) return false;
+  if (getReadinessBlockReason()) return false;
   if (!getOriginSupport().ok) return false;
 
   if (!oneSignalInitPromise) {
@@ -199,7 +208,6 @@ export const initOneSignalForTenant = async (tenantId) => {
       appId: ONESIGNAL_APP_ID,
       allowLocalhostAsSecureOrigin: true,
       autoResubscribe: true,
-      autoRegister: false,
       notifyButton: { enable: false },
       serviceWorkerPath: 'OneSignalSDKWorker.js',
       serviceWorkerParam: { scope: '/' },
@@ -278,7 +286,15 @@ export const requestOneSignalPermission = async (tenantId) => {
 
   if (!oneSignalInitPromise) {
     try {
-      await initOneSignalForTenant(tenantId);
+      const initialized = await initOneSignalForTenant(tenantId);
+      if (!initialized) {
+        const status = buildOneSignalStatus({ initialized: false });
+        return {
+          ok: false,
+          reason: status.readinessBlockReason || 'initialization-failed',
+          status,
+        };
+      }
     } catch (error) {
       return {
         ok: false,

@@ -135,7 +135,7 @@ const sendCancellationMessage = async (
 
     const salonName = tenant?.salonName || "الصالون";
     const slug = tenant?.slug || "";
-    const bookingLink = slug ? `https://miqass.app/${slug}` : "رابط الصالون";
+    const bookingLink = slug ? `https://www.miqass.app/${slug}` : "رابط الصالون";
     const reasonText = reason ? `\n*سبب الإلغاء:* ${reason}\n` : "";
     const seatName = barberName ? `(عند ${barberName}) ` : "";
 
@@ -243,7 +243,7 @@ const sendReviewRequestMessage = async (
     }
 
     const salonName = tenant?.salonName || "الصالون";
-    const reviewUrl = `https://miqass.app/rate/${appointmentId}`;
+    const reviewUrl = `https://www.miqass.app/rate/${appointmentId}`;
 
     const message = `يا هلا والله من ${salonName} 👋
 نتمنى إن تجربة الحلاقة لـ *${childName}* كانت ممتازة ونالت إعجابكم! ✂️✨
@@ -288,7 +288,7 @@ const sendLoyaltyRewardMessage = async (phone, customerName, tenant) => {
 
     const salonName = tenant?.salonName || "الصالون";
     const slug = tenant?.slug || "";
-    const bookingLink = slug ? `https://miqass.app/${slug}` : "رابط الصالون";
+    const bookingLink = slug ? `https://www.miqass.app/${slug}` : "رابط الصالون";
 
     const message = `يا هلا والله بـ ${customerName}، عميلنا المميز في ${salonName} 👑
 
@@ -331,7 +331,7 @@ const sendRetentionMessage = async (phone, customerName, tenant) => {
 
     const salonName = tenant?.salonName || "الصالون";
     const slug = tenant?.slug || "";
-    const bookingLink = `https://miqass.app/balloon`;
+    const bookingLink = `https://www.miqass.app/balloon`;
 
     const message = `يا هلا والله بـ ${customerName} 👋
 طالت الغيبة! اشتقنا لزيارتك لنا في ${salonName} ✂️✨

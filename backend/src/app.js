@@ -72,7 +72,7 @@ app.get("/logo/:slug", async (req, res) => {
       .lean();
 
     if (!tenant || !tenant.branding?.logoUrl) {
-      return res.redirect("https://miqass.app/default-logo.png");
+      return res.redirect("https://www.miqass.app/default-logo.png");
     }
 
     const logoData = tenant.branding.logoUrl;
@@ -95,7 +95,7 @@ app.get("/logo/:slug", async (req, res) => {
     res.redirect(
       logoData.startsWith("http")
         ? logoData
-        : "https://miqass.app/default-logo.png",
+        : "https://www.miqass.app/default-logo.png",
     );
   } catch (error) {
     res.status(500).send("Server Error");
