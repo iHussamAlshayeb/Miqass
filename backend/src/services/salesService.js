@@ -1,10 +1,12 @@
 const Sale = require("../models/Sale");
 const SaleItem = require("../models/SaleItem");
+const Payment = require("../models/Payment");
 const Tenant = require("../models/Tenant");
 const Customer = require("../models/Customer");
 const Appointment = require("../models/Appointment");
 
 const VAT_RATE = 0.15;
+const VALID_PAYMENT_METHODS = ["cash", "card", "transfer", "online"];
 
 const toMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
@@ -21,6 +23,9 @@ const getSaleStatus = (totalAmount, paidAmount) => {
   if (paidAmount + 0.001 >= totalAmount) return "Paid";
   return "Partially_Paid";
 };
+
+const normalizePaymentMethod = (method) =>
+  VALID_PAYMENT_METHODS.includes(method) ? method : "online";
 
 const getId = (value) => value?._id || value || null;
 
@@ -103,6 +108,80 @@ const buildAppointmentSaleItems = (appointment) => {
   };
 };
 
+const getAppointmentPaymentProviderId = (appointment) => {
+  const providerPaymentId = String(appointment.payment?.moyasarPaymentId || "")
+    .trim();
+
+  return providerPaymentId || `appointment:${appointment._id}:deposit`;
+};
+
+const syncAppointmentSalePayment = async ({ tenantId, sale, appointment }) => {
+  if (!sale || !appointment) return [];
+
+  const appointmentPayment = appointment.payment || {};
+  const totalAmount = toMoney(sale.totalAmount);
+  const appointmentPaidAmount =
+    appointmentPayment.status === "Paid" ? toMoney(appointmentPayment.amount) : 0;
+
+  if (appointmentPaidAmount > 0 && totalAmount > 0) {
+    const providerPaymentId = getAppointmentPaymentProviderId(appointment);
+    const existingPayment = await Payment.findOne({
+      tenantId,
+      saleId: sale._id,
+      providerPaymentId,
+    }).lean();
+
+    if (!existingPayment) {
+      const existingPaidPayments = await Payment.find({
+        tenantId,
+        saleId: sale._id,
+        status: "Paid",
+      })
+        .select("amount")
+        .lean();
+
+      const currentPaidAmount = toMoney(
+        existingPaidPayments.reduce(
+          (sum, payment) => sum + Number(payment.amount || 0),
+          0,
+        ),
+      );
+      const remainingAmount = toMoney(totalAmount - currentPaidAmount);
+      const paymentAmount = toMoney(
+        Math.min(appointmentPaidAmount, Math.max(remainingAmount, 0)),
+      );
+
+      if (paymentAmount > 0) {
+        await Payment.create({
+          tenantId,
+          saleId: sale._id,
+          method: normalizePaymentMethod(appointmentPayment.method),
+          amount: paymentAmount,
+          status: "Paid",
+          provider: appointmentPayment.moyasarPaymentId ? "moyasar" : "appointment",
+          providerPaymentId,
+          paidAt: appointment.updatedAt || new Date(),
+        });
+      }
+    }
+  }
+
+  const payments = await Payment.find({
+    tenantId,
+    saleId: sale._id,
+    status: "Paid",
+  }).lean();
+  const paidAmount = toMoney(
+    payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0),
+  );
+
+  sale.paidAmount = paidAmount;
+  sale.status = getSaleStatus(sale.totalAmount, paidAmount);
+  await sale.save();
+
+  return payments;
+};
+
 const createSaleFromAppointment = async (appointmentInput) => {
   if (!appointmentInput) return null;
 
@@ -124,8 +203,16 @@ const createSaleFromAppointment = async (appointmentInput) => {
     const linkedSale = await Sale.findOne({
       _id: getId(appointment.saleId),
       tenantId,
-    }).lean();
-    if (linkedSale) return linkedSale;
+      status: { $ne: "Cancelled" },
+    });
+    if (linkedSale) {
+      const payments = await syncAppointmentSalePayment({
+        tenantId,
+        sale: linkedSale,
+        appointment,
+      });
+      return { sale: linkedSale, payments };
+    }
   }
 
   const existingSale = await Sale.findOne({
@@ -135,12 +222,18 @@ const createSaleFromAppointment = async (appointmentInput) => {
   });
 
   if (existingSale) {
+    const payments = await syncAppointmentSalePayment({
+      tenantId,
+      sale: existingSale,
+      appointment,
+    });
+
     await Appointment.updateOne(
       { _id: appointment._id, tenantId },
       { $set: { saleId: existingSale._id } },
     );
     appointment.saleId = existingSale._id;
-    return existingSale;
+    return { sale: existingSale, payments };
   }
 
   const { items, totals } = buildAppointmentSaleItems(appointment);
@@ -174,7 +267,7 @@ const createSaleFromAppointment = async (appointmentInput) => {
     vatAmount: totals.vatAmount,
     totalAmount: totals.totalAmount,
     paidAmount: 0,
-    status: getSaleStatus(totals.totalAmount, 0),
+    status: "Draft",
   });
 
   const saleItems = await SaleItem.insertMany(
@@ -191,7 +284,13 @@ const createSaleFromAppointment = async (appointmentInput) => {
   );
   appointment.saleId = sale._id;
 
-  return { sale, saleItems, payments: [] };
+  const payments = await syncAppointmentSalePayment({
+    tenantId,
+    sale,
+    appointment,
+  });
+
+  return { sale, saleItems, payments };
 };
 
 module.exports = {

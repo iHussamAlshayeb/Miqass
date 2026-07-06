@@ -11,6 +11,30 @@ const { generateZatcaQR } = require("../utils/zatca");
 const { sendWhatsAppMessage } = require("../utils/whatsapp");
 const { sendAdminNotification } = require("../utils/onesignal");
 
+const toMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
+
+const getNormalizedPaymentMethod = (method) => {
+  const normalizedMethod = String(method || "").toLowerCase();
+  if (["cash", "card", "transfer", "online"].includes(normalizedMethod)) {
+    return normalizedMethod;
+  }
+  return "online";
+};
+
+const allocatePaymentAcrossAppointments = (paidAmount, appointments = []) => {
+  let remainingAmount = toMoney(paidAmount);
+
+  return appointments.map((appointment) => {
+    const appointmentTotal = toMoney(appointment.totalPrice);
+    const allocation = toMoney(
+      Math.min(Math.max(appointmentTotal, 0), Math.max(remainingAmount, 0)),
+    );
+
+    remainingAmount = toMoney(remainingAmount - allocation);
+    return allocation;
+  });
+};
+
 const getInvoiceData = async (req, res) => {
   try {
     const { id: appointmentId } = req.params;
@@ -246,30 +270,54 @@ const moyasarWebhook = async (req, res) => {
         return res.status(200).send("Already processed");
       }
 
-      await Appointment.updateMany(
-        {
-          tenantId: tenant._id,
-          customerId: primaryAppointment.customerId._id,
-          date: primaryAppointment.date,
-          status: "Pending_Payment",
-        },
-        {
-          $set: {
-            status: "Booked",
-            "payment.status": "Paid",
-            "payment.amount": verifiedPayment.amount / 100, // ميسر يرسل المبلغ بالهللات، نقسم على 100
-            "payment.moyasarPaymentId": verifiedPayment.id,
-            "payment.method": verifiedPayment.source?.type || "online",
-          },
-        },
-      );
+      const createdAt = primaryAppointment.createdAt
+        ? new Date(primaryAppointment.createdAt)
+        : new Date();
+      const groupWindowStart = new Date(createdAt.getTime() - 2 * 60 * 1000);
+      const groupWindowEnd = new Date(createdAt.getTime() + 2 * 60 * 1000);
 
-      const bookedAppointments = await Appointment.find({
+      const pendingAppointments = await Appointment.find({
         tenantId: tenant._id,
         customerId: primaryAppointment.customerId._id,
         date: primaryAppointment.date,
-        status: "Booked",
-        "payment.moyasarPaymentId": verifiedPayment.id,
+        status: "Pending_Payment",
+        createdAt: { $gte: groupWindowStart, $lte: groupWindowEnd },
+      })
+        .sort({ createdAt: 1, _id: 1 })
+        .lean();
+
+      const appointmentsToConfirm =
+        pendingAppointments.length > 0
+          ? pendingAppointments
+          : [primaryAppointment.toObject()];
+      const paymentAllocations = allocatePaymentAcrossAppointments(
+        verifiedPayment.amount / 100,
+        appointmentsToConfirm,
+      );
+      const paymentMethod = getNormalizedPaymentMethod(
+        verifiedPayment.source?.type,
+      );
+
+      await Appointment.bulkWrite(
+        appointmentsToConfirm.map((appointment, index) => ({
+          updateOne: {
+            filter: { _id: appointment._id, tenantId: tenant._id },
+            update: {
+              $set: {
+                status: "Booked",
+                "payment.status": "Paid",
+                "payment.amount": paymentAllocations[index],
+                "payment.moyasarPaymentId": verifiedPayment.id,
+                "payment.method": paymentMethod,
+              },
+            },
+          },
+        })),
+      );
+
+      const bookedAppointments = await Appointment.find({
+        _id: { $in: appointmentsToConfirm.map((appointment) => appointment._id) },
+        tenantId: tenant._id,
       }).lean();
 
       const childrenNames = bookedAppointments.map((app) => app.childName);

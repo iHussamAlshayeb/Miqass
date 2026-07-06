@@ -18,6 +18,12 @@ const statusLabels = {
     Cancelled: 'ملغي',
 };
 
+const sourceLabels = {
+    appointment: 'حجز',
+    walk_in: 'مباشر',
+    pos: 'نقطة بيع',
+};
+
 const toMoney = (value) => Number(value || 0).toFixed(2);
 
 const getRemainingAmount = (sale) =>
@@ -503,11 +509,12 @@ const SalesTab = ({ services = [] }) => {
                     <div className="py-8 text-center font-bold text-slate-400">لا توجد مبيعات مسجلة بعد.</div>
                 ) : (
                     <div className="overflow-x-auto">
-                        <table className="w-full min-w-[760px] text-sm">
+                        <table className="w-full min-w-[840px] text-sm">
                             <thead>
                                 <tr className="text-slate-400 border-b border-slate-100">
                                     <th className="py-3 text-right">الفاتورة</th>
                                     <th className="py-3 text-right">العميل</th>
+                                    <th className="py-3 text-right">المصدر</th>
                                     <th className="py-3 text-right">الحالة</th>
                                     <th className="py-3 text-right">المدفوع</th>
                                     <th className="py-3 text-left">الإجمالي</th>
@@ -524,6 +531,11 @@ const SalesTab = ({ services = [] }) => {
                                         <tr key={sale._id} className="border-b border-slate-50 last:border-0 align-top">
                                             <td className="py-3 font-black text-slate-800">{sale.invoiceNumber}</td>
                                             <td className="py-3 font-bold text-slate-500">{sale.customerSnapshot?.name || 'عميل نقدي'}</td>
+                                            <td className="py-3">
+                                                <span className="bg-slate-50 text-slate-600 px-3 py-1 rounded-lg font-black text-xs whitespace-nowrap">
+                                                    {sourceLabels[sale.source] || sale.source || 'غير محدد'}
+                                                </span>
+                                            </td>
                                             <td className="py-3">
                                                 <span className={`${getStatusClass(sale.status)} px-3 py-1 rounded-lg font-black text-xs whitespace-nowrap`}>
                                                     {statusLabels[sale.status] || sale.status}
