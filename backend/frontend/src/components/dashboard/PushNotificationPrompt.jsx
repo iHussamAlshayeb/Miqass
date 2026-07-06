@@ -143,7 +143,7 @@ const PushNotificationPrompt = ({ tenantId }) => {
             };
         }
 
-        if (status.permission === 'granted' && status.isOptedIn) {
+        if (status.permission === 'granted' && status.isSubscribed) {
             if (!feedback) return null;
 
             return {
@@ -179,7 +179,7 @@ const PushNotificationPrompt = ({ tenantId }) => {
             description: 'فعّل التنبيهات لتصلك إشعارات الحجوزات والتحديثات المهمة لهذا الصالون.',
             actionLabel:
                 status.permission === 'granted'
-                    ? 'إعادة ربط الإشعارات'
+                    ? 'استكمال تفعيل الإشعارات'
                     : 'تفعيل الإشعارات',
             canRequest: true,
         };

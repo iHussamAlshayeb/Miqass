@@ -99,8 +99,7 @@ const getNativePermission = () => {
   );
 };
 
-const waitForSubscriptionUpdate = () =>
-  new Promise((resolve) => setTimeout(resolve, 600));
+const sleep = (duration) => new Promise((resolve) => setTimeout(resolve, duration));
 
 const canUseServiceWorker = () => isBrowser() && 'serviceWorker' in navigator;
 
@@ -146,6 +145,20 @@ const getErrorInfo = (error) => {
   return { reason: 'initialization-failed', message };
 };
 
+const getPushSubscriptionState = () => {
+  if (!isBrowser()) {
+    return { optedIn: false, id: null, token: null };
+  }
+
+  const pushSubscription = window.OneSignal?.User?.PushSubscription;
+
+  return {
+    optedIn: pushSubscription?.optedIn === true,
+    id: pushSubscription?.id || null,
+    token: pushSubscription?.token || null,
+  };
+};
+
 const getReadinessBlockReason = () => {
   if (!isBrowser()) return 'not-browser';
   if (!ONESIGNAL_APP_ID) return 'missing-app-id';
@@ -169,6 +182,13 @@ const buildOneSignalStatus = ({
   const serviceWorkerAvailable = canUseServiceWorker();
   const nativePushAvailable = hasNativePushApi();
   const isSecure = !isBrowser() || window.isSecureContext !== false;
+  const pushSubscription = getPushSubscriptionState();
+  const hasOneSignalSubscription = Boolean(
+    pushSubscription.optedIn ||
+    pushSubscription.id ||
+    pushSubscription.token,
+  );
+  const isSubscribed = permission === 'granted' && hasOneSignalSubscription;
 
   return {
     initialized,
@@ -186,8 +206,10 @@ const buildOneSignalStatus = ({
     isStandalonePwa: standalone,
     needsInstallForIos,
     permission,
-    isOptedIn: isBrowser() && window.OneSignal?.User?.PushSubscription?.optedIn === true,
-    subscriptionId: isBrowser() ? window.OneSignal?.User?.PushSubscription?.id || null : null,
+    isOptedIn: pushSubscription.optedIn,
+    isSubscribed,
+    subscriptionId: pushSubscription.id,
+    subscriptionToken: pushSubscription.token,
     serviceWorkerAvailable,
     nativePushAvailable,
     sdkSupportsPush,
@@ -245,6 +267,22 @@ export const initOneSignalForTenant = async (tenantId) => {
   }
 
   return true;
+};
+
+const waitForOneSignalSubscription = async (tenantId) => {
+  const startedAt = Date.now();
+  let latestStatus = buildOneSignalStatus({ initialized: true });
+
+  while (Date.now() - startedAt < 6000) {
+    if (latestStatus.permission !== 'granted' || latestStatus.isSubscribed) {
+      return latestStatus;
+    }
+
+    await sleep(400);
+    latestStatus = await getOneSignalStatus(tenantId, { initialize: true });
+  }
+
+  return latestStatus;
 };
 
 export const getOneSignalStatus = async (tenantId, { initialize = false } = {}) => {
@@ -335,11 +373,10 @@ export const requestOneSignalPermission = async (tenantId) => {
     }
   }
 
-  await waitForSubscriptionUpdate();
-  const status = await getOneSignalStatus(tenantId, { initialize: true });
+  const status = await waitForOneSignalSubscription(tenantId);
 
   return {
-    ok: status.permission === 'granted' && status.isOptedIn,
+    ok: status.permission === 'granted' && status.isSubscribed,
     reason: status.permission === 'granted' ? 'subscription-pending' : 'permission-not-granted',
     status,
   };

@@ -1,5 +1,6 @@
 const UPDATE_EVENT_NAME = "miqass:update-ready";
 const CHECK_INTERVAL_MS = 2 * 60 * 1000;
+const MIQASS_WORKER_PATH = "/OneSignalSDKWorker.js";
 
 let appShellSignature = null;
 let hasDispatchedUpdate = false;
@@ -45,29 +46,22 @@ export const registerPwaUpdates = () => {
   if (!("serviceWorker" in navigator)) return;
 
   window.addEventListener("load", async () => {
-    try {
-      const registration = await navigator.serviceWorker.register(
-        "/OneSignalSDKWorker.js",
-      );
-
-      if (registration.waiting && navigator.serviceWorker.controller) {
-        dispatchUpdateReady(registration);
+    if (import.meta.env.DEV) {
+      try {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(
+          registrations
+            .filter((registration) => registration.scope.startsWith(window.location.origin))
+            .map((registration) => registration.unregister()),
+        );
+      } catch {
+        // Development should not be blocked by an old local service worker.
       }
+      return;
+    }
 
-      registration.addEventListener("updatefound", () => {
-        const newWorker = registration.installing;
-        if (!newWorker) return;
-
-        newWorker.addEventListener("statechange", () => {
-          if (
-            newWorker.state === "installed" &&
-            navigator.serviceWorker.controller
-          ) {
-            dispatchUpdateReady(registration);
-          }
-        });
-      });
-
+    try {
+      const registration = await navigator.serviceWorker.register(MIQASS_WORKER_PATH);
       setInterval(() => registration.update(), CHECK_INTERVAL_MS);
     } catch (error) {
       console.error("PWA registration failed:", error);
