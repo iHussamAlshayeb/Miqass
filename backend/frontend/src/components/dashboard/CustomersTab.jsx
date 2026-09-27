@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Download, Gift, Info, Search, Upload, Users } from 'lucide-react';
+import { Download, FileDown, Gift, Info, Search, Upload, Users } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import API from '../../services/api';
 
@@ -51,11 +51,14 @@ const CustomersTab = () => {
                 if (res.data.ignored > 0) {
                     alertMsg += `\nتم تجاهل ${res.data.ignored} عميل لأنهم مكررين.`;
                 }
+                if (res.data.invalid > 0) {
+                    alertMsg += `\nيوجد ${res.data.invalid} صف غير صالح لم يتم استيراده.`;
+                }
 
                 alert(alertMsg);
                 fetchCustomers();
             } catch (error) {
-                alert('حدث خطأ في قراءة الملف. تأكد من أن الملف بصيغة Excel ويحتوي على أعمدة الاسم ورقم الجوال.');
+                alert(error.response?.data?.message || 'حدث خطأ في قراءة الملف. تأكد من أن الملف بصيغة Excel ويحتوي على أعمدة الاسم ورقم الجوال.');
                 console.error(error);
             } finally {
                 setIsImporting(false);
@@ -64,6 +67,30 @@ const CustomersTab = () => {
         };
 
         reader.readAsBinaryString(file);
+    };
+
+    const handleDownloadImportTemplate = () => {
+        const customersSheet = XLSX.utils.aoa_to_sheet([
+            ['الاسم', 'رقم الجوال'],
+            ['', ''],
+            ['', ''],
+            ['', ''],
+        ]);
+        customersSheet['!cols'] = [{ wch: 30 }, { wch: 20 }];
+
+        const instructionsSheet = XLSX.utils.aoa_to_sheet([
+            ['تعليمات استيراد العملاء'],
+            ['اكتب اسم العميل ورقم جواله في ورقة العملاء.'],
+            ['رقم الجوال يجب أن يبدأ بـ 05 ويتكون من 10 أرقام.'],
+            ['يمكن أيضاً استخدام الصيغة الدولية مثل +9665XXXXXXXX.'],
+            ['لا تغيّر أسماء الأعمدة ولا تضف بيانات في ورقة التعليمات.'],
+        ]);
+        instructionsSheet['!cols'] = [{ wch: 70 }];
+
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, customersSheet, 'العملاء');
+        XLSX.utils.book_append_sheet(workbook, instructionsSheet, 'التعليمات');
+        XLSX.writeFile(workbook, 'قالب-استيراد-العملاء.xlsx');
     };
 
     const handleExportCustomers = async () => {
@@ -168,6 +195,14 @@ const CustomersTab = () => {
                         </button>
                         <button
                             type="button"
+                            onClick={handleDownloadImportTemplate}
+                            className="bg-slate-100 text-slate-700 hover:bg-slate-200 px-4 py-2 rounded-lg font-black text-sm transition-all flex items-center justify-center gap-2"
+                        >
+                            <FileDown size={16} />
+                            تحميل قالب الاستيراد
+                        </button>
+                        <button
+                            type="button"
                             onClick={handleExportCustomers}
                             disabled={isExporting}
                             className="bg-blue-50 text-blue-700 hover:bg-blue-100 px-4 py-2 rounded-lg font-black text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50"
@@ -181,7 +216,7 @@ const CustomersTab = () => {
                 <div className="bg-blue-50 border border-blue-100 p-4 rounded-lg mb-5 text-xs md:text-sm font-bold text-blue-700 flex gap-3 items-start">
                     <Info size={18} className="shrink-0 mt-0.5" />
                     <p className="leading-relaxed">
-                        للاستيراد، يجب أن يحتوي ملف الإكسل على عمودين على الأقل باسم: <strong>الاسم</strong> و <strong>رقم الجوال</strong>. سيتم تجاهل الأرقام المكررة تلقائياً.
+                        حمّل القالب الجاهز، ثم عبّئ عمودي <strong>الاسم</strong> و <strong>رقم الجوال</strong> وارفع الملف. سيتم تجاهل الأرقام المكررة تلقائياً.
                     </p>
                 </div>
 

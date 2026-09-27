@@ -564,12 +564,92 @@ const sendBroadcastCampaign = async (req, res) => {
   }
 };
 
+const normalizeImportedPhone = (value) => {
+  let phone = String(value ?? "")
+    .trim()
+    .replace(/[٠-٩]/g, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)))
+    .replace(/[۰-۹]/g, (digit) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)))
+    .replace(/\D/g, "");
+
+  if (phone.startsWith("00966")) phone = `0${phone.slice(5)}`;
+  else if (phone.startsWith("966")) phone = `0${phone.slice(3)}`;
+  else if (phone.length === 9 && phone.startsWith("5")) phone = `0${phone}`;
+
+  return /^05\d{8}$/.test(phone) ? phone : null;
+};
+
 const importCustomers = async (req, res) => {
-  res
-    .status(200)
-    .json({
-      message: "يرجى تعديل دالة الاستيراد لتتوافق مع جدول العملاء الجديد.",
+  try {
+    const rows = req.body?.customers;
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(400).json({ message: "ملف العملاء فارغ أو غير صالح." });
+    }
+
+    if (rows.length > 5000) {
+      return res.status(400).json({
+        message: "الحد الأقصى للاستيراد هو 5000 عميل في الملف الواحد.",
+      });
+    }
+
+    const validRows = [];
+    for (const row of rows) {
+      const name = String(
+        row?.["الاسم"] ?? row?.["اسم العميل"] ?? row?.name ?? "",
+      ).trim();
+      const phone = normalizeImportedPhone(
+        row?.["رقم الجوال"] ??
+          row?.["رقم الهاتف"] ??
+          row?.phone ??
+          row?.mobile,
+      );
+
+      if (!name || !phone) continue;
+      validRows.push({ name: name.slice(0, 100), phone });
+    }
+
+    if (validRows.length === 0) {
+      return res.status(400).json({
+        message:
+          "لم نجد صفوفاً صالحة. استخدم عمودي الاسم ورقم الجوال، وتأكد أن الرقم يبدأ بـ 05.",
+      });
+    }
+
+    const uniqueCustomers = new Map();
+    validRows.forEach((customer) => {
+      if (!uniqueCustomers.has(customer.phone)) {
+        uniqueCustomers.set(customer.phone, customer);
+      }
     });
+
+    const operations = Array.from(uniqueCustomers.values()).map((customer) => ({
+      updateOne: {
+        filter: { tenantId: req.tenantId, phone: customer.phone },
+        update: {
+          $setOnInsert: {
+            tenantId: req.tenantId,
+            phone: customer.phone,
+            parentName: customer.name,
+            children: [customer.name],
+          },
+        },
+        upsert: true,
+      },
+    }));
+
+    const result = await Customer.bulkWrite(operations, { ordered: false });
+    const imported = result.upsertedCount || 0;
+    const invalid = rows.length - validRows.length;
+    const ignored = validRows.length - imported;
+
+    res.status(200).json({
+      message: `تم استيراد ${imported} عميل بنجاح.`,
+      imported,
+      ignored,
+      invalid,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "حدث خطأ أثناء استيراد العملاء." });
+  }
 };
 
 module.exports = {
