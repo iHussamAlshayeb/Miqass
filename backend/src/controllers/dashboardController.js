@@ -551,11 +551,130 @@ const getBroadcastAudienceCounts = async (req, res) => {
   }
 };
 
+const mapCampaignProgress = (campaign) => {
+  const recipients = campaign.targetCustomers || [];
+  const recipientCounts = recipients.reduce(
+    (counts, recipient) => {
+      const status = recipient.status || "Pending";
+      counts[status] = (counts[status] || 0) + 1;
+      return counts;
+    },
+    {},
+  );
+  const totalCount = campaign.totalCount || recipients.length;
+  const sentCount = recipientCounts.Sent || 0;
+  const failedCount = recipientCounts.Failed || 0;
+  const uncertainCount = recipientCounts.Uncertain || 0;
+  const processedCount = sentCount + failedCount + uncertainCount;
+
+  return {
+    _id: campaign._id,
+    targetAudience: campaign.targetAudience,
+    status: campaign.status,
+    totalCount,
+    sentCount,
+    failedCount,
+    uncertainCount,
+    pendingCount: Math.max(totalCount - processedCount, 0),
+    progressPercent:
+      totalCount > 0 ? Math.round((processedCount / totalCount) * 100) : 0,
+    lastError: campaign.lastError || "",
+    createdAt: campaign.createdAt,
+    startedAt: campaign.startedAt,
+    lastProgressAt: campaign.lastProgressAt,
+    completedAt: campaign.completedAt,
+  };
+};
+
+const getBroadcastCampaigns = async (req, res) => {
+  try {
+    const campaigns = await Campaign.find({ tenantId: req.tenantId })
+      .select(
+        "targetAudience targetCustomers.status status totalCount sentCount failedCount uncertainCount lastError startedAt lastProgressAt completedAt createdAt",
+      )
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .lean();
+
+    res.status(200).json({ campaigns: campaigns.map(mapCampaignProgress) });
+  } catch (error) {
+    res.status(500).json({ message: "حدث خطأ أثناء جلب سجل الحملات." });
+  }
+};
+
+const resumeBroadcastCampaign = async (req, res) => {
+  try {
+    const campaign = await Campaign.findOne({
+      _id: req.params.campaignId,
+      tenantId: req.tenantId,
+    });
+
+    if (!campaign) {
+      return res.status(404).json({ message: "الحملة غير موجودة." });
+    }
+
+    let resumedCount = 0;
+    campaign.targetCustomers.forEach((recipient) => {
+      if (
+        recipient.status === "Failed" &&
+        Number(recipient.attempts || 0) < 3
+      ) {
+        recipient.status = "Pending";
+        recipient.nextAttemptAt = null;
+        recipient.errorMessage = "";
+        resumedCount += 1;
+      }
+    });
+
+    const hasPendingRecipients = campaign.targetCustomers.some(
+      (recipient) => recipient.status === "Pending",
+    );
+    if (!hasPendingRecipients) {
+      return res.status(400).json({
+        message:
+          "لا توجد رسائل آمنة للاستكمال. الحالات غير المؤكدة لا يعاد إرسالها تلقائياً لتجنب التكرار.",
+      });
+    }
+
+    campaign.status = "Pending";
+    campaign.failedCount = Math.max(
+      Number(campaign.failedCount || 0) - resumedCount,
+      0,
+    );
+    campaign.completedAt = null;
+    campaign.nextRunAt = new Date();
+    campaign.lockOwner = null;
+    campaign.lockExpiresAt = null;
+    campaign.lastError = "";
+    await campaign.save();
+
+    res.status(200).json({
+      message:
+        resumedCount > 0
+          ? `تمت إعادة ${resumedCount} رسالة فاشلة إلى طابور الاستكمال.`
+          : "تمت إعادة الحملة إلى طابور الاستكمال.",
+      campaign: mapCampaignProgress(campaign.toObject()),
+    });
+  } catch (error) {
+    res.status(500).json({ message: "حدث خطأ أثناء استكمال الحملة." });
+  }
+};
+
 // 8. تجهيز وإطلاق حملات واتساب التسويقية (Broadcast)
 const sendBroadcastCampaign = async (req, res) => {
   try {
     const tenantId = req.tenantId;
-    const { message, targetAudience } = req.body;
+    const message = String(req.body?.message || "").trim();
+    const targetAudience = req.body?.targetAudience;
+    if (!message || message.length > 4000) {
+      return res.status(400).json({
+        message: "نص الحملة مطلوب ويجب ألا يتجاوز 4000 حرف.",
+      });
+    }
+    if (!["all", "inactive_30", "vip"].includes(targetAudience)) {
+      return res.status(400).json({ message: "الجمهور المستهدف غير صالح." });
+    }
+
     const tenant = await Tenant.findById(tenantId)
       .select("subscription campaignCredits")
       .lean();
@@ -569,6 +688,17 @@ const sendBroadcastCampaign = async (req, res) => {
       return res.status(403).json({
         message:
           "هذه الميزة تتطلب باقة VIP، أو يمكنك شراء 'رصيد حملة واحدة' من الإعدادات.",
+      });
+    }
+
+    const activeCampaign = await Campaign.exists({
+      tenantId,
+      status: { $in: ["Pending", "Processing"] },
+    });
+    if (activeCampaign) {
+      return res.status(409).json({
+        message:
+          "لديك حملة قيد الإرسال حالياً. انتظر اكتمالها قبل إطلاق حملة جديدة.",
       });
     }
 
@@ -600,7 +730,7 @@ const sendBroadcastCampaign = async (req, res) => {
       );
     }
 
-    await Campaign.create({
+    const campaign = await Campaign.create({
       tenantId: tenant._id,
       messageTemplate: message,
       targetAudience: targetAudience,
@@ -609,12 +739,18 @@ const sendBroadcastCampaign = async (req, res) => {
         phone: c.phone,
         name: c.children.length > 0 ? c.children[0] : c.parentName,
       })),
+      totalCount: targetCustomers.length,
+      sentCount: 0,
+      failedCount: 0,
+      uncertainCount: 0,
       status: "Pending",
+      nextRunAt: new Date(),
     });
 
     res.status(200).json({
       message: "تم تجهيز الحملة ووضعها في طابور الإرسال الآمن",
       targetCount: targetCustomers.length,
+      campaignId: campaign._id,
     });
   } catch (error) {
     res.status(500).json({ message: "حدث خطأ أثناء جدولة الحملة" });
@@ -719,6 +855,8 @@ module.exports = {
   getTenantCustomers,
   exportTenantCustomers,
   getBroadcastAudienceCounts,
+  getBroadcastCampaigns,
+  resumeBroadcastCampaign,
   sendBroadcastCampaign,
   importCustomers,
 };

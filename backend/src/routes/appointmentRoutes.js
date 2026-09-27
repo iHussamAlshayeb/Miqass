@@ -29,6 +29,8 @@ const {
   getTenantCustomers,
   exportTenantCustomers,
   getBroadcastAudienceCounts,
+  getBroadcastCampaigns,
+  resumeBroadcastCampaign,
   importCustomers,
   sendBroadcastCampaign,
 } = require("../controllers/dashboardController");
@@ -92,6 +94,8 @@ router.get("/customers/export", exportTenantCustomers);
 router.get("/reviews", getTenantReviews);
 router.post("/import-customers", importCustomers);
 router.get("/broadcast/audience-counts", getBroadcastAudienceCounts);
+router.get("/broadcast/campaigns", getBroadcastCampaigns);
+router.post("/broadcast/campaigns/:campaignId/resume", resumeBroadcastCampaign);
 router.post("/broadcast", sendBroadcastCampaign);
 router.get("/invoice/:id", getInvoiceData);
 

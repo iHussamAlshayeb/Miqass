@@ -365,16 +365,30 @@ ${bookingLink}
 };
 
 const sendCampaignMessage = async (phone, messageText, tenant) => {
+  const customApiKey = tenant?.whatsappSettings?.apiKey;
+  const isEnabled = tenant?.whatsappSettings?.isEnabled;
+
+  if (!isEnabled || !customApiKey) {
+    return {
+      success: false,
+      retryable: false,
+      uncertain: false,
+      errorMessage: "خدمة واتساب غير مفعلة أو مفتاح الربط غير متوفر.",
+    };
+  }
+
+  const formattedPhone = formatPhoneNumber(phone);
+  if (!formattedPhone) {
+    return {
+      success: false,
+      retryable: false,
+      uncertain: false,
+      errorMessage: "رقم الجوال غير صالح للإرسال.",
+    };
+  }
+
   try {
-    const customApiKey = tenant?.whatsappSettings?.apiKey;
-    const isEnabled = tenant?.whatsappSettings?.isEnabled;
-
-    if (!isEnabled || !customApiKey) return false;
-
-    const formattedPhone = formatPhoneNumber(phone);
-    if (!formattedPhone) return false;
-
-    await axios.post(
+    const response = await axios.post(
       API_URL,
       { to: formattedPhone, text: messageText },
       {
@@ -386,10 +400,48 @@ const sendCampaignMessage = async (phone, messageText, tenant) => {
       },
     );
 
-    return true;
+    if (response.data?.success === false) {
+      return {
+        success: false,
+        retryable: false,
+        uncertain: false,
+        errorMessage: response.data?.message || "رفض مزود واتساب الرسالة.",
+      };
+    }
+
+    return {
+      success: true,
+      providerMessageId: String(
+        response.data?.data?.msgId || response.data?.msgId || "",
+      ),
+      providerStatus:
+        response.data?.data?.status || response.data?.status || "in_progress",
+    };
   } catch (error) {
     handleWhatsAppError("رسالة الحملة التسويقية", error);
-    return false;
+    const status = error.response?.status;
+    const isRateLimited = status === 429;
+    const isConnectionRejected = ["ENOTFOUND", "ECONNREFUSED"].includes(
+      error.code,
+    );
+    const isUncertain =
+      error.code === "ECONNABORTED" ||
+      status === 408 ||
+      (typeof status === "number" && status >= 500) ||
+      (!error.response && !isConnectionRejected);
+
+    return {
+      success: false,
+      retryable: isRateLimited || isConnectionRejected,
+      uncertain: isUncertain,
+      retryAfterSeconds: Number(
+        error.response?.headers?.["retry-after"] ||
+          error.response?.data?.retry_after ||
+          0,
+      ),
+      errorMessage:
+        error.response?.data?.message || error.message || "فشل إرسال الرسالة.",
+    };
   }
 };
 
