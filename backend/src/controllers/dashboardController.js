@@ -395,15 +395,59 @@ const getTenantCustomers = async (req, res) => {
     if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
 
     const requiredVisits = tenant.settings?.loyaltyVisitsRequired || 5;
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 200;
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(
+      Math.max(parseInt(req.query.limit, 10) || 100, 1),
+      200,
+    );
     const skip = (page - 1) * limit;
+    const bookingHistory = ["all", "booked", "never"].includes(
+      req.query.bookingHistory,
+    )
+      ? req.query.bookingHistory
+      : "all";
+    const search = String(req.query.search || "").trim().slice(0, 100);
 
-    const customers = await Customer.find({ tenantId: req.tenantId })
-      .sort({ lastVisitDate: -1 })
-      .skip(skip)
-      .limit(limit)
-      .lean();
+    const customerBaseFilter = {
+      tenantId: req.tenantId,
+      phone: { $ne: "0000000000" },
+    };
+    const bookedCustomerIds = await Appointment.distinct("customerId", {
+      tenantId: req.tenantId,
+      status: { $ne: "Blocked" },
+    });
+    const bookedCustomerIdSet = new Set(bookedCustomerIds.map(String));
+
+    const customerFilter = { ...customerBaseFilter };
+    if (bookingHistory === "booked") {
+      customerFilter._id = { $in: bookedCustomerIds };
+    } else if (bookingHistory === "never") {
+      customerFilter._id = { $nin: bookedCustomerIds };
+    }
+
+    if (search) {
+      const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const searchRegex = new RegExp(escapedSearch, "i");
+      customerFilter.$or = [
+        { phone: searchRegex },
+        { parentName: searchRegex },
+        { children: searchRegex },
+      ];
+    }
+
+    const [customers, filteredTotal, allCount, bookedCount] = await Promise.all([
+      Customer.find(customerFilter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Customer.countDocuments(customerFilter),
+      Customer.countDocuments(customerBaseFilter),
+      Customer.countDocuments({
+        ...customerBaseFilter,
+        _id: { $in: bookedCustomerIds },
+      }),
+    ]);
 
     const customersWithLoyaltyStatus = customers.map((c) => {
       const currentCycle = c.totalVisits % requiredVisits;
@@ -414,14 +458,27 @@ const getTenantCustomers = async (req, res) => {
         children: c.children,
         totalVisits: c.totalVisits,
         lastVisitDate: c.lastVisitDate,
+        hasBooked: bookedCustomerIdSet.has(String(c._id)),
         isEligibleForFree,
         remainingForFree: isEligibleForFree ? 0 : requiredVisits - currentCycle,
       };
     });
 
-    res
-      .status(200)
-      .json({ customers: customersWithLoyaltyStatus, requiredVisits });
+    res.status(200).json({
+      customers: customersWithLoyaltyStatus,
+      requiredVisits,
+      counts: {
+        all: allCount,
+        booked: bookedCount,
+        never: Math.max(allCount - bookedCount, 0),
+      },
+      pagination: {
+        page,
+        limit,
+        total: filteredTotal,
+        totalPages: Math.max(Math.ceil(filteredTotal / limit), 1),
+      },
+    });
   } catch (error) {
     res.status(500).json({ message: "حدث خطأ أثناء جلب قائمة العملاء" });
   }

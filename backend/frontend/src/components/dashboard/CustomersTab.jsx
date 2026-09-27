@@ -1,31 +1,69 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Download, FileDown, Gift, Info, Search, Upload, Users } from 'lucide-react';
+import { CalendarCheck, ChevronLeft, ChevronRight, Download, FileDown, Gift, Info, Search, Upload, UserPlus, Users } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import API from '../../services/api';
+
+const bookingFilterOptions = [
+    { value: 'all', label: 'الكل', icon: Users },
+    { value: 'booked', label: 'سبق له الحجز', icon: CalendarCheck },
+    { value: 'never', label: 'لم يسبق له الحجز', icon: UserPlus },
+];
 
 const CustomersTab = () => {
     const [customers, setCustomers] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+    const [bookingFilter, setBookingFilter] = useState('all');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [refreshKey, setRefreshKey] = useState(0);
+    const [customerCounts, setCustomerCounts] = useState({ all: 0, booked: 0, never: 0 });
+    const [pagination, setPagination] = useState({ page: 1, total: 0, totalPages: 1 });
     const [isImporting, setIsImporting] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
     const fileInputRef = useRef(null);
 
-    const fetchCustomers = async () => {
-        setIsLoading(true);
-        try {
-            const res = await API.get('/appointments/customers');
-            setCustomers(res.data.customers || []);
-        } catch (error) {
-            console.error('Error fetching customers:', error);
-        } finally {
-            setIsLoading(false);
-        }
-    };
+    useEffect(() => {
+        const timeoutId = window.setTimeout(() => {
+            setCurrentPage(1);
+            setDebouncedSearchTerm(searchTerm.trim());
+        }, 300);
+
+        return () => window.clearTimeout(timeoutId);
+    }, [searchTerm]);
 
     useEffect(() => {
+        let isMounted = true;
+
+        const fetchCustomers = async () => {
+            setIsLoading(true);
+            try {
+                const res = await API.get('/appointments/customers', {
+                    params: {
+                        page: currentPage,
+                        limit: 100,
+                        bookingHistory: bookingFilter,
+                        search: debouncedSearchTerm,
+                    },
+                });
+
+                if (!isMounted) return;
+                setCustomers(res.data.customers || []);
+                setCustomerCounts(res.data.counts || { all: 0, booked: 0, never: 0 });
+                setPagination(res.data.pagination || { page: 1, total: 0, totalPages: 1 });
+            } catch (error) {
+                if (isMounted) console.error('Error fetching customers:', error);
+            } finally {
+                if (isMounted) setIsLoading(false);
+            }
+        };
+
         fetchCustomers();
-    }, []);
+
+        return () => {
+            isMounted = false;
+        };
+    }, [bookingFilter, currentPage, debouncedSearchTerm, refreshKey]);
 
     const handleFileUpload = (event) => {
         const file = event.target.files[0];
@@ -56,7 +94,10 @@ const CustomersTab = () => {
                 }
 
                 alert(alertMsg);
-                fetchCustomers();
+                setSearchTerm('');
+                setBookingFilter('never');
+                setCurrentPage(1);
+                setRefreshKey((value) => value + 1);
             } catch (error) {
                 alert(error.response?.data?.message || 'حدث خطأ في قراءة الملف. تأكد من أن الملف بصيغة Excel ويحتوي على أعمدة الاسم ورقم الجوال.');
                 console.error(error);
@@ -150,12 +191,6 @@ const CustomersTab = () => {
         return date.toLocaleDateString('ar-EG', { year: 'numeric', month: 'short', day: 'numeric' });
     };
 
-    const filteredCustomers = customers.filter((customer) =>
-        (customer.name && customer.name.includes(searchTerm)) ||
-        (customer.phone && customer.phone.includes(searchTerm)) ||
-        (customer.children && customer.children.some((child) => child.includes(searchTerm)))
-    );
-
     return (
         <div className="space-y-6">
             <section className="bg-white p-4 sm:p-5 rounded-lg shadow-sm border border-slate-100">
@@ -174,7 +209,7 @@ const CustomersTab = () => {
                     <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                         <div className="bg-slate-100 text-slate-600 px-4 py-2 rounded-lg font-black text-sm flex items-center justify-between sm:justify-center gap-2">
                             <span>إجمالي العملاء</span>
-                            <span className="text-blue-700 text-lg">{customers.length}</span>
+                            <span className="text-blue-700 text-lg">{customerCounts.all.toLocaleString('ar-SA')}</span>
                         </div>
 
                         <input
@@ -220,6 +255,35 @@ const CustomersTab = () => {
                     </p>
                 </div>
 
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-5" role="tablist" aria-label="تصفية العملاء حسب سجل الحجز">
+                    {bookingFilterOptions.map((option) => {
+                        const Icon = option.icon;
+                        const isActive = bookingFilter === option.value;
+
+                        return (
+                            <button
+                                key={option.value}
+                                type="button"
+                                role="tab"
+                                aria-selected={isActive}
+                                onClick={() => {
+                                    setBookingFilter(option.value);
+                                    setCurrentPage(1);
+                                }}
+                                className={`min-h-12 px-4 py-3 rounded-lg border text-sm font-black flex items-center justify-between gap-3 transition-colors ${isActive ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300 hover:text-blue-700'}`}
+                            >
+                                <span className="flex items-center gap-2">
+                                    <Icon size={17} />
+                                    {option.label}
+                                </span>
+                                <span className={`px-2 py-0.5 rounded-md text-xs ${isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                                    {Number(customerCounts[option.value] || 0).toLocaleString('ar-SA')}
+                                </span>
+                            </button>
+                        );
+                    })}
+                </div>
+
                 <div className="mb-5 relative">
                     <input
                         type="text"
@@ -233,7 +297,7 @@ const CustomersTab = () => {
 
                 {isLoading ? (
                     <div className="text-center py-10 text-slate-400 font-bold animate-pulse text-lg">جاري جلب سجل العملاء...</div>
-                ) : filteredCustomers.length === 0 ? (
+                ) : customers.length === 0 ? (
                     <div className="text-center py-16 bg-slate-50 rounded-lg border border-slate-100 border-dashed">
                         <Users size={42} className="text-slate-300 mx-auto mb-4" />
                         <p className="text-slate-500 font-bold text-lg">لا يوجد عملاء مطابقين للبحث.</p>
@@ -241,18 +305,19 @@ const CustomersTab = () => {
                     </div>
                 ) : (
                     <div className="overflow-x-auto pb-4">
-                        <table className="w-full text-right border-collapse min-w-[820px] text-sm">
+                        <table className="w-full text-right border-collapse min-w-[940px] text-sm">
                             <thead>
                                 <tr className="bg-slate-50 border-b border-slate-100">
                                     <th className="p-4 font-black text-slate-500 text-xs w-1/3">العميل والمرافقين</th>
                                     <th className="p-4 font-black text-slate-500 text-xs">رقم الجوال</th>
                                     <th className="p-4 font-black text-slate-500 text-xs text-center">إجمالي الزيارات</th>
                                     <th className="p-4 font-black text-slate-500 text-xs">آخر زيارة</th>
+                                    <th className="p-4 font-black text-slate-500 text-xs text-center">سجل الحجز</th>
                                     <th className="p-4 font-black text-slate-500 text-xs text-center">حالة الولاء</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredCustomers.map((customer, index) => {
+                                {customers.map((customer, index) => {
                                     const progressBase = Number(customer.totalVisits || 0) + Number(customer.remainingForFree || 0);
                                     const progress = progressBase > 0 ? Math.min((Number(customer.totalVisits || 0) / progressBase) * 100, 100) : 0;
 
@@ -279,6 +344,12 @@ const CustomersTab = () => {
                                             <td className="p-4 font-black text-blue-700 text-center text-lg">{customer.totalVisits}</td>
                                             <td className="p-4 font-bold text-slate-400 text-xs">{formatDate(customer.lastVisitDate)}</td>
                                             <td className="p-4 text-center">
+                                                <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black border ${customer.hasBooked ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
+                                                    {customer.hasBooked ? <CalendarCheck size={13} /> : <UserPlus size={13} />}
+                                                    {customer.hasBooked ? 'سبق له الحجز' : 'لم يسبق له الحجز'}
+                                                </span>
+                                            </td>
+                                            <td className="p-4 text-center">
                                                 {customer.isEligibleForFree ? (
                                                     <span className="inline-flex items-center gap-1.5 bg-amber-50 text-amber-700 border border-amber-100 px-3 py-1.5 rounded-lg text-xs font-black">
                                                         <Gift size={13} />
@@ -300,6 +371,39 @@ const CustomersTab = () => {
                                 })}
                             </tbody>
                         </table>
+                    </div>
+                )}
+
+                {!isLoading && pagination.totalPages > 1 && (
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-slate-100">
+                        <span className="text-xs font-bold text-slate-500">
+                            عرض {customers.length.toLocaleString('ar-SA')} من أصل {pagination.total.toLocaleString('ar-SA')} عميل
+                        </span>
+                        <div className="flex items-center gap-2" dir="rtl">
+                            <button
+                                type="button"
+                                title="الصفحة السابقة"
+                                aria-label="الصفحة السابقة"
+                                disabled={currentPage <= 1}
+                                onClick={() => setCurrentPage((page) => Math.max(page - 1, 1))}
+                                className="w-10 h-10 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center"
+                            >
+                                <ChevronRight size={18} />
+                            </button>
+                            <span className="min-w-28 text-center text-sm font-black text-slate-700">
+                                صفحة {currentPage.toLocaleString('ar-SA')} من {pagination.totalPages.toLocaleString('ar-SA')}
+                            </span>
+                            <button
+                                type="button"
+                                title="الصفحة التالية"
+                                aria-label="الصفحة التالية"
+                                disabled={currentPage >= pagination.totalPages}
+                                onClick={() => setCurrentPage((page) => Math.min(page + 1, pagination.totalPages))}
+                                className="w-10 h-10 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center"
+                            >
+                                <ChevronLeft size={18} />
+                            </button>
+                        </div>
                     </div>
                 )}
             </section>
