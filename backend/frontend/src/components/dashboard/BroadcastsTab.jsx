@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Eye, Megaphone, Send, ShieldCheck, UserRoundCheck, Users } from 'lucide-react';
 import API from '../../services/api';
 
@@ -27,8 +27,37 @@ const BroadcastsTab = ({ tenantId }) => {
     const [message, setMessage] = useState('');
     const [targetAudience, setTargetAudience] = useState('all');
     const [isSending, setIsSending] = useState(false);
+    const [isLoadingAudienceCounts, setIsLoadingAudienceCounts] = useState(true);
+    const [audienceCounts, setAudienceCounts] = useState({
+        all: null,
+        inactive_30: null,
+        vip: null,
+    });
     const [successMsg, setSuccessMsg] = useState('');
     const [errorMsg, setErrorMsg] = useState('');
+
+    useEffect(() => {
+        let isMounted = true;
+
+        const fetchAudienceCounts = async () => {
+            setIsLoadingAudienceCounts(true);
+
+            try {
+                const res = await API.get('/appointments/broadcast/audience-counts');
+                if (isMounted) setAudienceCounts(res.data.counts || {});
+            } catch (error) {
+                console.error('Error fetching broadcast audience counts:', error);
+            } finally {
+                if (isMounted) setIsLoadingAudienceCounts(false);
+            }
+        };
+
+        fetchAudienceCounts();
+
+        return () => {
+            isMounted = false;
+        };
+    }, [tenantId]);
 
     const insertVariable = (variable) => {
         setMessage((prev) => `${prev}${variable} `);
@@ -117,9 +146,16 @@ const BroadcastsTab = ({ tenantId }) => {
                                             onChange={() => setTargetAudience(option.value)}
                                             className="hidden"
                                         />
-                                        <div className="flex items-center gap-2 font-black text-slate-800 mb-2">
-                                            <Icon size={17} className={isActive ? 'text-purple-700' : 'text-slate-500'} />
-                                            {option.title}
+                                        <div className="flex items-center justify-between gap-3 mb-2">
+                                            <div className="flex items-center gap-2 font-black text-slate-800">
+                                                <Icon size={17} className={isActive ? 'text-purple-700' : 'text-slate-500'} />
+                                                {option.title}
+                                            </div>
+                                            <span className={`shrink-0 px-2.5 py-1 rounded-md text-[11px] font-black ${isActive ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                                                {isLoadingAudienceCounts
+                                                    ? '...'
+                                                    : `${Number(audienceCounts[option.value] || 0).toLocaleString('ar-SA')} عميل`}
+                                            </span>
                                         </div>
                                         <div className="text-xs font-bold text-slate-500 leading-relaxed">{option.description}</div>
                                     </label>

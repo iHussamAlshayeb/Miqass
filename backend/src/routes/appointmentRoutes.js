@@ -28,6 +28,7 @@ const {
   resendSingleWhatsApp,
   getTenantCustomers,
   exportTenantCustomers,
+  getBroadcastAudienceCounts,
   importCustomers,
   sendBroadcastCampaign,
 } = require("../controllers/dashboardController");
@@ -90,6 +91,7 @@ router.get("/customers", getTenantCustomers);
 router.get("/customers/export", exportTenantCustomers);
 router.get("/reviews", getTenantReviews);
 router.post("/import-customers", importCustomers);
+router.get("/broadcast/audience-counts", getBroadcastAudienceCounts);
 router.post("/broadcast", sendBroadcastCampaign);
 router.get("/invoice/:id", getInvoiceData);
 

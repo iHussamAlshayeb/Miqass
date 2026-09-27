@@ -459,6 +459,41 @@ const exportTenantCustomers = async (req, res) => {
   }
 };
 
+const getBroadcastCustomerFilter = (tenantId) => ({
+  tenantId,
+  phone: { $ne: "0000000000" },
+});
+
+const getBroadcastAudienceCounts = async (req, res) => {
+  try {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const customerFilter = getBroadcastCustomerFilter(req.tenantId);
+    const [all, inactive30, vip] = await Promise.all([
+      Customer.countDocuments(customerFilter),
+      Customer.countDocuments({
+        ...customerFilter,
+        lastVisitDate: { $lt: thirtyDaysAgo },
+      }),
+      Customer.countDocuments({
+        ...customerFilter,
+        totalVisits: { $gte: 3 },
+      }),
+    ]);
+
+    res.status(200).json({
+      counts: {
+        all,
+        inactive_30: inactive30,
+        vip,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ message: "حدث خطأ أثناء جلب أعداد العملاء" });
+  }
+};
+
 // 8. تجهيز وإطلاق حملات واتساب التسويقية (Broadcast)
 const sendBroadcastCampaign = async (req, res) => {
   try {
@@ -484,7 +519,7 @@ const sendBroadcastCampaign = async (req, res) => {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const customers = await Customer.find({ tenantId })
+    const customers = await Customer.find(getBroadcastCustomerFilter(tenantId))
       .select("_id phone children parentName lastVisitDate totalVisits")
       .lean();
 
@@ -546,6 +581,7 @@ module.exports = {
   getCustomerLoyalty,
   getTenantCustomers,
   exportTenantCustomers,
+  getBroadcastAudienceCounts,
   sendBroadcastCampaign,
   importCustomers,
 };
