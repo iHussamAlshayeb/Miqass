@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Clock3, Eye, Megaphone, RefreshCw, Send, ShieldCheck, UserRoundCheck, Users } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock3, Eye, Megaphone, RefreshCw, Send, ShieldCheck, TestTube2, UserRoundCheck, Users } from 'lucide-react';
 import API from '../../services/api';
 
 const audienceOptions = [
@@ -36,12 +36,14 @@ const audienceLabels = {
     all: 'كل العملاء',
     inactive_30: 'المنقطعون',
     vip: 'العملاء المميزون',
+    test: 'رسالة اختبار',
 };
 
 const BroadcastsTab = ({ tenantId }) => {
     const [message, setMessage] = useState('');
     const [targetAudience, setTargetAudience] = useState('all');
     const [isSending, setIsSending] = useState(false);
+    const [isTesting, setIsTesting] = useState(false);
     const [isLoadingAudienceCounts, setIsLoadingAudienceCounts] = useState(true);
     const [audienceCounts, setAudienceCounts] = useState({
         all: null,
@@ -153,6 +155,32 @@ const BroadcastsTab = ({ tenantId }) => {
             setErrorMsg(error.response?.data?.message || 'حدث خطأ أثناء جدولة الحملة.');
         } finally {
             setIsSending(false);
+        }
+    };
+
+    const handleSendTest = async () => {
+        if (!message.trim()) {
+            setErrorMsg('الرجاء كتابة نص الرسالة قبل إرسال الاختبار.');
+            return;
+        }
+
+        const confirmed = window.confirm(
+            'سيتم إرسال رسالة الاختبار إلى 0541993290 و0537385559 فقط. هل تريد المتابعة؟',
+        );
+        if (!confirmed) return;
+
+        setIsTesting(true);
+        setErrorMsg('');
+        setSuccessMsg('');
+
+        try {
+            const res = await API.post('/appointments/broadcast/test', { message });
+            setSuccessMsg(res.data.message);
+            setCampaignRefreshKey((value) => value + 1);
+        } catch (error) {
+            setErrorMsg(error.response?.data?.message || 'تعذر إرسال رسالة الاختبار.');
+        } finally {
+            setIsTesting(false);
         }
     };
 
@@ -281,18 +309,29 @@ const BroadcastsTab = ({ tenantId }) => {
                         </div>
                     )}
 
-                    <button
-                        type="submit"
-                        disabled={isSending || hasActiveCampaign}
-                        className="w-full bg-purple-600 text-white font-black py-4 rounded-lg hover:bg-purple-700 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                        <Send size={17} />
-                        {isSending
-                            ? 'جاري تجهيز الحملة...'
-                            : hasActiveCampaign
-                                ? 'توجد حملة قيد الإرسال'
-                                : 'إطلاق الحملة التسويقية'}
-                    </button>
+                    <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] gap-3">
+                        <button
+                            type="submit"
+                            disabled={isSending || isTesting || hasActiveCampaign}
+                            className="w-full bg-purple-600 text-white font-black py-4 px-5 rounded-lg hover:bg-purple-700 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                            <Send size={17} />
+                            {isSending
+                                ? 'جاري تجهيز الحملة...'
+                                : hasActiveCampaign
+                                    ? 'توجد حملة قيد الإرسال'
+                                    : 'إطلاق الحملة التسويقية'}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleSendTest}
+                            disabled={isSending || isTesting || hasActiveCampaign || !message.trim()}
+                            className="w-full sm:w-auto border border-blue-200 bg-blue-50 text-blue-700 font-black py-4 px-5 rounded-lg hover:bg-blue-100 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                            <TestTube2 size={17} />
+                            {isTesting ? 'جاري تجهيز الاختبار...' : 'إرسال اختبار لرقمين'}
+                        </button>
+                    </div>
                 </form>
 
                 <div className="mt-8 pt-6 border-t border-slate-100">
@@ -349,7 +388,7 @@ const BroadcastsTab = ({ tenantId }) => {
                                         </div>
 
                                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-bold">
-                                            <span className="text-emerald-700">تم: {Number(campaign.sentCount || 0).toLocaleString('ar-SA')}</span>
+                                            <span className="text-emerald-700">قُبل للإرسال: {Number(campaign.sentCount || 0).toLocaleString('ar-SA')}</span>
                                             <span className="text-blue-700">متبقي: {Number(campaign.pendingCount || 0).toLocaleString('ar-SA')}</span>
                                             <span className="text-red-600">فشل: {Number(campaign.failedCount || 0).toLocaleString('ar-SA')}</span>
                                             <span className="text-orange-600">غير مؤكد: {Number(campaign.uncertainCount || 0).toLocaleString('ar-SA')}</span>

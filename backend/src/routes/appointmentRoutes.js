@@ -31,6 +31,7 @@ const {
   getBroadcastAudienceCounts,
   getBroadcastCampaigns,
   resumeBroadcastCampaign,
+  sendBroadcastTest,
   importCustomers,
   sendBroadcastCampaign,
 } = require("../controllers/dashboardController");
@@ -59,6 +60,16 @@ const barberLimiter = rateLimit({
 const queueLimiter = rateLimit({
   windowMs: 1 * 60 * 1000,
   max: 30,
+});
+
+const broadcastTestLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: {
+    message: "تم إرسال عدة اختبارات. انتظر 15 دقيقة قبل المحاولة مجدداً.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
 router.get("/available", getAvailableSlots);
@@ -96,6 +107,7 @@ router.post("/import-customers", importCustomers);
 router.get("/broadcast/audience-counts", getBroadcastAudienceCounts);
 router.get("/broadcast/campaigns", getBroadcastCampaigns);
 router.post("/broadcast/campaigns/:campaignId/resume", resumeBroadcastCampaign);
+router.post("/broadcast/test", broadcastTestLimiter, sendBroadcastTest);
 router.post("/broadcast", sendBroadcastCampaign);
 router.get("/invoice/:id", getInvoiceData);
 

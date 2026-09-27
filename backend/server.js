@@ -9,7 +9,11 @@ const startServer = async () => {
     await connectDB();
     console.log("✅ تم الاتصال بـ MongoDB بنجاح.");
 
-    startCronJobs();
+    if (process.env.DISABLE_CRON_JOBS === "true") {
+      console.log("⏸️ تم تعطيل المهام المجدولة عبر DISABLE_CRON_JOBS.");
+    } else {
+      startCronJobs();
+    }
 
     const PORT = process.env.PORT || 5000;
     const server = app.listen(PORT, () => {

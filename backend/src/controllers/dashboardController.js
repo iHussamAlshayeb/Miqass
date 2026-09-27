@@ -8,6 +8,11 @@ const Service = require("../models/Service");
 const { encrypt } = require("../utils/encryption");
 const { sendReminderMessage } = require("../utils/whatsapp");
 
+const BROADCAST_TEST_RECIPIENTS = Object.freeze([
+  { phone: "0541993290", name: "عميل الاختبار الأول" },
+  { phone: "0537385559", name: "عميل الاختبار الثاني" },
+]);
+
 // ==========================================
 // 🛠️ دالة مساعدة لتجهيز المواعيد للواجهة
 // ==========================================
@@ -660,6 +665,66 @@ const resumeBroadcastCampaign = async (req, res) => {
   }
 };
 
+const sendBroadcastTest = async (req, res) => {
+  try {
+    const message = String(req.body?.message || "").trim();
+    if (!message || message.length > 4000) {
+      return res.status(400).json({
+        message: "نص رسالة الاختبار مطلوب ويجب ألا يتجاوز 4000 حرف.",
+      });
+    }
+
+    const tenant = await Tenant.findById(req.tenantId)
+      .select("whatsappSettings.isEnabled whatsappSettings.apiKey")
+      .lean();
+    if (!tenant) {
+      return res.status(404).json({ message: "الصالون غير موجود." });
+    }
+    if (
+      !tenant.whatsappSettings?.isEnabled ||
+      !tenant.whatsappSettings?.apiKey
+    ) {
+      return res.status(400).json({
+        message: "يجب ربط واتساب وتفعيله قبل إرسال رسالة الاختبار.",
+      });
+    }
+
+    const activeCampaign = await Campaign.exists({
+      tenantId: req.tenantId,
+      status: { $in: ["Pending", "Processing"] },
+    });
+    if (activeCampaign) {
+      return res.status(409).json({
+        message:
+          "توجد حملة قيد الإرسال حالياً. انتظر اكتمالها قبل إرسال الاختبار.",
+      });
+    }
+
+    const campaign = await Campaign.create({
+      tenantId: req.tenantId,
+      messageTemplate: message,
+      targetAudience: "test",
+      targetCustomers: BROADCAST_TEST_RECIPIENTS.map((recipient) => ({
+        ...recipient,
+      })),
+      totalCount: BROADCAST_TEST_RECIPIENTS.length,
+      sentCount: 0,
+      failedCount: 0,
+      uncertainCount: 0,
+      status: "Pending",
+      nextRunAt: new Date(),
+    });
+
+    res.status(200).json({
+      message: "تم وضع رسالة الاختبار في طابور الإرسال إلى الرقمين فقط.",
+      targetCount: BROADCAST_TEST_RECIPIENTS.length,
+      campaignId: campaign._id,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "حدث خطأ أثناء جدولة رسالة الاختبار." });
+  }
+};
+
 // 8. تجهيز وإطلاق حملات واتساب التسويقية (Broadcast)
 const sendBroadcastCampaign = async (req, res) => {
   try {
@@ -857,6 +922,7 @@ module.exports = {
   getBroadcastAudienceCounts,
   getBroadcastCampaigns,
   resumeBroadcastCampaign,
+  sendBroadcastTest,
   sendBroadcastCampaign,
   importCustomers,
 };
