@@ -27,6 +27,7 @@ const {
   getAllUpcomingAppointments,
   resendSingleWhatsApp,
   getTenantCustomers,
+  exportTenantCustomers,
   importCustomers,
   sendBroadcastCampaign,
 } = require("../controllers/dashboardController");
@@ -86,6 +87,7 @@ router.post("/block", blockTimeSlot);
 router.post("/resend-whatsapp/:id", resendSingleWhatsApp);
 
 router.get("/customers", getTenantCustomers);
+router.get("/customers/export", exportTenantCustomers);
 router.get("/reviews", getTenantReviews);
 router.post("/import-customers", importCustomers);
 router.post("/broadcast", sendBroadcastCampaign);

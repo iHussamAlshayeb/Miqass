@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Gift, Info, Search, Upload, Users } from 'lucide-react';
+import { Download, Gift, Info, Search, Upload, Users } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import API from '../../services/api';
 
@@ -8,6 +8,7 @@ const CustomersTab = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [isImporting, setIsImporting] = useState(false);
+    const [isExporting, setIsExporting] = useState(false);
     const fileInputRef = useRef(null);
 
     const fetchCustomers = async () => {
@@ -65,6 +66,57 @@ const CustomersTab = () => {
         reader.readAsBinaryString(file);
     };
 
+    const handleExportCustomers = async () => {
+        setIsExporting(true);
+
+        try {
+            const res = await API.get('/appointments/customers/export');
+            const exportCustomers = res.data.customers || [];
+
+            if (exportCustomers.length === 0) {
+                alert('لا يوجد عملاء لتصديرهم.');
+                return;
+            }
+
+            const customerTypeLabels = {
+                New: 'جديد',
+                Regular: 'منتظم',
+                VIP: 'مميز',
+                Blacklisted: 'محظور',
+            };
+
+            const rows = exportCustomers.map((customer) => ({
+                'الاسم': customer.name || '',
+                'رقم الجوال': String(customer.phone || ''),
+                'المرافقون': (customer.children || []).join('، '),
+                'إجمالي الزيارات': Number(customer.totalVisits || 0),
+                'آخر زيارة': customer.lastVisitDate ? new Date(customer.lastVisitDate).toLocaleDateString('ar-SA') : '',
+                'نوع العميل': customerTypeLabels[customer.customerType] || customer.customerType || '',
+                'تاريخ الإضافة': customer.createdAt ? new Date(customer.createdAt).toLocaleDateString('ar-SA') : '',
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(rows);
+            worksheet['!cols'] = [
+                { wch: 24 },
+                { wch: 18 },
+                { wch: 35 },
+                { wch: 16 },
+                { wch: 18 },
+                { wch: 16 },
+                { wch: 18 },
+            ];
+
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, 'العملاء');
+            XLSX.writeFile(workbook, `عملاء-${new Date().toISOString().slice(0, 10)}.xlsx`);
+        } catch (error) {
+            console.error('Error exporting customers:', error);
+            alert(error.response?.data?.message || 'تعذر تصدير العملاء. حاول مرة أخرى.');
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
     const formatDate = (dateString) => {
         if (!dateString) return 'لم يزر الصالون بعد';
         const date = new Date(dateString);
@@ -113,6 +165,15 @@ const CustomersTab = () => {
                         >
                             <Upload size={16} />
                             {isImporting ? 'جاري الاستيراد...' : 'استيراد Excel'}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleExportCustomers}
+                            disabled={isExporting}
+                            className="bg-blue-50 text-blue-700 hover:bg-blue-100 px-4 py-2 rounded-lg font-black text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                        >
+                            <Download size={16} />
+                            {isExporting ? 'جاري التصدير...' : 'تصدير جميع العملاء'}
                         </button>
                     </div>
                 </div>

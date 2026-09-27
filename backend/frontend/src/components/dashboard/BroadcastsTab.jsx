@@ -91,7 +91,7 @@ const BroadcastsTab = ({ tenantId }) => {
                     <div>
                         <h4 className="font-black text-amber-900 text-sm mb-1">حماية رقم الواتساب</h4>
                         <p className="text-xs font-bold text-amber-800/80 leading-relaxed">
-                            يتم إرسال الرسائل تدريجياً. استخدم متغير [الاسم] ولا ترسل أكثر من حملة واحدة أسبوعياً.
+                            يتم إرسال الرسائل تدريجياً. يمكنك تخصيص الرسالة بمتغيري [الاسم] و[رقم الجوال]، ولا ترسل أكثر من حملة واحدة أسبوعياً.
                         </p>
                     </div>
                 </div>
@@ -129,22 +129,31 @@ const BroadcastsTab = ({ tenantId }) => {
                     </div>
 
                     <div>
-                        <div className="flex justify-between items-end mb-2 gap-3">
+                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end mb-2 gap-3">
                             <label className="block text-sm font-black text-slate-700">نص الرسالة</label>
-                            <button
-                                type="button"
-                                onClick={() => insertVariable('[الاسم]')}
-                                className="text-xs bg-purple-50 hover:bg-purple-100 border border-purple-100 text-purple-700 font-black px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 shadow-sm"
-                            >
-                                + إدراج [الاسم]
-                            </button>
+                            <div className="flex flex-wrap gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => insertVariable('[الاسم]')}
+                                    className="text-xs bg-purple-50 hover:bg-purple-100 border border-purple-100 text-purple-700 font-black px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 shadow-sm"
+                                >
+                                    + إدراج [الاسم]
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => insertVariable('[رقم الجوال]')}
+                                    className="text-xs bg-emerald-50 hover:bg-emerald-100 border border-emerald-100 text-emerald-700 font-black px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 shadow-sm"
+                                >
+                                    + إدراج [رقم الجوال]
+                                </button>
+                            </div>
                         </div>
                         <textarea
                             required
                             value={message}
                             onChange={(event) => setMessage(event.target.value)}
                             rows="6"
-                            placeholder="مثال: أهلاً [الاسم]، يسعدنا تقديم عرض خاص لك هذا الأسبوع..."
+                            placeholder="مثال: أهلاً [الاسم]، رقمك المسجل لدينا هو [رقم الجوال]..."
                             className="w-full p-4 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:bg-white transition-all text-sm font-bold text-slate-700 resize-none focus:ring-2 focus:ring-purple-100 focus:border-purple-400"
                         />
 
@@ -155,7 +164,9 @@ const BroadcastsTab = ({ tenantId }) => {
                                     معاينة للعميل محمد
                                 </span>
                                 <p className="whitespace-pre-wrap leading-relaxed text-slate-700">
-                                    {message.replace(/\[الاسم\]/g, 'محمد')}
+                                    {message
+                                        .replace(/\[الاسم\]/g, 'محمد')
+                                        .replace(/\[رقم الجوال\]/g, '0501234567')}
                                 </p>
                             </div>
                         )}

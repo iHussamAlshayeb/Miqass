@@ -283,10 +283,9 @@ const processBroadcastCampaigns = async () => {
 
     for (let i = sentCount; i < customers.length; i++) {
       const customer = customers[i];
-      const personalizedMessage = campaign.messageTemplate.replace(
-        /\[الاسم\]/g,
-        customer.name,
-      );
+      const personalizedMessage = campaign.messageTemplate
+        .replace(/\[الاسم\]/g, customer.name)
+        .replace(/\[رقم الجوال\]/g, customer.phone);
 
       try {
         await sendCampaignMessage(

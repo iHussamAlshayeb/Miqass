@@ -427,6 +427,38 @@ const getTenantCustomers = async (req, res) => {
   }
 };
 
+const exportTenantCustomers = async (req, res) => {
+  try {
+    const customers = await Customer.find({
+      tenantId: req.tenantId,
+      phone: { $ne: "0000000000" },
+    })
+      .select(
+        "phone parentName children totalVisits lastVisitDate customerType createdAt",
+      )
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const exportCustomers = customers.map((customer) => ({
+      phone: customer.phone,
+      name:
+        customer.children?.[0] || customer.parentName || "عميل غير مسمى",
+      children: customer.children || [],
+      totalVisits: customer.totalVisits || 0,
+      lastVisitDate: customer.lastVisitDate || null,
+      customerType: customer.customerType || "New",
+      createdAt: customer.createdAt || null,
+    }));
+
+    res.status(200).json({
+      customers: exportCustomers,
+      total: exportCustomers.length,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "حدث خطأ أثناء تجهيز ملف العملاء" });
+  }
+};
+
 // 8. تجهيز وإطلاق حملات واتساب التسويقية (Broadcast)
 const sendBroadcastCampaign = async (req, res) => {
   try {
@@ -513,6 +545,7 @@ module.exports = {
   updateWhatsappSettings,
   getCustomerLoyalty,
   getTenantCustomers,
+  exportTenantCustomers,
   sendBroadcastCampaign,
   importCustomers,
 };
