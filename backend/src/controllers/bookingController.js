@@ -474,13 +474,16 @@ const createAppointment = async (req, res) => {
         ).catch(console.error);
       }
 
-      sendAdminNotification(
+      await sendAdminNotification(
         combinedNames,
         effectiveDate,
         newAppointments[0].timeSlot,
         WALK_IN_BARBER_NAME,
         tenantId,
-      ).catch(console.error);
+        {
+          dedupeKey: `appointments:${newAppointments.map((item) => item._id).join(",")}`,
+        },
+      );
 
       return res.status(201).json({
         message: "تم تسجيل الحلاقة المباشرة بنجاح.",
@@ -542,13 +545,16 @@ const createAppointment = async (req, res) => {
         barber.name,
         updatedTenant,
       ).catch(console.error);
-      sendAdminNotification(
+      await sendAdminNotification(
         combinedNames,
         effectiveDate,
         timeSlot,
         effectiveChair,
         tenantId,
-      ).catch(console.error);
+        {
+          dedupeKey: `appointments:${newAppointments.map((item) => item._id).join(",")}`,
+        },
+      );
 
       return res.status(201).json({
         message: "تم تأكيد الحجز بنجاح! 🎉",

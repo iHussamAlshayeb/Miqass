@@ -110,13 +110,14 @@ const confirmPaidAppointmentGroup = async ({
     tenant,
   ).catch((e) => console.error("WhatsApp Error:", e));
 
-  sendAdminNotification(
+  await sendAdminNotification(
     combinedNames,
     appointment.date,
     appointment.timeSlot,
     appointment.barberName,
     String(tenant._id),
-  ).catch((e) => console.error("OneSignal Error:", e));
+    { dedupeKey: `payment:${provider}:${providerPaymentId}` },
+  );
 
   return bookedAppointments;
 };

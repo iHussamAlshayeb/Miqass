@@ -78,7 +78,7 @@ const submitReview = async (req, res) => {
 
     await createSaleFromAppointment(appointment);
 
-    await Review.create({
+    const review = await Review.create({
       tenantId: tenant._id,
       appointmentId: appointment._id,
       customerId: appointment.customerId,
@@ -87,12 +87,13 @@ const submitReview = async (req, res) => {
       comment: comment || "",
     });
 
-    sendReviewNotification(
+    await sendReviewNotification(
       appointment.childName,
       rating,
       comment,
       tenant._id,
-    ).catch((e) => console.error(e));
+      { dedupeKey: `review:${review._id}` },
+    );
 
     let redirectToGoogle = false;
     let googleUrl = "";

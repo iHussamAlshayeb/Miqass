@@ -1,5 +1,5 @@
 import React, { Suspense, lazy } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Navigate, Routes, Route } from 'react-router-dom';
 import AppUpdatePrompt from './components/AppUpdatePrompt';
 
 const LandingScreen = lazy(() => import('./pages/LandingScreen'));
@@ -28,12 +28,27 @@ const RouteFallback = () => (
   </div>
 );
 
+const isStandalonePwa = () => (
+  window.matchMedia('(display-mode: standalone)').matches ||
+  window.navigator.standalone === true
+);
+
+const HomeRoute = () => {
+  const hasSession = Boolean(localStorage.getItem('token'));
+
+  if (isStandalonePwa() && hasSession) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <LandingScreen />;
+};
+
 function App() {
   return (
     <Router>
       <Suspense fallback={<RouteFallback />}>
         <Routes>
-          <Route path="/" element={<LandingScreen />} />
+          <Route path="/" element={<HomeRoute />} />
 
           <Route path="/login" element={<LoginScreen />} />
           <Route path="/register" element={<RegisterScreen />} />

@@ -1,6 +1,8 @@
 const axios = require("axios");
+const { normalizeWasenderMessageStatus } = require("./wasender");
 
-const API_URL = "https://www.wasenderapi.com/api/send-message";
+const WASENDER_API_BASE_URL = "https://www.wasenderapi.com";
+const API_URL = `${WASENDER_API_BASE_URL}/api/send-message`;
 
 const formatTimeForMessage = (timeStr) => {
   if (!timeStr) return "";
@@ -409,13 +411,18 @@ const sendCampaignMessage = async (phone, messageText, tenant) => {
       };
     }
 
+    const providerStatus = normalizeWasenderMessageStatus(
+      response.data?.data?.status || response.data?.status,
+      1,
+    );
+
     return {
       success: true,
       providerMessageId: String(
         response.data?.data?.msgId || response.data?.msgId || "",
       ),
-      providerStatus:
-        response.data?.data?.status || response.data?.status || "in_progress",
+      providerStatus: providerStatus?.status || "pending",
+      providerStatusCode: providerStatus?.code ?? 1,
     };
   } catch (error) {
     handleWhatsAppError("رسالة الحملة التسويقية", error);
@@ -445,6 +452,38 @@ const sendCampaignMessage = async (phone, messageText, tenant) => {
   }
 };
 
+const getCampaignMessageInfo = async (providerMessageId, tenant) => {
+  const customApiKey = tenant?.whatsappSettings?.apiKey;
+  const normalizedMessageId = String(providerMessageId ?? "").trim();
+  if (!customApiKey || !normalizedMessageId) return null;
+
+  try {
+    const response = await axios.get(
+      `${WASENDER_API_BASE_URL}/api/messages/${encodeURIComponent(normalizedMessageId)}/info`,
+      {
+        headers: { Authorization: `Bearer ${customApiKey}` },
+        timeout: 8000,
+      },
+    );
+    const data = response.data?.data || {};
+    const providerStatus = normalizeWasenderMessageStatus(data.status);
+    if (!providerStatus) return null;
+
+    return {
+      providerStatus,
+      providerWhatsappMessageId: String(data.key?.id || data.id || "").trim(),
+    };
+  } catch (error) {
+    if (error.response?.status !== 404) {
+      console.warn(
+        `تعذر مزامنة حالة رسالة WaSender ${normalizedMessageId}:`,
+        error.response?.status || error.message,
+      );
+    }
+    return null;
+  }
+};
+
 const getWhatsAppStatus = () => ({ status: "API_ACTIVE", qr: "" });
 
 module.exports = {
@@ -456,4 +495,5 @@ module.exports = {
   sendLoyaltyRewardMessage,
   sendRetentionMessage,
   sendCampaignMessage,
+  getCampaignMessageInfo,
 };

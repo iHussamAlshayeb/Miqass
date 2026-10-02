@@ -1,6 +1,9 @@
 backend/.env
 frontend/.env
 backend/frontend/.env
+Miqass.env
+.cloudflared/*
+!.cloudflared/config.yml
 
 node_modules/
 backend/node_modules/

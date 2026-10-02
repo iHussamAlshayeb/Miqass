@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, BellRing, CheckCircle2, Loader2, Smartphone } from 'lucide-react';
 import {
     getOneSignalStatus,
+    listenForOneSignalChanges,
     requestOneSignalPermission,
 } from '../../services/onesignal';
 
@@ -60,16 +61,21 @@ const PushNotificationPrompt = ({ tenantId }) => {
 
     useEffect(() => {
         let isMounted = true;
+        let cleanupListener = () => {};
 
         const setup = async () => {
             if (!tenantId) return;
 
             setIsChecking(true);
             try {
-                const nextStatus = await getOneSignalStatus(tenantId);
+                const nextStatus = await getOneSignalStatus(tenantId, { initialize: true });
                 if (!isMounted) return;
                 setStatus(nextStatus);
                 setErrorMessage(getStatusErrorMessage(nextStatus));
+                cleanupListener = listenForOneSignalChanges(async () => {
+                    const refreshedStatus = await getOneSignalStatus(tenantId, { initialize: true });
+                    if (isMounted) setStatus(refreshedStatus);
+                });
             } catch (error) {
                 if (!isMounted) return;
                 console.error('OneSignal status error:', error);
@@ -83,6 +89,7 @@ const PushNotificationPrompt = ({ tenantId }) => {
 
         return () => {
             isMounted = false;
+            cleanupListener();
         };
     }, [tenantId]);
 
@@ -143,7 +150,11 @@ const PushNotificationPrompt = ({ tenantId }) => {
             };
         }
 
-        if (status.permission === 'granted' && status.isSubscribed) {
+        if (
+            status.permission === 'granted' &&
+            status.isSubscribed &&
+            status.isBackendSynced
+        ) {
             if (!feedback) return null;
 
             return {

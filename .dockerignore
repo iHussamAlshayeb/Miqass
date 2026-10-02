@@ -1,0 +1,14 @@
+.git
+.gitignore
+.codex
+.agents
+.cloudflared
+Miqass.env
+**/.env
+**/.env.*
+**/node_modules
+backend/frontend/dist
+backend/.codex-dev-*.log
+npm-debug.log*
+docs
+scripts

@@ -1,5 +1,27 @@
 const axios = require("axios");
+const crypto = require("crypto");
 const Tenant = require("../models/Tenant");
+const {
+  WASENDER_WEBHOOK_EVENTS,
+  extractWasenderEventDate,
+  extractWasenderMessageIdentifiers,
+  extractWasenderSessionIdentifiers,
+  extractWasenderWebhookStatus,
+  extractWasenderWhatsappMessageId,
+} = require("../utils/wasender");
+const {
+  updateCampaignMessageDelivery,
+} = require("../services/campaignDeliveryService");
+
+const safelyMatchesSecret = (receivedSecret, expectedSecret) => {
+  const received = Buffer.from(String(receivedSecret || ""));
+  const expected = Buffer.from(String(expectedSecret || ""));
+  return (
+    received.length > 0 &&
+    received.length === expected.length &&
+    crypto.timingSafeEqual(received, expected)
+  );
+};
 
 const createWhatsappSession = async (req, res) => {
   try {
@@ -24,18 +46,26 @@ const createWhatsappSession = async (req, res) => {
     }
     const finalPhoneNumber = "+" + cleanPhone;
 
-    const backendUrl = process.env.BACKEND_URL;
+    const backendUrl = String(process.env.BACKEND_URL || "")
+      .trim()
+      .replace(/\/+$/, "");
+    if (!backendUrl) {
+      return res.status(500).json({
+        message: "رابط النظام العام غير مضبوط، تعذر تجهيز Webhook الواتساب.",
+      });
+    }
     const validWebhookUrl = `${backendUrl}/api/whatsapp/webhook`;
 
     const payload = {
       name: `MiqassApp_${tenant.slug}`,
       phone_number: finalPhoneNumber,
-      account_protection: true,
+      account_protection: false,
+      always_online: false,
       log_messages: true,
       read_incoming_messages: false,
       webhook_url: validWebhookUrl,
-      webhook_enabled: !backendUrl.includes("localhost"),
-      webhook_events: ["session.status"],
+      webhook_enabled: !/(localhost|127\.0\.0\.1)/i.test(backendUrl),
+      webhook_events: [...WASENDER_WEBHOOK_EVENTS],
     };
 
     console.log("🚀 جاري إرسال الطلب لـ WASender:", payload.name);
@@ -218,51 +248,75 @@ const disconnectWhatsappSession = async (req, res) => {
 
 const handleWhatsappWebhook = async (req, res) => {
   try {
-    const signature = req.headers["x-webhook-signature"];
-    const payload = req.body;
+    const signature = String(req.headers["x-webhook-signature"] || "").trim();
+    const payload = req.body || {};
+    if (!signature || !payload.event) {
+      return res.status(401).json({ received: false });
+    }
 
-    res.status(200).json({ received: true });
+    const sessionIdentifiers = extractWasenderSessionIdentifiers(payload);
+    const tenantConditions = sessionIdentifiers.flatMap((identifier) => [
+      { "whatsappSettings.sessionId": identifier },
+      { "whatsappSettings.apiKey": identifier },
+    ]);
+    tenantConditions.push({ "whatsappSettings.webhookSecret": signature });
 
-    if (!payload.data || !payload.data.id) return;
-
-    const sessionId = payload.data.id;
-
-    const tenant = await Tenant.findOne({
-      "whatsappSettings.sessionId": sessionId,
-    })
-      .select("salonName whatsappSettings.webhookSecret")
+    const tenant = await Tenant.findOne({ $or: tenantConditions })
+      .select(
+        "salonName whatsappSettings.sessionId whatsappSettings.apiKey whatsappSettings.webhookSecret",
+      )
       .lean();
 
     if (!tenant) {
-      console.warn(`⚠️ ويب هوك لجلسة غير معروفة: ${sessionId}`);
-      return;
+      console.warn("تم رفض Webhook WaSender لجلسة غير معروفة.");
+      return res.status(401).json({ received: false });
     }
 
     const expectedSecret = tenant.whatsappSettings.webhookSecret;
-    if (expectedSecret && signature !== expectedSecret) {
-      console.warn(
-        `🛑 محاولة اختراق أو توقيع غير صالح للصالون: ${tenant.salonName}`,
-      );
-      return;
+    if (!safelyMatchesSecret(signature, expectedSecret)) {
+      console.warn(`توقيع Webhook WaSender غير صالح: ${tenant.salonName}`);
+      return res.status(401).json({ received: false });
     }
 
     console.log(
-      `🔔 حدث جديد من WASender للصالون [${tenant.salonName}]:`,
+      `حدث جديد من WaSender للصالون [${tenant.salonName}]:`,
       payload.event,
     );
 
     if (payload.event === "session.status") {
-      const newStatus = payload.data.status;
+      const newStatus = String(payload.data?.status || "UNKNOWN").toUpperCase();
 
       await Tenant.updateOne(
-        { "whatsappSettings.sessionId": sessionId },
+        { _id: tenant._id },
         { $set: { "whatsappSettings.sessionStatus": newStatus } },
       );
 
-      console.log(`✅ تم تحديث حالة واتساب الصالون إلى: ${newStatus}`);
+      console.log(`تم تحديث حالة واتساب الصالون إلى: ${newStatus}`);
+    } else if (["message.sent", "messages.update"].includes(payload.event)) {
+      const identifiers = extractWasenderMessageIdentifiers(payload);
+      const providerStatus = extractWasenderWebhookStatus(payload);
+
+      if (identifiers.length > 0 && providerStatus) {
+        const updateResult = await updateCampaignMessageDelivery({
+          tenantId: tenant._id,
+          identifiers,
+          whatsappMessageId: extractWasenderWhatsappMessageId(payload),
+          status: providerStatus,
+          eventAt: extractWasenderEventDate(payload),
+        });
+
+        if (!updateResult.matched) {
+          console.log(
+            `حدث ${payload.event} لا يخص رسالة حملة محفوظة للصالون ${tenant.salonName}.`,
+          );
+        }
+      }
     }
+
+    return res.status(200).json({ received: true });
   } catch (error) {
-    console.error("❌ Webhook Error:", error.message);
+    console.error("Webhook WaSender Error:", error.message);
+    return res.status(500).json({ received: false });
   }
 };
 

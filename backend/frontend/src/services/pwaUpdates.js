@@ -1,7 +1,5 @@
 const UPDATE_EVENT_NAME = "miqass:update-ready";
 const CHECK_INTERVAL_MS = 2 * 60 * 1000;
-const MIQASS_WORKER_PATH = "/OneSignalSDKWorker.js";
-
 let appShellSignature = null;
 let hasDispatchedUpdate = false;
 
@@ -60,13 +58,6 @@ export const registerPwaUpdates = () => {
       return;
     }
 
-    try {
-      const registration = await navigator.serviceWorker.register(MIQASS_WORKER_PATH);
-      setInterval(() => registration.update(), CHECK_INTERVAL_MS);
-    } catch (error) {
-      console.error("PWA registration failed:", error);
-    }
-
     checkAppShellVersion().catch(() => {});
     setInterval(() => {
       checkAppShellVersion().catch(() => {});
@@ -74,12 +65,7 @@ export const registerPwaUpdates = () => {
   });
 };
 
-export const applyPwaUpdate = (registration) => {
-  if (registration?.waiting) {
-    registration.waiting.postMessage({ type: "MIQASS_SKIP_WAITING" });
-    return;
-  }
-
+export const applyPwaUpdate = () => {
   window.location.reload();
 };
 

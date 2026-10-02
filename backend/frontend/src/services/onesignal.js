@@ -1,4 +1,5 @@
 import OneSignal from 'react-onesignal';
+import API from './api';
 
 const ONESIGNAL_APP_ID =
   import.meta.env.VITE_ONESIGNAL_APP_ID ||
@@ -11,6 +12,8 @@ const LOCAL_HOSTNAMES = ['localhost', '127.0.0.1', '[::1]'];
 const LOCALHOST_OPT_IN = import.meta.env.VITE_ONESIGNAL_ENABLE_LOCALHOST === 'true';
 
 let oneSignalInitPromise = null;
+let syncedSubscriptionId = null;
+const INSTALLATION_ID_KEY = 'miqass_push_installation_id';
 
 const isBrowser = () => typeof window !== 'undefined' && typeof navigator !== 'undefined';
 
@@ -100,6 +103,46 @@ const getNativePermission = () => {
 };
 
 const sleep = (duration) => new Promise((resolve) => setTimeout(resolve, duration));
+
+const getInstallationId = () => {
+  if (!isBrowser()) return '';
+
+  let installationId = localStorage.getItem(INSTALLATION_ID_KEY);
+  if (!installationId) {
+    installationId =
+      window.crypto?.randomUUID?.() ||
+      `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    localStorage.setItem(INSTALLATION_ID_KEY, installationId);
+  }
+  return installationId;
+};
+
+const getTenantExternalId = (tenantId) =>
+  `tenant:${tenantId}:device:${getInstallationId()}`;
+
+const syncPushSubscription = async (tenantId) => {
+  const subscription = getPushSubscriptionState();
+  if (!tenantId || !subscription.id || !subscription.optedIn) return false;
+
+  const externalId = getTenantExternalId(tenantId);
+  await API.post('/notifications/subscriptions', {
+    subscriptionId: subscription.id,
+    externalId,
+    platform: isAppleMobileDevice() ? 'ios-web' : 'web',
+  });
+  syncedSubscriptionId = subscription.id;
+  return true;
+};
+
+const identifyTenantDevice = async (tenantId) => {
+  if (!tenantId) return;
+
+  await OneSignal.login(getTenantExternalId(tenantId));
+  const tags = OneSignal.User?.getTags?.() || {};
+  if (tags.tenantId !== tenantId.toString()) {
+    OneSignal.User?.addTag?.('tenantId', tenantId.toString());
+  }
+};
 
 const canUseServiceWorker = () => isBrowser() && 'serviceWorker' in navigator;
 
@@ -210,6 +253,8 @@ const buildOneSignalStatus = ({
     isSubscribed,
     subscriptionId: pushSubscription.id,
     subscriptionToken: pushSubscription.token,
+    isBackendSynced:
+      Boolean(pushSubscription.id) && pushSubscription.id === syncedSubscriptionId,
     serviceWorkerAvailable,
     nativePushAvailable,
     sdkSupportsPush,
@@ -263,7 +308,11 @@ export const initOneSignalForTenant = async (tenantId) => {
   await oneSignalInitPromise;
 
   if (tenantId) {
-    await OneSignal.User?.addTag?.('tenantId', tenantId.toString());
+    await identifyTenantDevice(tenantId);
+    const status = buildOneSignalStatus({ initialized: true });
+    if (status.permission === 'granted' && status.isSubscribed) {
+      await syncPushSubscription(tenantId);
+    }
   }
 
   return true;
@@ -369,17 +418,58 @@ export const requestOneSignalPermission = async (tenantId) => {
   if (getNativePermission() === 'granted') {
     await OneSignal.User?.PushSubscription?.optIn?.();
     if (tenantId) {
-      await OneSignal.User?.addTag?.('tenantId', tenantId.toString());
+      await identifyTenantDevice(tenantId);
     }
   }
 
   const status = await waitForOneSignalSubscription(tenantId);
+  if (status.permission === 'granted' && status.isSubscribed) {
+    await syncPushSubscription(tenantId);
+  }
 
   return {
-    ok: status.permission === 'granted' && status.isSubscribed,
+    ok:
+      status.permission === 'granted' &&
+      status.isSubscribed &&
+      getPushSubscriptionState().id === syncedSubscriptionId,
     reason: status.permission === 'granted' ? 'subscription-pending' : 'permission-not-granted',
     status,
   };
+};
+
+export const listenForOneSignalChanges = (callback) => {
+  if (!isBrowser() || !window.OneSignal) return () => {};
+
+  const handleChange = () => callback();
+  OneSignal.Notifications?.addEventListener?.('permissionChange', handleChange);
+  OneSignal.User?.PushSubscription?.addEventListener?.('change', handleChange);
+
+  return () => {
+    OneSignal.Notifications?.removeEventListener?.('permissionChange', handleChange);
+    OneSignal.User?.PushSubscription?.removeEventListener?.('change', handleChange);
+  };
+};
+
+export const disconnectOneSignal = async () => {
+  if (!isBrowser() || !oneSignalInitPromise) return;
+
+  try {
+    await oneSignalInitPromise;
+  } catch {
+    return;
+  }
+
+  const subscriptionId = getPushSubscriptionState().id;
+  if (subscriptionId) {
+    await API.delete(`/notifications/subscriptions/${encodeURIComponent(subscriptionId)}`).catch(
+      () => {},
+    );
+  }
+
+  await OneSignal.User?.PushSubscription?.optOut?.().catch(() => {});
+  OneSignal.User?.removeTag?.('tenantId');
+  await OneSignal.logout?.().catch(() => {});
+  syncedSubscriptionId = null;
 };
 
 export default OneSignal;

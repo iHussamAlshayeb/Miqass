@@ -3,7 +3,10 @@ const redisClient = require("../utils/redisClient"); // 🚀 استدعاء ال
 
 const checkMaintenanceMode = async (req, res, next) => {
   try {
-    if (req.path.startsWith("/api/admin")) {
+    if (
+      req.path.startsWith("/api/admin") ||
+      req.path === "/api/whatsapp/webhook"
+    ) {
       return next();
     }
 

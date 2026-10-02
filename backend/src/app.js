@@ -2,13 +2,23 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const compression = require("compression");
-const path = require("path"); // قد لا تحتاجه بعد الآن إذا لم يكن مستخدماً في ملفات أخرى
+const path = require("path");
 const Tenant = require("./models/Tenant");
 const checkMaintenanceMode = require("./middlewares/maintenanceMiddleware");
 
 const app = express();
+const frontendDistPath = path.join(__dirname, "..", "frontend", "dist");
+const frontendIndexPath = path.join(frontendDistPath, "index.html");
 
 app.set("trust proxy", 1);
+
+app.use((req, res, next) => {
+  if (process.env.NODE_ENV === "production" && req.hostname === "miqass.app") {
+    return res.redirect(308, `https://www.miqass.app${req.originalUrl}`);
+  }
+
+  next();
+});
 
 app.use(
   helmet({
@@ -25,8 +35,6 @@ app.use(
       const allowedPatterns = [
         /^https?:\/\/localhost:\d+$/,
         /^https:\/\/(www\.)?miqass\.app$/,
-        /^https:\/\/miqass\.app$/,
-        /^https:\/\/.*\.vercel\.app$/, // إضافة للسماح بنطاقات فيرسيل (يمكن إزالتها بعد ربط الدومين الرسمي)
       ];
 
       const isAllowed = allowedPatterns.some((pattern) => pattern.test(origin));
@@ -58,6 +66,7 @@ app.use("/api/public", require("./routes/publicRoutes"));
 app.use("/api/whatsapp", require("./routes/whatsappRoutes"));
 app.use("/api/reviews", require("./routes/reviewRoutes"));
 app.use("/api/zatca", require("./routes/zatcaRoutes"));
+app.use("/api/notifications", require("./routes/notificationRoutes"));
 
 app.get("/api/health", (req, res) => {
   res.status(200).json({ status: "running", version: "2.1.0-stable" });
@@ -100,6 +109,37 @@ app.get("/logo/:slug", async (req, res) => {
   } catch (error) {
     res.status(500).send("Server Error");
   }
+});
+
+app.use(
+  express.static(frontendDistPath, {
+    etag: true,
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith("index.html") || filePath.endsWith("OneSignalSDKWorker.js")) {
+        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+        return;
+      }
+
+      if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      }
+    },
+  }),
+);
+
+app.use((req, res, next) => {
+  if (
+    req.method !== "GET" ||
+    req.path === "/api" ||
+    req.path.startsWith("/api/")
+  ) {
+    return next();
+  }
+
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  return res.sendFile(frontendIndexPath, (error) => {
+    if (error) next(error);
+  });
 });
 
 // مسار افتراضي (Fallback) للطلبات غير الموجودة

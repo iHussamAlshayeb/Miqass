@@ -12,8 +12,20 @@ const {
   sendReviewRequestMessage,
   sendRetentionMessage,
   sendCampaignMessage,
+  getCampaignMessageInfo,
 } = require("./whatsapp");
 const { sendRenewalReminderEmail } = require("./emailService");
+const {
+  processNotificationQueue,
+  reconcileNotificationDeliveries,
+} = require("./onesignal");
+const {
+  updateCampaignMessageDelivery,
+} = require("../services/campaignDeliveryService");
+const {
+  getNextRiyadhDayStart,
+  getRiyadhDayKey,
+} = require("./campaignSchedule");
 
 const formatDate = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -254,6 +266,7 @@ const processRetentionCampaign = async () => {
 };
 
 let isProcessingCampaigns = false;
+let isReconcilingCampaignDeliveries = false;
 
 const CAMPAIGN_BATCH_SIZE = 20;
 const CAMPAIGN_MIN_DELAY_MS = 8000;
@@ -274,7 +287,14 @@ const getCampaignRecipientCounts = (recipients = []) =>
       counts[status] = (counts[status] || 0) + 1;
       return counts;
     },
-    { Pending: 0, Sending: 0, Sent: 0, Failed: 0, Uncertain: 0 },
+    {
+      Pending: 0,
+      Sending: 0,
+      Sent: 0,
+      Failed: 0,
+      Uncertain: 0,
+      Cancelled: 0,
+    },
   );
 
 const claimNextCampaign = async () => {
@@ -343,54 +363,153 @@ const markInterruptedRecipientsAsUncertain = async (campaign) => {
   }
 };
 
-const finalizeCampaignBatch = async (campaignId) => {
-  const campaign = await Campaign.findById(campaignId)
-    .select("targetCustomers totalCount")
-    .lean();
-  if (!campaign) return;
-
-  const counts = getCampaignRecipientCounts(campaign.targetCustomers);
-  const hasPending = counts.Pending > 0 || counts.Sending > 0;
-  const now = new Date();
-  const pendingAttemptDates = campaign.targetCustomers
-    .filter(
-      (recipient) =>
-        recipient.status === "Pending" && recipient.nextAttemptAt,
-    )
-    .map((recipient) => new Date(recipient.nextAttemptAt).getTime())
-    .filter(Number.isFinite);
-  const hasImmediatelyReadyRecipient = campaign.targetCustomers.some(
-    (recipient) =>
-      recipient.status === "Pending" && !recipient.nextAttemptAt,
+const hasReachedCampaignDailyLimit = (campaign) => {
+  const dailyMessageLimit = Number(campaign.dailyMessageLimit || 0);
+  return (
+    dailyMessageLimit > 0 &&
+    Number(campaign.dailyAttemptCount || 0) >= dailyMessageLimit
   );
-  const nextAttemptAt =
-    hasImmediatelyReadyRecipient
-      ? new Date(now.getTime() + 60 * 1000)
-      : pendingAttemptDates.length > 0
-      ? new Date(Math.min(...pendingAttemptDates))
-      : new Date(now.getTime() + 60 * 1000);
-  const hasErrors = counts.Failed > 0 || counts.Uncertain > 0;
+};
 
-  await Campaign.updateOne(
-    { _id: campaignId, lockOwner: campaignWorkerId },
+const prepareCampaignDailyWindow = async (campaign) => {
+  const todayKey = getRiyadhDayKey();
+  if (campaign.dailyWindowDate === todayKey) return true;
+
+  const result = await Campaign.updateOne(
+    {
+      _id: campaign._id,
+      status: "Processing",
+      lockOwner: campaignWorkerId,
+    },
     {
       $set: {
-        status: hasPending
-          ? "Processing"
-          : hasErrors
-            ? "Completed_With_Errors"
-            : "Completed",
-        totalCount: campaign.totalCount || campaign.targetCustomers.length,
-        sentCount: counts.Sent,
-        failedCount: counts.Failed,
-        uncertainCount: counts.Uncertain,
-        completedAt: hasPending ? null : now,
-        nextRunAt: hasPending ? nextAttemptAt : null,
-        lockOwner: null,
-        lockExpiresAt: null,
+        dailyWindowDate: todayKey,
+        dailyAttemptCount: 0,
       },
     },
   );
+  if (result.matchedCount === 0) return false;
+
+  campaign.dailyWindowDate = todayKey;
+  campaign.dailyAttemptCount = 0;
+  return true;
+};
+
+const finalizeCampaignBatch = async (campaignId) => {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const campaign = await Campaign.findOne({
+      _id: campaignId,
+      lockOwner: campaignWorkerId,
+    })
+      .select(
+        "targetCustomers totalCount status dailyMessageLimit dailyAttemptCount dailyWindowDate",
+      )
+      .lean();
+    if (!campaign) return;
+
+    let counts = getCampaignRecipientCounts(campaign.targetCustomers);
+    const isCancelled = campaign.status === "Cancelled";
+    if (isCancelled && (counts.Pending > 0 || counts.Sending > 0)) {
+      const settledAt = new Date();
+      const cancellationSet = { lastProgressAt: settledAt };
+      const arrayFilters = [];
+
+      if (counts.Pending > 0) {
+        cancellationSet["targetCustomers.$[pending].status"] = "Cancelled";
+        cancellationSet["targetCustomers.$[pending].cancelledAt"] = settledAt;
+        cancellationSet["targetCustomers.$[pending].nextAttemptAt"] = null;
+        cancellationSet["targetCustomers.$[pending].errorMessage"] =
+          "تم إلغاء الحملة قبل إرسال الرسالة.";
+        arrayFilters.push({ "pending.status": "Pending" });
+      }
+      if (counts.Sending > 0) {
+        cancellationSet["targetCustomers.$[sending].status"] = "Uncertain";
+        cancellationSet["targetCustomers.$[sending].errorMessage"] =
+          "أُلغيت الحملة أثناء الإرسال؛ لم تتم إعادة الرسالة لتجنب التكرار.";
+        arrayFilters.push({ "sending.status": "Sending" });
+      }
+
+      const settleUpdate = await Campaign.updateOne(
+        {
+          _id: campaignId,
+          status: "Cancelled",
+          lockOwner: campaignWorkerId,
+        },
+        { $set: cancellationSet },
+        { arrayFilters },
+      );
+      if (settleUpdate.modifiedCount > 0) continue;
+    }
+
+    counts = getCampaignRecipientCounts(campaign.targetCustomers);
+    const hasPending = counts.Pending > 0 || counts.Sending > 0;
+    const now = new Date();
+    const pendingAttemptDates = campaign.targetCustomers
+      .filter(
+        (recipient) =>
+          recipient.status === "Pending" && recipient.nextAttemptAt,
+      )
+      .map((recipient) => new Date(recipient.nextAttemptAt).getTime())
+      .filter(Number.isFinite);
+    const hasImmediatelyReadyRecipient = campaign.targetCustomers.some(
+      (recipient) =>
+        recipient.status === "Pending" && !recipient.nextAttemptAt,
+    );
+    const nextAttemptAt = hasImmediatelyReadyRecipient
+      ? new Date(now.getTime() + 60 * 1000)
+      : pendingAttemptDates.length > 0
+        ? new Date(Math.min(...pendingAttemptDates))
+        : new Date(now.getTime() + 60 * 1000);
+    const hasErrors = counts.Failed > 0 || counts.Uncertain > 0;
+    const isPaused = campaign.status === "Paused";
+    const dailyAttemptCount =
+      campaign.dailyWindowDate === getRiyadhDayKey(now)
+        ? Number(campaign.dailyAttemptCount || 0)
+        : 0;
+    const isDailyLimitReached = Boolean(
+      hasPending &&
+        Number(campaign.dailyMessageLimit || 0) > 0 &&
+        dailyAttemptCount >= Number(campaign.dailyMessageLimit),
+    );
+    const nextStatus = isCancelled
+      ? "Cancelled"
+      : !hasPending
+        ? hasErrors
+          ? "Completed_With_Errors"
+          : "Completed"
+        : isPaused
+          ? "Paused"
+          : "Processing";
+
+    const result = await Campaign.updateOne(
+      {
+        _id: campaignId,
+        status: campaign.status,
+        lockOwner: campaignWorkerId,
+      },
+      {
+        $set: {
+          status: nextStatus,
+          totalCount: campaign.totalCount || campaign.targetCustomers.length,
+          sentCount: counts.Sent,
+          failedCount: counts.Failed,
+          uncertainCount: counts.Uncertain,
+          cancelledCount: counts.Cancelled,
+          completedAt: isCancelled || !hasPending ? now : null,
+          nextRunAt:
+            hasPending && !isPaused && !isCancelled
+              ? isDailyLimitReached
+                ? getNextRiyadhDayStart(now)
+                : nextAttemptAt
+              : null,
+          lockOwner: null,
+          lockExpiresAt: null,
+        },
+      },
+    );
+
+    if (result.matchedCount > 0) return;
+  }
 };
 
 const processBroadcastCampaigns = async () => {
@@ -411,12 +530,27 @@ const processBroadcastCampaigns = async () => {
 
     await markInterruptedRecipientsAsUncertain(campaign);
 
+    const dailyWindowReady = await prepareCampaignDailyWindow(campaign);
+    if (!dailyWindowReady) {
+      await finalizeCampaignBatch(campaign._id);
+      return;
+    }
+
     console.log(
       `🚀 [مدير الحملات]: معالجة دفعة لصالون ${campaign.tenantId?.salonName}...`,
     );
 
     let processedInBatch = 0;
     while (processedInBatch < CAMPAIGN_BATCH_SIZE) {
+      if (hasReachedCampaignDailyLimit(campaign)) break;
+
+      const canContinue = await Campaign.exists({
+        _id: campaign._id,
+        status: "Processing",
+        lockOwner: campaignWorkerId,
+      });
+      if (!canContinue) break;
+
       const now = new Date();
       const customer = campaign.targetCustomers.find(
         (recipient) =>
@@ -429,6 +563,7 @@ const processBroadcastCampaigns = async () => {
       const recipientClaim = await Campaign.updateOne(
         {
           _id: campaign._id,
+          status: "Processing",
           lockOwner: campaignWorkerId,
           targetCustomers: {
             $elemMatch: { _id: customer._id, status: "Pending" },
@@ -441,16 +576,19 @@ const processBroadcastCampaigns = async () => {
             "targetCustomers.$.nextAttemptAt": null,
             lockExpiresAt: new Date(Date.now() + CAMPAIGN_LOCK_MS),
           },
-          $inc: { "targetCustomers.$.attempts": 1 },
+          $inc: {
+            "targetCustomers.$.attempts": 1,
+            dailyAttemptCount: 1,
+          },
         },
       );
       if (recipientClaim.modifiedCount === 0) {
-        customer.status = "Uncertain";
-        continue;
+        break;
       }
 
       customer.status = "Sending";
       customer.attempts = attemptNumber;
+      campaign.dailyAttemptCount = Number(campaign.dailyAttemptCount || 0) + 1;
       const personalizedMessage = campaign.messageTemplate
         .replace(/\[الاسم\]/g, customer.name)
         .replace(/\[رقم الجوال\]/g, customer.phone);
@@ -472,7 +610,11 @@ const processBroadcastCampaigns = async () => {
         recipientUpdate["targetCustomers.$.providerMessageId"] =
           sendResult.providerMessageId || null;
         recipientUpdate["targetCustomers.$.providerStatus"] =
-          sendResult.providerStatus || "in_progress";
+          sendResult.providerStatus || "pending";
+        recipientUpdate["targetCustomers.$.providerStatusCode"] =
+          sendResult.providerStatusCode ?? 1;
+        recipientUpdate["targetCustomers.$.providerStatusUpdatedAt"] =
+          new Date();
         recipientUpdate["targetCustomers.$.errorMessage"] = "";
         counterUpdate = { sentCount: 1 };
         customer.status = "Sent";
@@ -521,6 +663,34 @@ const processBroadcastCampaigns = async () => {
         campaignUpdate,
       );
 
+      if (sendResult.success && sendResult.providerMessageId) {
+        await Campaign.updateOne(
+          {
+            _id: campaign._id,
+            "targetCustomers._id": customer._id,
+          },
+          {
+            $inc: { "targetCustomers.$.deliveryCheckAttempts": 1 },
+            $set: { "targetCustomers.$.lastDeliveryCheckAt": new Date() },
+          },
+        );
+        const deliveryInfo = await getCampaignMessageInfo(
+          sendResult.providerMessageId,
+          campaign.tenantId,
+        );
+        if (deliveryInfo) {
+          await updateCampaignMessageDelivery({
+            tenantId: campaign.tenantId?._id || campaign.tenantId,
+            identifiers: [
+              sendResult.providerMessageId,
+              deliveryInfo.providerWhatsappMessageId,
+            ],
+            whatsappMessageId: deliveryInfo.providerWhatsappMessageId,
+            status: deliveryInfo.providerStatus,
+          });
+        }
+      }
+
       processedInBatch += 1;
       const hasMoreReadyRecipients = campaign.targetCustomers.some(
         (recipient) =>
@@ -530,7 +700,8 @@ const processBroadcastCampaigns = async () => {
       );
       if (
         processedInBatch < CAMPAIGN_BATCH_SIZE &&
-        hasMoreReadyRecipients
+        hasMoreReadyRecipients &&
+        !hasReachedCampaignDailyLimit(campaign)
       ) {
         await new Promise((resolve) => setTimeout(resolve, getCampaignDelay()));
       }
@@ -540,8 +711,12 @@ const processBroadcastCampaigns = async () => {
   } catch (error) {
     console.error("❌ خطأ في معالجة الحملات التسويقية:", error.message);
     if (campaign?._id) {
-      await Campaign.updateOne(
-        { _id: campaign._id, lockOwner: campaignWorkerId },
+      const retryUpdate = await Campaign.updateOne(
+        {
+          _id: campaign._id,
+          status: { $nin: ["Paused", "Cancelled"] },
+          lockOwner: campaignWorkerId,
+        },
         {
           $set: {
             status: "Processing",
@@ -552,9 +727,92 @@ const processBroadcastCampaigns = async () => {
           },
         },
       ).catch(() => {});
+
+      if (retryUpdate?.modifiedCount === 0) {
+        await finalizeCampaignBatch(campaign._id).catch(() => {});
+      }
     }
   } finally {
     isProcessingCampaigns = false;
+  }
+};
+
+const reconcileCampaignDeliveries = async () => {
+  if (isReconcilingCampaignDeliveries) return;
+  isReconcilingCampaignDeliveries = true;
+
+  try {
+    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const campaigns = await Campaign.find({
+      targetCustomers: {
+        $elemMatch: {
+          status: "Sent",
+          providerMessageId: { $nin: [null, ""] },
+          sentAt: { $gte: cutoff },
+          providerStatusCode: { $in: [0, 1, 2] },
+          deliveryCheckAttempts: { $lt: 12 },
+        },
+      },
+    })
+      .select(
+        "tenantId targetCustomers._id targetCustomers.status targetCustomers.sentAt targetCustomers.providerMessageId targetCustomers.providerStatusCode targetCustomers.deliveryCheckAttempts targetCustomers.lastDeliveryCheckAt",
+      )
+      .populate("tenantId", "whatsappSettings")
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .lean();
+
+    let checkedCount = 0;
+    for (const campaign of campaigns) {
+      if (!campaign.tenantId?.whatsappSettings?.apiKey) continue;
+
+      for (const recipient of campaign.targetCustomers) {
+        if (checkedCount >= 20) return;
+        if (
+          recipient.status !== "Sent" ||
+          !recipient.providerMessageId ||
+          !recipient.sentAt ||
+          new Date(recipient.sentAt) < cutoff ||
+          recipient.providerStatusCode === null ||
+          recipient.providerStatusCode === undefined ||
+          Number(recipient.providerStatusCode) >= 3 ||
+          Number(recipient.deliveryCheckAttempts || 0) >= 12
+        ) {
+          continue;
+        }
+
+        checkedCount += 1;
+        await Campaign.updateOne(
+          {
+            _id: campaign._id,
+            "targetCustomers._id": recipient._id,
+          },
+          {
+            $inc: { "targetCustomers.$.deliveryCheckAttempts": 1 },
+            $set: { "targetCustomers.$.lastDeliveryCheckAt": new Date() },
+          },
+        );
+        const deliveryInfo = await getCampaignMessageInfo(
+          recipient.providerMessageId,
+          campaign.tenantId,
+        );
+        if (!deliveryInfo) continue;
+
+        await updateCampaignMessageDelivery({
+          tenantId: campaign.tenantId._id,
+          identifiers: [
+            recipient.providerMessageId,
+            deliveryInfo.providerWhatsappMessageId,
+          ],
+          whatsappMessageId: deliveryInfo.providerWhatsappMessageId,
+          status: deliveryInfo.providerStatus,
+        });
+      }
+    }
+  } catch (error) {
+    console.error("خطأ في مزامنة حالات وصول رسائل الحملات:", error.message);
+  } finally {
+    isReconcilingCampaignDeliveries = false;
   }
 };
 
@@ -609,6 +867,10 @@ const cleanupPendingPayments = async () => {
 const startCronJobs = () => {
   console.log("تم تشغيل نظام العمليات الخلفية (Cron Jobs) بنجاح...");
 
+  processNotificationQueue().catch((error) =>
+    console.error("خطأ في بدء طابور الإشعارات:", error.message),
+  );
+
   cron.schedule("*/15 * * * *", processAutomatedReminders);
 
   cron.schedule("*/5 * * * *", cleanupPendingPayments);
@@ -620,6 +882,18 @@ const startCronJobs = () => {
   cron.schedule("0 10 * * *", processRetentionCampaign);
 
   cron.schedule("* * * * *", processBroadcastCampaigns);
+
+  cron.schedule("*/5 * * * *", reconcileCampaignDeliveries);
+
+  cron.schedule("*/15 * * * * *", processNotificationQueue);
+
+  cron.schedule("* * * * *", reconcileNotificationDeliveries);
 };
 
-module.exports = { startCronJobs, processBroadcastCampaigns };
+module.exports = {
+  startCronJobs,
+  processBroadcastCampaigns,
+  reconcileCampaignDeliveries,
+  processNotificationQueue,
+  reconcileNotificationDeliveries,
+};

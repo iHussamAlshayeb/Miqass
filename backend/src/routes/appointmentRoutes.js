@@ -30,6 +30,9 @@ const {
   exportTenantCustomers,
   getBroadcastAudienceCounts,
   getBroadcastCampaigns,
+  pauseBroadcastCampaign,
+  cancelBroadcastCampaign,
+  updateBroadcastCampaign,
   resumeBroadcastCampaign,
   sendBroadcastTest,
   importCustomers,
@@ -106,6 +109,9 @@ router.get("/reviews", getTenantReviews);
 router.post("/import-customers", importCustomers);
 router.get("/broadcast/audience-counts", getBroadcastAudienceCounts);
 router.get("/broadcast/campaigns", getBroadcastCampaigns);
+router.post("/broadcast/campaigns/:campaignId/pause", pauseBroadcastCampaign);
+router.post("/broadcast/campaigns/:campaignId/cancel", cancelBroadcastCampaign);
+router.patch("/broadcast/campaigns/:campaignId", updateBroadcastCampaign);
 router.post("/broadcast/campaigns/:campaignId/resume", resumeBroadcastCampaign);
 router.post("/broadcast/test", broadcastTestLimiter, sendBroadcastTest);
 router.post("/broadcast", sendBroadcastCampaign);

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import API from '../services/api';
+import { disconnectOneSignal } from '../services/onesignal';
 import * as XLSX from 'xlsx';
 import TourGuide from '../components/dashboard/TourGuide';
 import {
@@ -149,6 +150,12 @@ const DashboardScreen = () => {
         fetchPromo();
     }, []);
 
+    const clearSession = useCallback(async () => {
+        await disconnectOneSignal().catch(() => {});
+        localStorage.removeItem('token');
+        navigate('/login');
+    }, [navigate]);
+
     const fetchAppointments = useCallback(async (isSilent = false) => {
         if (!isSilent) setIsLoading(true);
         try {
@@ -159,13 +166,12 @@ const DashboardScreen = () => {
             setAllAppointments(allAppRes.data.appointments);
         } catch (error) {
             if (error.response?.status === 401) {
-                localStorage.removeItem('token');
-                navigate('/login');
+                await clearSession();
             }
         } finally {
             if (!isSilent) setIsLoading(false);
         }
-    }, [selectedDate, navigate]);
+    }, [selectedDate, clearSession]);
 
     useEffect(() => {
         const token = localStorage.getItem('token');
@@ -216,12 +222,12 @@ const DashboardScreen = () => {
                 } catch { setApiStatus('ERROR'); }
 
             } catch (error) {
-                if (error.response?.status === 401) { localStorage.removeItem('token'); navigate('/login'); }
+                if (error.response?.status === 401) await clearSession();
             } finally { setIsLoading(false); }
         };
 
         fetchInitialData();
-    }, [navigate]);
+    }, [navigate, clearSession]);
 
     useEffect(() => {
         fetchAppointments();
@@ -296,7 +302,9 @@ const DashboardScreen = () => {
         XLSX.writeFile(workbook, `حجوزات_صالون_${getLocalDate()}.xlsx`);
     };
 
-    const handleLogout = () => { localStorage.removeItem('token'); navigate('/login'); };
+    const handleLogout = () => {
+        clearSession();
+    };
     const activePage = pageMeta[activeTab] || pageMeta.statistics;
     const dashboardLink = slug ? `https://www.miqass.app/${slug}` : '';
     const handleSetActiveTab = (tab) => {

@@ -1,0 +1,9 @@
+tunnel: d8545d1d-baaf-460c-bc04-8663c5ee9e23
+credentials-file: /etc/cloudflared/credentials.json
+
+ingress:
+  - hostname: miqass.app
+    service: http://app:5000
+  - hostname: www.miqass.app
+    service: http://app:5000
+  - service: http_status:404
