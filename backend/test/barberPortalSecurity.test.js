@@ -96,7 +96,7 @@ test("barber portal PIN login checks bcrypt hash and issues a scoped token", asy
 
 test("barber portal accepts a valid session token and rejects a forged one", async () => {
   await withStubs([
-    [Tenant, "findById", () => chain({ _id: tenantId, salonName: "صالون" })],
+    [Tenant, "findOne", () => chain({ _id: tenantId, salonName: "صالون" })],
     [Barber, "findOne", () => chain({ _id: barberId, name: "محمد" })],
     [Appointment, "find", () => chain([])],
   ], async () => {

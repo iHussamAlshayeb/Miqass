@@ -26,6 +26,15 @@ const tenantSchema = new mongoose.Schema(
     // أي توكن صادر قبل هذا التاريخ يُرفض
     passwordChangedAt: { type: Date, default: null },
 
+    // الحذف المؤقت: يُحذف الصالون نهائياً بعد deletionInfo.purgeAfter
+    deletedAt: { type: Date, default: null },
+    deletionInfo: {
+      purgeAfter: { type: Date },
+      previousStatus: { type: String },
+      previousWhatsappEnabled: { type: Boolean },
+      pausedCampaignIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "Campaign" }],
+    },
+
     branding: {
       logoUrl: { type: String, default: "/default-logo.png" },
       primaryColor: { type: String, default: "#3b82f6" },

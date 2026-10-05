@@ -50,3 +50,25 @@ Previous routing for rollback:
 - `www.miqass.app`: CNAME `59d966b45ec01fe6.vercel-dns-017.com`
 
 The public site depends on this Windows machine, Docker Desktop, the `app` container, and the `cloudflared` container remaining online.
+
+## Daily database backups
+
+MongoDB Atlas M0 (free tier) has no backups, so the `backup` service runs `mongodump` every day at 03:00 Riyadh time (00:00 UTC) and on startup when today's backup is missing. Archives are written to `./backups/miqass-YYYY-MM-DD_HHMM.archive.gz` on the host (excluded from Git and from the Docker build context) and the last 7 are kept.
+
+```powershell
+docker compose logs --tail 20 backup   # check the last run
+dir .\backups                          # list archives
+```
+
+Restore the whole database from an archive (overwrites existing collections, use with care):
+
+```powershell
+docker compose run --rm --entrypoint mongorestore -v ${PWD}/backups:/backups backup `
+  --uri "<MONGO_URI>" --archive=/backups/<file>.archive.gz --gzip --drop
+```
+
+To recover a single salon, restore the archive into a temporary database first (`--nsFrom "barbershop_db.*" --nsTo "restore_tmp.*"`) and copy only that salon's documents back.
+
+## Deleting a salon
+
+Deleting from the super admin screen is a soft delete: the salon is hidden and disabled immediately (booking, login, WhatsApp, campaigns) and can be restored from the same screen for 30 days. A daily job permanently removes it and all of its data afterwards. The delete button requires typing the salon slug.

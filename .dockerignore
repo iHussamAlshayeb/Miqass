@@ -13,3 +13,5 @@ backend/.codex-dev-*.log
 npm-debug.log*
 docs
 scripts
+backups
+backup

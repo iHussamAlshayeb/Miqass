@@ -10,12 +10,17 @@ const SystemSettings = require("../models/SystemSettings");
 const jwt = require("jsonwebtoken");
 const { sendActivationEmail } = require("../utils/emailService");
 const redisClient = require("../utils/redisClient");
+const {
+  RETENTION_DAYS,
+  softDeleteTenant,
+  restoreTenant,
+} = require("../services/tenantDeletionService");
 
 const getAllTenants = async (req, res) => {
   try {
     const tenants = await Tenant.find()
       .select(
-        "-password -taxSettings.zatcaCredentials -taxSettings.zakaty.apiKey -resetPasswordToken -resetPasswordExpires",
+        "-password -taxSettings.zatcaCredentials -taxSettings.zakaty.apiKey -resetPasswordToken -resetPasswordExpires -whatsappSettings.apiKey -whatsappSettings.apiKeyHash -whatsappSettings.webhookSecret -paymentSettings.moyasarSecretKey",
       )
       .sort({ createdAt: -1 })
       .lean();
@@ -146,38 +151,37 @@ const updateTenantStatus = async (req, res) => {
   }
 };
 
+const sendServiceError = (res, error, fallback) =>
+  res
+    .status(error.statusCode || 500)
+    .json({ message: error.statusCode ? error.message : fallback });
+
+// حذف مؤقت لمدة RETENTION_DAYS مع إمكانية الاسترجاع
 const deleteTenant = async (req, res) => {
   try {
-    const { id } = req.params;
-    const tenant = await Tenant.findById(id);
-    if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
-
-    await Promise.all([
-      Appointment.deleteMany({ tenantId: id }),
-      Review.deleteMany({ tenantId: id }),
-      Campaign.deleteMany({ tenantId: id }),
-      Customer.deleteMany({ tenantId: id }),
-      Barber.deleteMany({ tenantId: id }),
-      Service.deleteMany({ tenantId: id }),
-      Tenant.findByIdAndDelete(id),
-    ]);
-
-    try {
-      await redisClient.del(`tenant_public_profile:${tenant.slug}`);
-    } catch (e) {}
-
-    res
-      .status(200)
-      .json({ message: "تم حذف الصالون وجميع بياناته من كافة الجداول بنجاح" });
+    const result = await softDeleteTenant(req.params.id, req.body?.confirmSlug);
+    res.status(200).json({
+      message: `تم إيقاف وإخفاء "${result.salonName}". سيُحذف نهائياً بعد ${RETENTION_DAYS} يوماً ويمكن استرجاعه قبل ذلك.`,
+      purgeAfter: result.purgeAfter,
+    });
   } catch (error) {
-    res.status(500).json({ message: "حدث خطأ أثناء حذف الصالون" });
+    sendServiceError(res, error, "حدث خطأ أثناء حذف الصالون");
+  }
+};
+
+const restoreDeletedTenant = async (req, res) => {
+  try {
+    const result = await restoreTenant(req.params.id);
+    res.status(200).json({ message: `تم استرجاع "${result.salonName}" بحالته السابقة.` });
+  } catch (error) {
+    sendServiceError(res, error, "حدث خطأ أثناء استرجاع الصالون");
   }
 };
 
 const impersonateTenant = async (req, res) => {
   try {
     const { id } = req.params;
-    const tenantExists = await Tenant.exists({ _id: id });
+    const tenantExists = await Tenant.exists({ _id: id, deletedAt: null });
     if (!tenantExists)
       return res.status(404).json({ message: "الصالون غير موجود" });
 
@@ -228,6 +232,7 @@ module.exports = {
   getAllTenants,
   updateTenantStatus,
   deleteTenant,
+  restoreDeletedTenant,
   impersonateTenant,
   forceDisconnectZatca,
   toggleMaintenanceMode,

@@ -785,6 +785,8 @@ const cleanupPendingPayments = async () => {
   }
 };
 
+const { purgeExpiredTenants } = require("../services/tenantDeletionService");
+
 const startCronJobs = () => {
   console.log("تم تشغيل نظام العمليات الخلفية (Cron Jobs) بنجاح...");
 
@@ -807,6 +809,14 @@ const startCronJobs = () => {
   cron.schedule("*/15 * * * * *", processNotificationQueue);
 
   cron.schedule("* * * * *", reconcileNotificationDeliveries);
+  // حذف نهائي للصالونات المحذوفة مؤقتاً بعد انتهاء مدة الاحتفاظ (30 يوماً)
+  cron.schedule(
+    "10 4 * * *",
+    () => purgeExpiredTenants().catch((error) =>
+      console.error("خطأ في الحذف النهائي للصالونات:", error.message),
+    ),
+    { timezone: "Asia/Riyadh" },
+  );
 
   cron.schedule("* * * * *", () => processPendingZakatySetups().catch((error) =>
     console.error('Zakaty setup recovery failed:', error.message)));

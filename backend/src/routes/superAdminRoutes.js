@@ -6,6 +6,7 @@ const {
   getAllTenants,
   updateTenantStatus,
   deleteTenant,
+  restoreDeletedTenant,
   impersonateTenant,
   forceDisconnectZatca,
   toggleMaintenanceMode,
@@ -44,6 +45,7 @@ router.put("/system-settings/maintenance", toggleMaintenanceMode);
 router.put("/pricing", updateSystemPricing);
 router.put("/promos/:id/toggle", togglePromoCode);
 router.delete("/tenants/:id", deleteTenant);
+router.post("/tenants/:id/restore", restoreDeletedTenant);
 router.delete("/tenants/:id/zatca", forceDisconnectZatca);
 
 module.exports = router;

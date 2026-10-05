@@ -29,12 +29,12 @@ const protect = async (req, res, next) => {
 
     // إلغاء الجلسات القديمة بعد تغيير كلمة المرور، ورفض توكنات الحسابات المحذوفة
     const tenant = await Tenant.findById(decoded.tenantId)
-      .select("passwordChangedAt")
+      .select("passwordChangedAt deletedAt")
       .lean();
-    if (!tenant) {
+    if (!tenant || tenant.deletedAt) {
       return res
         .status(401)
-        .json({ message: "الحساب غير موجود.", isExpired: true });
+        .json({ message: "الحساب غير موجود أو موقوف.", isExpired: true });
     }
     if (
       tenant.passwordChangedAt &&

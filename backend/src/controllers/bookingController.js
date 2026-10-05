@@ -502,9 +502,12 @@ const createAppointment = async (req, res) => {
     }
 
     const tenant = await Tenant.findById(tenantId)
-      .select("settings subscription paymentSettings")
+      .select("settings subscription paymentSettings deletedAt")
       .lean();
     if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
+    if (tenant.deletedAt || tenant.subscription?.status !== "Active") {
+      return res.status(403).json({ message: "الصالون غير متاح للحجز حالياً." });
+    }
 
     const start = tenant.settings?.startTime || "16:00";
     if (
@@ -1047,7 +1050,7 @@ const cancelAppointment = async (req, res) => {
 const getLiveQueue = async (req, res) => {
   try {
     const slug = String(req.params.slug || "");
-    const tenant = await Tenant.findOne({ slug })
+    const tenant = await Tenant.findOne({ slug, deletedAt: null })
       .select("_id salonName branding")
       .lean();
 

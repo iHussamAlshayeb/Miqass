@@ -43,7 +43,7 @@ const authenticateBarberPortal = async (req) => {
     }
 
     const [tenant, barber] = await Promise.all([
-      Tenant.findById(payload.tenantId).select(PORTAL_TENANT_FIELDS).lean(),
+      Tenant.findOne({ _id: payload.tenantId, deletedAt: null }).select(PORTAL_TENANT_FIELDS).lean(),
       Barber.findOne({
         _id: payload.barberId,
         tenantId: payload.tenantId,
@@ -64,7 +64,7 @@ const authenticateBarberPortal = async (req) => {
     typeof req.body?.barberName === "string" ? req.body.barberName.trim() : "";
   if (!slug || !barberName) throw portalError("بيانات الدخول ناقصة", 400);
 
-  const tenant = await Tenant.findOne({ slug })
+  const tenant = await Tenant.findOne({ slug, deletedAt: null })
     .select(PORTAL_TENANT_FIELDS)
     .lean();
   if (!tenant) throw portalError("الصالون غير موجود", 404);

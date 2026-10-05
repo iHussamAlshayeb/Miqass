@@ -20,7 +20,7 @@ if ($Public -and -not (Test-Path -LiteralPath ".cloudflared\tunnel.env")) {
 $env:MIQASS_DISABLE_CRON_JOBS = if ($DisableCron) { "true" } else { "false" }
 
 docker compose config --quiet
-docker compose up -d --build app
+docker compose up -d --build app backup
 
 $healthUrl = "http://127.0.0.1:15000/api/health"
 $deadline = (Get-Date).AddMinutes(3)

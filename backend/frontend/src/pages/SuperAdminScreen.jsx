@@ -23,6 +23,7 @@ import {
     Wrench,
     X,
     Zap,
+    RotateCcw,
 } from 'lucide-react';
 import API from '../services/api';
 
@@ -118,7 +119,13 @@ const Toggle = ({ checked, onChange, label }) => (
 );
 
 const ConfirmDialog = ({ dialog, onClose, onConfirm }) => {
+    // يُعاد تهيئة الحقل مع كل نافذة جديدة عبر key في مكان الاستخدام
+    const [typed, setTyped] = useState('');
     if (!dialog) return null;
+
+    // بعض العمليات الخطرة تتطلب كتابة نص محدد (مثل رابط الصالون) لتفعيل زر التأكيد
+    const needsText = Boolean(dialog.requireText);
+    const isTextValid = !needsText || typed.trim().toLowerCase() === String(dialog.requireText).toLowerCase();
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4" dir="rtl">
@@ -133,11 +140,28 @@ const ConfirmDialog = ({ dialog, onClose, onConfirm }) => {
                     </div>
                 </div>
 
+                {needsText && (
+                    <div className="mb-4">
+                        <label className="mb-1 block text-xs font-black text-slate-500">
+                            للتأكيد اكتب: <span dir="ltr" className="font-mono text-slate-900">{dialog.requireText}</span>
+                        </label>
+                        <input
+                            type="text"
+                            value={typed}
+                            onChange={(e) => setTyped(e.target.value)}
+                            autoFocus
+                            dir="ltr"
+                            className="w-full rounded-md border border-slate-200 px-3 py-2 font-mono text-sm outline-none focus:border-red-400"
+                        />
+                    </div>
+                )}
+
                 <div className="flex flex-col gap-2 sm:flex-row">
                     <button
                         type="button"
-                        onClick={onConfirm}
-                        className={`inline-flex flex-1 items-center justify-center rounded-md px-4 py-2.5 text-sm font-black text-white transition-colors ${dialog.tone === 'danger' ? 'bg-red-600 hover:bg-red-700' : 'bg-slate-900 hover:bg-slate-800'}`}
+                        onClick={() => onConfirm(typed)}
+                        disabled={!isTextValid}
+                        className={`inline-flex flex-1 disabled:cursor-not-allowed disabled:opacity-40 items-center justify-center rounded-md px-4 py-2.5 text-sm font-black text-white transition-colors ${dialog.tone === 'danger' ? 'bg-red-600 hover:bg-red-700' : 'bg-slate-900 hover:bg-slate-800'}`}
                     >
                         {dialog.confirmLabel}
                     </button>
@@ -196,10 +220,10 @@ const SuperAdminScreen = () => {
         setNotice({ type, message });
     };
 
-    const runConfirmedAction = async () => {
+    const runConfirmedAction = async (typed) => {
         const dialog = confirmDialog;
         setConfirmDialog(null);
-        if (dialog?.onConfirm) await dialog.onConfirm();
+        if (dialog?.onConfirm) await dialog.onConfirm(typed);
     };
 
     const fetchPricing = async (key) => {
@@ -373,20 +397,43 @@ const SuperAdminScreen = () => {
         });
     };
 
-    const handleDeleteTenant = (id, salonName) => {
+    const handleDeleteTenant = (id, salonName, slug) => {
         setConfirmDialog({
-            title: 'حذف الصالون نهائياً',
-            message: `سيتم حذف "${salonName}" وجميع بياناته المرتبطة من النظام. لا يمكن التراجع عن هذه العملية.`,
-            confirmLabel: 'حذف نهائي',
+            title: 'حذف الصالون',
+            message: `سيتم إيقاف "${salonName}" وإخفاؤه فوراً (الحجز، الدخول، واتساب، الحملات). يبقى قابلاً للاسترجاع لمدة 30 يوماً، ثم يُحذف نهائياً مع جميع بياناته.`,
+            confirmLabel: 'حذف الصالون',
             tone: 'danger',
+            requireText: slug,
+            onConfirm: async (typed) => {
+                try {
+                    const key = sessionStorage.getItem('superAdminKey');
+                    const res = await API.delete(`/admin/tenants/${id}`, {
+                        headers: { 'x-admin-key': key },
+                        data: { confirmSlug: typed },
+                    });
+                    showNotice('success', res.data?.message || 'تم حذف الصالون.');
+                    fetchTenants(key);
+                } catch (error) {
+                    showNotice('error', error.response?.data?.message || 'حدث خطأ أثناء الحذف.');
+                }
+            }
+        });
+    };
+
+    const handleRestoreTenant = (id, salonName) => {
+        setConfirmDialog({
+            title: 'استرجاع الصالون',
+            message: `سيعود "${salonName}" بحالته السابقة: الاشتراك، وواتساب، والحملات التي كانت قيد الإرسال.`,
+            confirmLabel: 'استرجاع',
+            tone: 'warning',
             onConfirm: async () => {
                 try {
                     const key = sessionStorage.getItem('superAdminKey');
-                    await API.delete(`/admin/tenants/${id}`, { headers: { 'x-admin-key': key } });
-                    showNotice('success', 'تم حذف الصالون بنجاح.');
+                    const res = await API.post(`/admin/tenants/${id}/restore`, {}, { headers: { 'x-admin-key': key } });
+                    showNotice('success', res.data?.message || 'تم استرجاع الصالون.');
                     fetchTenants(key);
-                } catch {
-                    showNotice('error', 'حدث خطأ أثناء الحذف.');
+                } catch (error) {
+                    showNotice('error', error.response?.data?.message || 'حدث خطأ أثناء الاسترجاع.');
                 }
             }
         });
@@ -908,6 +955,22 @@ const SuperAdminScreen = () => {
                                         </div>
                                     </div>
 
+                                    {tenant.deletedAt ? (
+                                    <div className="space-y-3 border-t border-red-100 bg-red-50/60 p-4">
+                                        <p className="text-xs font-black leading-6 text-red-700">
+                                            محذوف مؤقتاً — يُحذف نهائياً في{' '}
+                                            {tenant.deletionInfo?.purgeAfter ? new Date(tenant.deletionInfo.purgeAfter).toLocaleDateString('en-GB') : '-'}
+                                        </p>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleRestoreTenant(tenant._id, tenant.salonName)}
+                                            className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-slate-900 px-4 py-2.5 text-sm font-black text-white transition-colors hover:bg-slate-800"
+                                        >
+                                            <RotateCcw size={16} />
+                                            استرجاع الصالون
+                                        </button>
+                                    </div>
+                                    ) : (
                                     <div className="space-y-3 border-t border-slate-100 p-4">
                                         <div className="grid grid-cols-2 gap-2">
                                             <select
@@ -966,7 +1029,7 @@ const SuperAdminScreen = () => {
                                             </button>
                                             <button
                                                 type="button"
-                                                onClick={() => handleDeleteTenant(tenant._id, tenant.salonName)}
+                                                onClick={() => handleDeleteTenant(tenant._id, tenant.salonName, tenant.slug)}
                                                 className="inline-flex h-11 w-11 items-center justify-center rounded-md bg-red-50 text-red-600 transition-colors hover:bg-red-600 hover:text-white"
                                                 title="حذف المنشأة بالكامل"
                                                 aria-label="حذف المنشأة بالكامل"
@@ -975,6 +1038,7 @@ const SuperAdminScreen = () => {
                                             </button>
                                         </div>
                                     </div>
+                                    )}
                                 </Card>
                             );
                         })}
@@ -983,6 +1047,7 @@ const SuperAdminScreen = () => {
             </div>
 
             <ConfirmDialog
+                key={confirmDialog ? `${confirmDialog.title}-${confirmDialog.requireText || ''}` : 'closed'}
                 dialog={confirmDialog}
                 onClose={() => setConfirmDialog(null)}
                 onConfirm={runConfirmedAction}
