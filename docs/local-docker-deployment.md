@@ -72,3 +72,16 @@ To recover a single salon, restore the archive into a temporary database first (
 ## Deleting a salon
 
 Deleting from the super admin screen is a soft delete: the salon is hidden and disabled immediately (booking, login, WhatsApp, campaigns) and can be restored from the same screen for 30 days. A daily job permanently removes it and all of its data afterwards. The delete button requires typing the salon slug.
+
+## Content Security Policy
+
+`CSP_MODE` in `Miqass.env` controls the policy defined in `backend/src/config/csp.js`:
+
+- `report` (default): nothing is blocked; browsers send violations to `/api/csp-report` and they appear in the app logs as `[CSP] ...` lines (each distinct violation is logged once).
+- `enforce`: violations are blocked. Switch only after the main pages show no unexpected `[CSP]` lines.
+- `off`: no policy.
+
+```powershell
+docker compose logs app | Select-String "\[CSP\]"
+```
+
