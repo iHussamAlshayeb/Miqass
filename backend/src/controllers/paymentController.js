@@ -4,6 +4,7 @@ const Tenant = require("../models/Tenant");
 
 const crypto = require("crypto");
 const zatcaXML = require("../utils/zatcaXML");
+const { decrypt } = require("../utils/encryption");
 const zatcaCore = require("../utils/zatcaCore");
 const { generateZatcaQR } = require("../utils/zatca");
 
@@ -14,6 +15,16 @@ const {
   getTenantMoyasarSecret,
   getVerifiedMoyasarPayment,
 } = require("../services/paymentGatewayService");
+
+// بيانات ZATCA الحساسة مخزنة مشفرة؛ نفكها فقط عند التوقيع والتبليغ
+const getZatcaCredentials = (tenant) => {
+  const credentials = tenant?.taxSettings?.zatcaCredentials || {};
+  return {
+    binarySecurityToken: credentials.binarySecurityToken,
+    secret: decrypt(credentials.secret),
+    privateKey: decrypt(credentials.privateKey),
+  };
+};
 
 const toMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
@@ -162,6 +173,7 @@ const getInvoiceData = async (req, res) => {
       tenant.taxSettings?.zatcaCredentials
     ) {
       try {
+        const zatcaCredentials = getZatcaCredentials(tenant);
         const invoiceDetails = {
           invoiceNumber: appointment.invoiceNumber || "INV-0000",
           invoiceCounter: parseInt(
@@ -217,8 +229,8 @@ const getInvoiceData = async (req, res) => {
         } = zatcaXML.signZatcaInvoice(
           rawXml,
           qrData,
-          tenant.taxSettings.zatcaCredentials.privateKey,
-          tenant.taxSettings.zatcaCredentials.binarySecurityToken,
+          zatcaCredentials.privateKey,
+          zatcaCredentials.binarySecurityToken,
         );
 
         qrCodeBase64 = phase2Qr;
@@ -229,7 +241,7 @@ const getInvoiceData = async (req, res) => {
             invoiceHash,
             xmlBase64,
             invoiceDetails.uuid,
-            tenant.taxSettings.zatcaCredentials,
+            zatcaCredentials,
           )
           .then(() =>
             console.log(

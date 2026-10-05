@@ -1,6 +1,7 @@
 const axios = require("axios");
 const crypto = require("crypto");
 const Tenant = require("../models/Tenant");
+const { encrypt, hashForLookup } = require("../utils/encryption");
 const {
   WASENDER_WEBHOOK_EVENTS,
   extractWasenderEventDate,
@@ -111,7 +112,9 @@ const createWhatsappSession = async (req, res) => {
         $set: {
           "whatsappSettings.sessionId": sessionId,
           "whatsappSettings.sessionStatus": "STARTING",
-          "whatsappSettings.apiKey": response.data.data.api_key,
+          // المفتاح يُخزَّن مشفراً، والـ hash للبحث عنه في الـ webhook
+          "whatsappSettings.apiKey": encrypt(response.data.data.api_key),
+          "whatsappSettings.apiKeyHash": hashForLookup(response.data.data.api_key),
           "whatsappSettings.webhookSecret": response.data.data.webhook_secret,
           "whatsappSettings.isEnabled": true,
         },
@@ -232,6 +235,7 @@ const disconnectWhatsappSession = async (req, res) => {
           "whatsappSettings.sessionStatus": "DISCONNECTED",
           "whatsappSettings.isEnabled": false,
           "whatsappSettings.apiKey": null,
+          "whatsappSettings.apiKeyHash": null,
         },
       },
     );
@@ -257,13 +261,13 @@ const handleWhatsappWebhook = async (req, res) => {
     const sessionIdentifiers = extractWasenderSessionIdentifiers(payload);
     const tenantConditions = sessionIdentifiers.flatMap((identifier) => [
       { "whatsappSettings.sessionId": identifier },
-      { "whatsappSettings.apiKey": identifier },
+      { "whatsappSettings.apiKeyHash": hashForLookup(identifier) },
     ]);
     tenantConditions.push({ "whatsappSettings.webhookSecret": signature });
 
     const tenant = await Tenant.findOne({ $or: tenantConditions })
       .select(
-        "salonName whatsappSettings.sessionId whatsappSettings.apiKey whatsappSettings.webhookSecret",
+        "salonName whatsappSettings.sessionId whatsappSettings.webhookSecret",
       )
       .lean();
 

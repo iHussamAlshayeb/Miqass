@@ -87,7 +87,8 @@ const tenantSchema = new mongoose.Schema(
     },
 
     whatsappSettings: {
-      apiKey: { type: String, default: "" },
+      apiKey: { type: String, default: "" }, // مشفّر (encryption.js)
+      apiKeyHash: { type: String, default: null }, // HMAC للبحث في الـ webhook
       isEnabled: { type: Boolean, default: false },
       sessionId: { type: String, default: null },
       sessionStatus: { type: String, default: "DISCONNECTED" },

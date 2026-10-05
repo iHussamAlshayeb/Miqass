@@ -246,10 +246,11 @@ const onboardZatca = async (req, res) => {
         $set: {
           "taxSettings.taxNumber": taxNumber,
           "taxSettings.isZatcaOnboarded": true,
+          // المفتاح الخاص والسر يُخزَّنان مشفرين (تُفك في getZatcaCredentials)
           "taxSettings.zatcaCredentials": {
             binarySecurityToken: credentials.binarySecurityToken,
-            secret: credentials.secret,
-            privateKey: credentials.privateKey,
+            secret: encrypt(credentials.secret),
+            privateKey: encrypt(credentials.privateKey),
           },
         },
       },

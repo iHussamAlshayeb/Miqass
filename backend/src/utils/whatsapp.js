@@ -1,6 +1,10 @@
 const axios = require("axios");
 const { normalizeWasenderMessageStatus } = require("./wasender");
 const { renderTemplate } = require("./whatsappTemplates");
+const { decrypt } = require("./encryption");
+
+// مفتاح WaSender مخزّن مشفراً؛ نفكه فقط لحظة الإرسال
+const getTenantApiKey = (tenant) => decrypt(tenant?.whatsappSettings?.apiKey) || null;
 
 const WASENDER_API_BASE_URL = "https://www.wasenderapi.com";
 const API_URL = `${WASENDER_API_BASE_URL}/api/send-message`;
@@ -69,7 +73,7 @@ const sendWhatsAppMessage = async (
   tenant,
 ) => {
   try {
-    const customApiKey = tenant?.whatsappSettings?.apiKey;
+    const customApiKey = getTenantApiKey(tenant);
     const isEnabled = tenant?.whatsappSettings?.isEnabled;
 
     if (!isEnabled || !customApiKey) return false;
@@ -120,7 +124,7 @@ const sendCancellationMessage = async (
   reason = "",
 ) => {
   try {
-    const customApiKey = tenant?.whatsappSettings?.apiKey;
+    const customApiKey = getTenantApiKey(tenant);
     const isEnabled = tenant?.whatsappSettings?.isEnabled;
 
     if (!isEnabled || !customApiKey) return false;
@@ -167,7 +171,7 @@ const sendReminderMessage = async (
   tenant,
 ) => {
   try {
-    const customApiKey = tenant?.whatsappSettings?.apiKey;
+    const customApiKey = getTenantApiKey(tenant);
     const isEnabled = tenant?.whatsappSettings?.isEnabled;
 
     if (!isEnabled || !customApiKey) return false;
@@ -215,7 +219,7 @@ const sendReviewRequestMessage = async (
   appointmentId,
 ) => {
   try {
-    const customApiKey = tenant?.whatsappSettings?.apiKey;
+    const customApiKey = getTenantApiKey(tenant);
     const isEnabled = tenant?.whatsappSettings?.isEnabled;
 
     if (!isEnabled || !customApiKey) return false;
@@ -257,7 +261,7 @@ const sendReviewRequestMessage = async (
 
 const sendLoyaltyRewardMessage = async (phone, customerName, tenant) => {
   try {
-    const customApiKey = tenant?.whatsappSettings?.apiKey;
+    const customApiKey = getTenantApiKey(tenant);
     const isEnabled = tenant?.whatsappSettings?.isEnabled;
 
     if (!isEnabled || !customApiKey) return false;
@@ -295,7 +299,7 @@ const sendLoyaltyRewardMessage = async (phone, customerName, tenant) => {
 
 const sendRetentionMessage = async (phone, customerName, tenant) => {
   try {
-    const customApiKey = tenant?.whatsappSettings?.apiKey;
+    const customApiKey = getTenantApiKey(tenant);
     const isEnabled = tenant?.whatsappSettings?.isEnabled;
 
     if (!isEnabled || !customApiKey) return false;
@@ -334,7 +338,7 @@ const sendRetentionMessage = async (phone, customerName, tenant) => {
 };
 
 const sendCampaignMessage = async (phone, messageText, tenant) => {
-  const customApiKey = tenant?.whatsappSettings?.apiKey;
+  const customApiKey = getTenantApiKey(tenant);
   const isEnabled = tenant?.whatsappSettings?.isEnabled;
 
   if (!isEnabled || !customApiKey) {
@@ -420,7 +424,7 @@ const sendCampaignMessage = async (phone, messageText, tenant) => {
 };
 
 const sendBookingAccessCode = async (phone, code, tenant) => {
-  const apiKey = tenant?.whatsappSettings?.apiKey;
+  const apiKey = getTenantApiKey(tenant);
   const formattedPhone = formatPhoneNumber(phone);
   if (!tenant?.whatsappSettings?.isEnabled || !apiKey || !formattedPhone) return false;
 
@@ -444,7 +448,7 @@ const sendBookingAccessCode = async (phone, code, tenant) => {
 };
 
 const sendRescheduleMessage = async (phone, childName, date, time, barberName, tenant) => {
-  const apiKey = tenant?.whatsappSettings?.apiKey;
+  const apiKey = getTenantApiKey(tenant);
   const formattedPhone = formatPhoneNumber(phone);
   if (!tenant?.whatsappSettings?.isEnabled || !apiKey || !formattedPhone) return false;
   try {
@@ -464,7 +468,7 @@ const sendRescheduleMessage = async (phone, childName, date, time, barberName, t
 };
 
 const getCampaignMessageInfo = async (providerMessageId, tenant) => {
-  const customApiKey = tenant?.whatsappSettings?.apiKey;
+  const customApiKey = getTenantApiKey(tenant);
   const normalizedMessageId = String(providerMessageId ?? "").trim();
   if (!customApiKey || !normalizedMessageId) return null;
 

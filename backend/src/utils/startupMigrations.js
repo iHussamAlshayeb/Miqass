@@ -1,6 +1,24 @@
 const Tenant = require("../models/Tenant");
 const Barber = require("../models/Barber");
 const { hashPin } = require("./barberPin");
+const {
+  encrypt,
+  decrypt,
+  isEncrypted,
+  isLegacyEncrypted,
+  hashForLookup,
+} = require("./encryption");
+
+// الحقول السرية في مستند الصالون التي يجب أن تكون مشفرة بصيغة v2
+const SECRET_PATHS = [
+  "paymentSettings.moyasarSecretKey",
+  "taxSettings.zakaty.apiKey",
+  "taxSettings.zatcaCredentials.secret",
+  "taxSettings.zatcaCredentials.privateKey",
+  "whatsappSettings.apiKey",
+];
+
+const getPath = (doc, path) => path.split(".").reduce((value, key) => value?.[key], doc);
 
 /**
  * ترحيلات خفيفة تعمل عند كل تشغيل للسيرفر (idempotent):
@@ -71,8 +89,68 @@ const hashLegacyBarberPins = async () => {
   if (count) console.log(`🔐 تم تشفير ${count} من رموز PIN القديمة.`);
 };
 
+/**
+ * 4) ترقية الأسرار إلى AES-256-GCM (v2):
+ *    - المشفّر بالصيغة القديمة (CBC) يُفك ويُعاد تشفيره.
+ *    - النص الصريح (مثل مفتاح واتساب وبيانات ZATCA) يُشفَّر.
+ *    - إذا فشل فك قيمة قديمة لا نلمسها، حتى لا نفقدها.
+ */
+const upgradeStoredSecrets = async () => {
+  const projection = Object.fromEntries(
+    [...SECRET_PATHS, "whatsappSettings.apiKeyHash"].map((path) => [path, 1]),
+  );
+  const cursor = Tenant.collection.find({}, { projection });
+
+  let upgraded = 0;
+  let failed = 0;
+  for await (const tenant of cursor) {
+    const filter = { _id: tenant._id };
+    const set = {};
+
+    for (const path of SECRET_PATHS) {
+      const value = getPath(tenant, path);
+      if (!value || typeof value !== "string") continue;
+      if (isEncrypted(value) && !isLegacyEncrypted(value)) continue; // v2 بالفعل
+
+      const plain = isLegacyEncrypted(value) ? decrypt(value) : value;
+      if (!plain) {
+        failed += 1;
+        continue;
+      }
+      filter[path] = value; // لا نكتب إذا تغيّرت القيمة أثناء الترحيل
+      set[path] = encrypt(plain);
+
+      if (path === "whatsappSettings.apiKey") {
+        set["whatsappSettings.apiKeyHash"] = hashForLookup(plain);
+      }
+    }
+
+    // صالونات مفتاحها مشفّر لكن بلا hash (مثلاً شُفّر في تشغيل سابق)
+    const waKey = tenant.whatsappSettings?.apiKey;
+    if (!set["whatsappSettings.apiKeyHash"] && waKey && !tenant.whatsappSettings?.apiKeyHash) {
+      const plain = decrypt(waKey);
+      if (plain) set["whatsappSettings.apiKeyHash"] = hashForLookup(plain);
+    }
+
+    if (Object.keys(set).length === 0) continue;
+    const result = await Tenant.collection.updateOne(filter, { $set: set });
+    upgraded += result.modifiedCount;
+  }
+
+  if (upgraded) console.log(`🔐 تمت ترقية/تشفير أسرار ${upgraded} صالون إلى AES-256-GCM.`);
+  if (failed) {
+    console.error(
+      `⚠️ تعذّر فك ${failed} سرّ قديم — تحقق أن ENCRYPTION_KEY لم يتغير. لم تُعدَّل هذه القيم.`,
+    );
+  }
+};
+
 const runStartupMigrations = async () => {
-  for (const migration of [migratePaymentAndTaxSettings, hashLegacyBarberPins]) {
+  for (const migration of [
+    migratePaymentAndTaxSettings,
+    hashLegacyBarberPins,
+    upgradeStoredSecrets,
+  ]) {
     try {
       await migration();
     } catch (error) {
@@ -81,4 +159,4 @@ const runStartupMigrations = async () => {
   }
 };
 
-module.exports = { runStartupMigrations };
+module.exports = { runStartupMigrations, upgradeStoredSecrets };

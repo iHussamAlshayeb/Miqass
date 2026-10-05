@@ -6,7 +6,14 @@ const Barber = require("../models/Barber");
 const Service = require("../models/Service");
 const mongoose = require("mongoose");
 
-const { encrypt } = require("../utils/encryption");
+const { encrypt, hashForLookup } = require("../utils/encryption");
+
+// لوحة التحكم لا تحتاج المفتاح نفسه ولا أسرار الـ webhook
+const toSafeWhatsappSettings = (settings = {}) => ({
+  isEnabled: Boolean(settings?.isEnabled),
+  sessionStatus: settings?.sessionStatus || "DISCONNECTED",
+  hasApiKey: Boolean(settings?.apiKey),
+});
 const { hashPin, isValidPin, normalizePinInput } = require("../utils/barberPin");
 const { sendReminderMessage } = require("../utils/whatsapp");
 const { DEFAULT_TEMPLATES, getTemplates, validateTemplates } = require("../utils/whatsappTemplates");
@@ -90,10 +97,7 @@ const getBarberSettings = async (req, res) => {
       subscription: tenant.subscription || { plan: "Free", status: "active" },
       campaignCredits: tenant.campaignCredits || 0,
       slug: tenant.slug || "",
-      whatsappSettings: tenant.whatsappSettings || {
-        isEnabled: false,
-        apiKey: "",
-      },
+      whatsappSettings: toSafeWhatsappSettings(tenant.whatsappSettings),
       whatsappTemplates: getTemplates(tenant),
       whatsappTemplateDefaults: DEFAULT_TEMPLATES,
       paymentSettings: safePaymentSettings,
@@ -400,15 +404,16 @@ const resendSingleWhatsApp = async (req, res) => {
 // 5. تحديث إعدادات الـ API الخاصة بواتساب (قديماً قبل الربط المباشر بـ WASender)
 const updateWhatsappSettings = async (req, res) => {
   try {
-    const { apiKey, isEnabled } = req.body;
+    const { apiKey, isEnabled } = req.body || {};
+    const update = { "whatsappSettings.isEnabled": isEnabled === true };
+    // مفتاح جديد فقط إذا أُرسل نص غير فارغ؛ غير ذلك يبقى المفتاح الحالي
+    if (typeof apiKey === "string" && apiKey.trim()) {
+      update["whatsappSettings.apiKey"] = encrypt(apiKey.trim());
+      update["whatsappSettings.apiKeyHash"] = hashForLookup(apiKey.trim());
+    }
     const updatedTenant = await Tenant.findByIdAndUpdate(
       req.tenantId,
-      {
-        $set: {
-          "whatsappSettings.apiKey": apiKey,
-          "whatsappSettings.isEnabled": isEnabled,
-        },
-      },
+      { $set: update },
       { returnDocument: "after", select: "whatsappSettings" },
     ).lean();
 
@@ -417,7 +422,7 @@ const updateWhatsappSettings = async (req, res) => {
 
     res.status(200).json({
       message: "تم تحديث إعدادات الواتساب بنجاح! ✅",
-      whatsappSettings: updatedTenant.whatsappSettings,
+      whatsappSettings: toSafeWhatsappSettings(updatedTenant.whatsappSettings),
     });
   } catch (error) {
     res.status(500).json({ message: "حدث خطأ أثناء حفظ إعدادات الواتساب" });
