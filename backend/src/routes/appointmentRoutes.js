@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const rateLimit = require("express-rate-limit");
+const rateLimit = require("../middlewares/rateLimit");
 
 const { getWhatsAppStatus } = require("../utils/whatsapp");
 const { getTenantReviews } = require("../controllers/reviewController");
@@ -67,6 +67,12 @@ const barberLimiter = rateLimit({
   message: { message: "محاولات دخول خاطئة كثيرة، حاول بعد 15 دقيقة 🛑" },
 });
 
+const barberActionLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  message: { message: "طلبات كثيرة، انتظر دقيقة 🛑" },
+});
+
 const queueLimiter = rateLimit({
   windowMs: 1 * 60 * 1000,
   max: 30,
@@ -116,7 +122,7 @@ router.get("/loyalty/:tenantId/:phone", loyaltyLimiter, getCustomerLoyalty);
 
 router.get("/live-queue/:slug", queueLimiter, getLiveQueue);
 router.post("/barber-portal/queue", barberLimiter, getBarberQueue);
-router.put("/barber-portal/status/:appointmentId", barberUpdateStatus);
+router.put("/barber-portal/status/:appointmentId", barberActionLimiter, barberUpdateStatus);
 router.post("/webhook/moyasar", moyasarWebhook);
 
 // 🔒 Middleware الحماية (الراوتس التي تلي هذا السطر تتطلب Token)

@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const rateLimit = require("express-rate-limit");
+const rateLimit = require("../middlewares/rateLimit");
 const { protect } = require("../middlewares/authMiddleware");
 
 const {

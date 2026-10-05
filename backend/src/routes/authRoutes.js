@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const rateLimit = require("express-rate-limit");
+const rateLimit = require("../middlewares/rateLimit");
 
 const {
   registerTenant,
@@ -34,12 +34,26 @@ const passwordLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-router.post("/register", registerTenant);
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // ساعة
+  max: 5,
+  message: {
+    message: "تم إنشاء عدة حسابات من نفس الجهاز. حاول مجدداً بعد ساعة 🛑",
+  },
+});
+
+const resetTokenLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { message: "محاولات كثيرة، حاول بعد 15 دقيقة 🛑" },
+});
+
+router.post("/register", registerLimiter, registerTenant);
 router.post("/login", loginLimiter, loginTenant);
 router.post("/verify-payment", protect, verifyPaymentAndActivate);
 router.post("/submit-bank-transfer", protect, submitBankTransfer);
 router.post("/free-activation", protect, freeActivation);
 router.post("/forgot-password", passwordLimiter, forgotPassword);
-router.post("/reset-password/:token", resetPassword);
+router.post("/reset-password/:token", resetTokenLimiter, resetPassword);
 
 module.exports = router;
