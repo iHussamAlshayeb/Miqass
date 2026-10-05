@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
 import API from '../services/api';
@@ -108,6 +108,8 @@ const BarberPortal = () => {
             setIsAutoLoggingIn(false);
         };
         autoLogin();
+    // الدخول التلقائي مرة واحدة عند فتح البوابة فقط، لا مع كل تغيير للتاريخ
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [slug, fetchQueue]);
 
     // التحديث التلقائي (Polling)
@@ -197,7 +199,7 @@ const BarberPortal = () => {
     if ((isLoading && !tenantData) || isAutoLoggingIn) {
         return (
             <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center font-arabic">
-                <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }} className="text-4xl mb-4">⏳</motion.div>
+                <Motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }} className="text-4xl mb-4">⏳</Motion.div>
                 <p className="text-slate-500 font-bold">جاري تجهيز البوابة...</p>
             </div>
         );
@@ -221,7 +223,7 @@ const BarberPortal = () => {
         <div className="min-h-screen bg-slate-50 font-arabic text-right pb-12 selection:bg-slate-200 overflow-x-hidden" dir="rtl">
 
             {/* ─── الهيدر المدمج ─── */}
-            <motion.header
+            <Motion.header
                 initial={{ y: -20, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 className="bg-white px-5 pt-8 pb-6 rounded-b-[40px] shadow-sm border-b border-slate-100 flex flex-col items-center relative overflow-hidden mb-6 transition-colors duration-500"
@@ -239,19 +241,19 @@ const BarberPortal = () => {
                 <p className="text-xs font-bold text-slate-400 mt-1 relative z-10">{tenantData.salonName}</p>
 
                 {isLoggedIn && (
-                    <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="mt-3 relative z-10 flex items-center gap-2">
+                    <Motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="mt-3 relative z-10 flex items-center gap-2">
                         <span className="px-4 py-1.5 rounded-xl text-xs font-black shadow-sm transition-colors duration-500" style={{ backgroundColor: `${activeThemeColor}15`, color: activeThemeColor }}>
                             👨🏻‍✈️ الكرسي: {barberName}
                         </span>
-                    </motion.div>
+                    </Motion.div>
                 )}
-            </motion.header>
+            </Motion.header>
 
             <main className="max-w-lg mx-auto px-4 md:px-5">
                 <AnimatePresence mode="wait">
                     {!isLoggedIn ? (
                         /* ─── شاشة تسجيل الدخول ─── */
-                        <motion.form key="login" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} onSubmit={handleLogin} className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-100 relative z-10">
+                        <Motion.form key="login" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} onSubmit={handleLogin} className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-100 relative z-10">
                             <h2 className="text-xl font-black text-slate-800 mb-6 text-center">تسجيل الدخول 🔐</h2>
 
                             <div className="space-y-6">
@@ -290,7 +292,7 @@ const BarberPortal = () => {
                                                             </svg>
 
                                                             {isSelected && (
-                                                                <motion.div layoutId="barberLoginCheck" className="absolute -bottom-1.5 -left-1.5 w-6 h-6 rounded-full bg-white shadow-md flex items-center justify-center text-[10px] font-black border-2 border-white" style={{ color: chairColor }}>✓</motion.div>
+                                                                <Motion.div layoutId="barberLoginCheck" className="absolute -bottom-1.5 -left-1.5 w-6 h-6 rounded-full bg-white shadow-md flex items-center justify-center text-[10px] font-black border-2 border-white" style={{ color: chairColor }}>✓</Motion.div>
                                                             )}
                                                         </div>
                                                         <span className={`text-xs font-black transition-colors ${isSelected ? 'text-slate-900' : 'text-slate-400'}`}>{b.name}</span>
@@ -304,7 +306,7 @@ const BarberPortal = () => {
                                 {/* الرمز السري */}
                                 <AnimatePresence mode="popLayout">
                                     {barbersList.find(b => b.name === barberName)?.hasPin && (
-                                        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
+                                        <Motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
                                             <label className="block text-sm font-bold text-slate-500 mb-2 px-1">الرمز السري (PIN):</label>
                                             <input
                                                 type="password"
@@ -318,11 +320,11 @@ const BarberPortal = () => {
                                                 style={{ '--tw-ring-color': `${activeThemeColor}30`, borderColor: pin.length > 0 ? activeThemeColor : undefined }}
                                                 dir="ltr"
                                             />
-                                        </motion.div>
+                                        </Motion.div>
                                     )}
                                 </AnimatePresence>
 
-                                {loginError && <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-xs font-bold text-red-500 text-center bg-red-50 p-3 rounded-xl border border-red-100">{loginError}</motion.p>}
+                                {loginError && <Motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-xs font-bold text-red-500 text-center bg-red-50 p-3 rounded-xl border border-red-100">{loginError}</Motion.p>}
 
                                 <button type="submit" disabled={isLoading || barbersList.length === 0 || !barberName}
                                     className="w-full py-4 text-white rounded-2xl font-black text-lg transition-all duration-300 active:scale-95 flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100"
@@ -330,10 +332,10 @@ const BarberPortal = () => {
                                     {isLoading ? <span className="animate-pulse">جاري التحقق...</span> : <>دخول للبوابة 🚀</>}
                                 </button>
                             </div>
-                        </motion.form>
+                        </Motion.form>
                     ) : (
                         /* ─── سجل المواعيد والبوابة ─── */
-                        <motion.div key="queue" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+                        <Motion.div key="queue" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
 
                             <div className="flex justify-between items-center mb-5 px-1">
                                 <h2 className="text-lg font-black text-slate-800">قائمة المواعيد 📅</h2>
@@ -384,16 +386,16 @@ const BarberPortal = () => {
                             </div>
 
                             {appointments.length === 0 ? (
-                                <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="text-center py-16 bg-white rounded-3xl border border-slate-100 shadow-sm flex flex-col items-center">
+                                <Motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="text-center py-16 bg-white rounded-3xl border border-slate-100 shadow-sm flex flex-col items-center">
                                     <span className="text-6xl block mb-4 grayscale opacity-60">🏖️</span>
                                     <p className="text-slate-600 font-black text-base">لا توجد مواعيد مسجلة</p>
                                     <p className="text-[11px] font-bold text-slate-400 mt-1" dir="ltr">{selectedDate}</p>
-                                </motion.div>
+                                </Motion.div>
                             ) : (
                                 <div className="space-y-4">
                                     <AnimatePresence>
                                         {appointments.map(app => (
-                                            <motion.div layout initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9 }} key={app._id}
+                                            <Motion.div layout initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9 }} key={app._id}
                                                 className={`bg-white p-4 md:p-5 rounded-3xl shadow-sm border-2 transition-all duration-500 
                                                 ${app.status === 'Booked' ? 'border-slate-100' : app.status === 'Completed' ? 'border-emerald-100 opacity-60 grayscale-[30%]' : 'border-red-100 opacity-50 grayscale-[50%]'}`}
                                                 style={app.status === 'Booked' ? { borderLeftColor: activeThemeColor, borderLeftWidth: '4px' } : {}}
@@ -455,12 +457,12 @@ const BarberPortal = () => {
                                                         </button>
                                                     </div>
                                                 )}
-                                            </motion.div>
+                                            </Motion.div>
                                         ))}
                                     </AnimatePresence>
                                 </div>
                             )}
-                        </motion.div>
+                        </Motion.div>
                     )}
                 </AnimatePresence>
             </main>

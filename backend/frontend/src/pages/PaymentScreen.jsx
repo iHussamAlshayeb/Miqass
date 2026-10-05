@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import API from '../services/api';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 
 const PaymentScreen = () => {
     const location = useLocation();
@@ -248,21 +248,21 @@ const PaymentScreen = () => {
     if (successMessage) {
         return (
             <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-arabic text-right">
-                <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-white p-10 rounded-[40px] shadow-xl max-w-lg text-center border border-slate-100">
+                <Motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-white p-10 rounded-[40px] shadow-xl max-w-lg text-center border border-slate-100">
                     <div className="text-7xl mb-6">🏦✅</div>
                     <h2 className="text-2xl font-black text-slate-800 mb-4">تم رفع الطلب بنجاح!</h2>
                     <p className="text-slate-500 font-bold mb-8 leading-relaxed">{successMessage}</p>
                     <button onClick={() => navigate('/login')} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl hover:bg-slate-700 transition-all shadow-lg shadow-slate-200">
                         العودة لصفحة الدخول
                     </button>
-                </motion.div>
+                </Motion.div>
             </div>
         );
     }
 
     return (
         <div className="min-h-screen bg-slate-50 flex items-center justify-center py-10 px-4 font-arabic text-right selection:bg-blue-200" dir="rtl">
-            <motion.div
+            <Motion.div
                 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
                 className="bg-white w-full max-w-[900px] rounded-[40px] shadow-2xl border border-slate-100 overflow-hidden flex flex-col lg:flex-row"
             >
@@ -387,29 +387,29 @@ const PaymentScreen = () => {
                             </div>
 
                             {error && (
-                                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-red-50 text-red-500 p-4 rounded-2xl mb-6 text-sm font-bold text-center border border-red-100">
+                                <Motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-red-50 text-red-500 p-4 rounded-2xl mb-6 text-sm font-bold text-center border border-red-100">
                                     {error}
-                                </motion.div>
+                                </Motion.div>
                             )}
 
                             <AnimatePresence mode="wait">
                                 {paymentMode === 'online' && (
-                                    <motion.div key="online" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+                                    <Motion.div key="online" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
                                         <div className={isVerifying ? 'hidden' : 'block'}>
                                             <div className="mysr-form" dir="ltr"></div>
                                         </div>
                                         {isVerifying && (
                                             <div className="text-center py-10">
-                                                <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }} className="text-4xl mb-4 inline-block">⏳</motion.div>
+                                                <Motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }} className="text-4xl mb-4 inline-block">⏳</Motion.div>
                                                 <h3 className="font-black text-slate-800 text-lg">جاري التحقق من الدفع...</h3>
                                                 <p className="text-slate-400 text-xs font-bold mt-2">الرجاء عدم إغلاق هذه الصفحة.</p>
                                             </div>
                                         )}
-                                    </motion.div>
+                                    </Motion.div>
                                 )}
 
                                 {paymentMode === 'transfer' && (
-                                    <motion.div key="transfer" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="space-y-6">
+                                    <Motion.div key="transfer" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="space-y-6">
                                         <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm relative">
                                             <h4 className="font-black text-slate-800 text-sm mb-4 flex items-center gap-2">
                                                 🏦 حسابنا البنكي (البنك الأهلي)
@@ -449,13 +449,13 @@ const PaymentScreen = () => {
                                                 {isSubmittingTransfer ? 'جاري إرسال الطلب...' : `تأكيد الإرسال ودفع ${currentPrice} ر.س`}
                                             </button>
                                         </form>
-                                    </motion.div>
+                                    </Motion.div>
                                 )}
                             </AnimatePresence>
                         </>
                     )}
                 </div>
-            </motion.div>
+            </Motion.div>
         </div>
     );
 };

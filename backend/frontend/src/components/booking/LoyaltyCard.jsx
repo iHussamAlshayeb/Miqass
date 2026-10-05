@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion } from 'framer-motion';
+import { motion as Motion } from 'framer-motion';
 
 const LoyaltyCard = ({ visits, primaryColor, requiredVisits }) => {
     const currentCycleVisits = visits % requiredVisits;
@@ -12,7 +12,7 @@ const LoyaltyCard = ({ visits, primaryColor, requiredVisits }) => {
         : (Math.max(0, currentCycleVisits - 1) / (requiredVisits - 1)) * 100;
 
     return (
-        <motion.div
+        <Motion.div
             initial={{ opacity: 0, y: -10, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, height: 0, marginBottom: 0 }}
@@ -39,7 +39,7 @@ const LoyaltyCard = ({ visits, primaryColor, requiredVisits }) => {
 
             {isEligibleForFree ? (
                 /* 💡 حالة الفوز بالهدية (تصميم احترافي وجذاب) */
-                <motion.div
+                <Motion.div
                     initial={{ scale: 0.9, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     className="bg-gradient-to-l from-emerald-500 to-emerald-400 text-white p-4 rounded-2xl text-center shadow-[0_8px_20px_rgba(16,185,129,0.25)] relative overflow-hidden"
@@ -51,7 +51,7 @@ const LoyaltyCard = ({ visits, primaryColor, requiredVisits }) => {
                     <p className="text-xs font-bold text-emerald-50 relative z-10 leading-relaxed">
                         حلاقتك اليوم علينا (مجاناً) تقديراً لولائك وثقتك بنا!
                     </p>
-                </motion.div>
+                </Motion.div>
             ) : (
                 /* 💡 حالة التقدم العادية */
                 <div className="relative z-10">
@@ -61,13 +61,13 @@ const LoyaltyCard = ({ visits, primaryColor, requiredVisits }) => {
                         <div className="absolute top-1/2 right-4 left-4 h-1.5 bg-slate-100 -translate-y-1/2 rounded-full z-0"></div>
 
                         {/* 2. مسار التقدم الملون (الذي يمتلئ) */}
-                        <motion.div
+                        <Motion.div
                             initial={{ width: 0 }}
                             animate={{ width: `calc(${progressPercentage}% - 2rem)` }} // خصم مساحة الأطراف لضبط المحاذاة
                             transition={{ duration: 1, ease: "easeOut" }}
                             className="absolute top-1/2 right-4 h-1.5 -translate-y-1/2 rounded-full z-0 transition-colors duration-500 shadow-sm"
                             style={{ backgroundColor: primaryColor }}
-                        ></motion.div>
+                        ></Motion.div>
 
                         {/* 3. خطوات الولاء (الدوائر) */}
                         {steps.map((step, index) => {
@@ -107,7 +107,7 @@ const LoyaltyCard = ({ visits, primaryColor, requiredVisits }) => {
                     </p>
                 </div>
             )}
-        </motion.div>
+        </Motion.div>
     );
 };
 

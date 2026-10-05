@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NODE_ENV: test
+      DISABLE_CRON_JOBS: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            backend/frontend/package-lock.json
+
+      - name: Frontend - install
+        working-directory: backend/frontend
+        run: npm ci
+
+      - name: Frontend - lint
+        working-directory: backend/frontend
+        run: npm run lint
+
+      - name: Frontend - build
+        working-directory: backend/frontend
+        run: npm run build
+
+      - name: Backend - install
+        working-directory: backend
+        run: npm ci
+
+      - name: Backend - tests
+        working-directory: backend
+        run: npm test
+
+      - name: Security audit (production dependencies)
+        run: |
+          npm audit --omit=dev --audit-level=high --prefix backend
+          npm audit --omit=dev --audit-level=high --prefix backend/frontend

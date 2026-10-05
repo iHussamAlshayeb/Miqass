@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import API from '../services/api';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 
 // 💡 استيراد الدوال المساعدة للوقت لتوحيد النظام
 import { formatTime12Hour, getTimePeriod } from '../utils/helpers';
@@ -23,7 +23,7 @@ const LiveQueueScreen = () => {
             try {
                 const res = await API.get(`/appointments/live-queue/${slug}`);
                 setData(res.data);
-            } catch (error) {
+            } catch {
                 console.error("Error fetching live queue");
             }
         };
@@ -104,7 +104,7 @@ const LiveQueueScreen = () => {
                     const chairColor = index % 2 === 0 ? brandPrimary : brandSecondary;
 
                     return (
-                        <motion.div
+                        <Motion.div
                             key={barber}
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
@@ -138,16 +138,16 @@ const LiveQueueScreen = () => {
                             <div className="p-4 md:p-6 flex-1 flex flex-col gap-3 md:gap-4 overflow-y-auto max-h-[50vh] md:max-h-[65vh] custom-scrollbar relative z-10">
                                 <AnimatePresence mode="popLayout">
                                     {barberQueue.length === 0 ? (
-                                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col items-center justify-center text-slate-600 mt-6 md:mt-10">
+                                        <Motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col items-center justify-center text-slate-600 mt-6 md:mt-10">
                                             <span className="text-5xl md:text-7xl mb-4 opacity-50 drop-shadow-md">☕</span>
                                             <p className="text-lg md:text-2xl font-black text-slate-500">الكرسي متاح الآن</p>
-                                        </motion.div>
+                                        </Motion.div>
                                     ) : (
                                         barberQueue.map((app, i) => {
                                             const isNext = i === 0;
 
                                             return (
-                                                <motion.div
+                                                <Motion.div
                                                     layout
                                                     initial={{ opacity: 0, scale: 0.9 }}
                                                     animate={{ opacity: 1, scale: 1 }}
@@ -172,22 +172,22 @@ const LiveQueueScreen = () => {
                                                                 {app.childName}
                                                             </p>
                                                             {isNext && (
-                                                                <motion.div
+                                                                <Motion.div
                                                                     initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ repeat: Infinity, duration: 1.5, direction: "reverse" }}
                                                                     className="text-white/90 font-black text-xs md:text-base mt-1 md:mt-1.5 flex items-center gap-1.5">
                                                                     <span className="w-2 h-2 bg-white rounded-full"></span>
                                                                     تفضل بالجلوس
-                                                                </motion.div>
+                                                                </Motion.div>
                                                             )}
                                                         </div>
                                                     </div>
-                                                </motion.div>
+                                                </Motion.div>
                                             )
                                         })
                                     )}
                                 </AnimatePresence>
                             </div>
-                        </motion.div>
+                        </Motion.div>
                     );
                 })}
             </div>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion } from 'framer-motion';
+import { motion as Motion } from 'framer-motion';
 
 const MaintenanceScreen = () => {
     return (
@@ -8,20 +8,20 @@ const MaintenanceScreen = () => {
             <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full blur-[100px] -mr-20 -mt-20 pointer-events-none"></div>
             <div className="absolute bottom-0 left-0 w-96 h-96 bg-purple-500/10 rounded-full blur-[100px] -ml-20 -mb-20 pointer-events-none"></div>
 
-            <motion.div
+            <Motion.div
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, ease: "easeOut" }}
                 className="relative z-10 max-w-lg w-full bg-slate-800/50 backdrop-blur-xl p-10 rounded-[40px] border border-slate-700/50 shadow-2xl flex flex-col items-center"
             >
                 {/* ⚙️ أيقونة الترس المتحركة */}
-                <motion.div
+                <Motion.div
                     animate={{ rotate: 360 }}
                     transition={{ repeat: Infinity, duration: 10, ease: "linear" }}
                     className="text-8xl block mb-8 opacity-90"
                 >
                     ⚙️
-                </motion.div>
+                </Motion.div>
 
                 <h1 className="text-3xl md:text-4xl font-black text-white mb-4 tracking-wide">
                     النظام تحت الصيانة 🛠️
@@ -39,7 +39,7 @@ const MaintenanceScreen = () => {
                     <span>العودة للنظام</span>
                     <span className="text-xl">🔄</span>
                 </button>
-            </motion.div>
+            </Motion.div>
 
             {/* 🏷️ حقوق النظام */}
             <div className="absolute bottom-8 text-slate-500 text-xs font-bold tracking-widest uppercase">

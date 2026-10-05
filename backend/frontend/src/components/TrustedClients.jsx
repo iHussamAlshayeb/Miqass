@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion as Motion } from 'framer-motion';
 import { FaExternalLinkAlt } from 'react-icons/fa';
 import API from '../services/api'; // تأكد أن مسار الـ API صحيح حسب مشروعك
 
@@ -36,7 +36,7 @@ const TrustedClients = () => {
             </div>
 
             <div className="max-w-7xl mx-auto px-6 relative z-10">
-                <motion.div
+                <Motion.div
                     initial={{ opacity: 0, y: 20 }}
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
@@ -49,12 +49,12 @@ const TrustedClients = () => {
                     <p className="text-slate-500 font-bold max-w-2xl mx-auto">
                         نفخر بثقة نخبة من أكثر الصالونات نشاطاً التي تعتمد على نظام "مِقَص" لإدارة مئات الحجوزات شهرياً.
                     </p>
-                </motion.div>
+                </Motion.div>
 
                 {/* شبكة عرض العملاء (تعرض 4 أو 8 حسب العدد الراجع من الباك إند) */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8">
                     {clients.map((client, index) => (
-                        <motion.a
+                        <Motion.a
                             href={`/${client.slug}`}
                             target="_blank"
                             rel="noopener noreferrer"
@@ -82,7 +82,7 @@ const TrustedClients = () => {
                             <p className="text-xs text-blue-500 font-bold opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                                 احجز موعدك &larr;
                             </p>
-                        </motion.a>
+                        </Motion.a>
                     ))}
                 </div>
             </div>
