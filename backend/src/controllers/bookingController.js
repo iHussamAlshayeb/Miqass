@@ -15,6 +15,7 @@ const {
 } = require("../utils/whatsapp");
 const { sendAdminNotification } = require("../utils/onesignal");
 const { isBarberOnLeave } = require("../utils/barberLeave");
+const { publicLogoUrl } = require("../utils/logoImage");
 const {
   createBookingPaymentSession,
   getEnabledProvider,
@@ -1051,7 +1052,7 @@ const getLiveQueue = async (req, res) => {
   try {
     const slug = String(req.params.slug || "");
     const tenant = await Tenant.findOne({ slug, deletedAt: null })
-      .select("_id salonName branding")
+      .select("_id salonName slug branding")
       .lean();
 
     if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
@@ -1082,7 +1083,11 @@ const getLiveQueue = async (req, res) => {
 
     res.status(200).json({
       salonName: tenant.salonName,
-      branding: tenant.branding,
+      // شاشة الطابور تتحدث كل 15 ثانية: نرسل رابط الشعار بدل الصورة نفسها
+      branding: {
+        ...(tenant.branding || {}),
+        logoUrl: publicLogoUrl(tenant.slug, tenant.branding?.logoUrl),
+      },
       barbers: barbers.map((b) => b.name),
       appointments: formattedAppointments,
     });

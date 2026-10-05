@@ -15,6 +15,7 @@ const toSafeWhatsappSettings = (settings = {}) => ({
   hasApiKey: Boolean(settings?.apiKey),
 });
 const { hashPin, isValidPin, normalizePinInput } = require("../utils/barberPin");
+const { compressLogoDataUri, isDataUriLogo, publicLogoUrl } = require("../utils/logoImage");
 const { sendReminderMessage } = require("../utils/whatsapp");
 const { DEFAULT_TEMPLATES, getTemplates, validateTemplates } = require("../utils/whatsappTemplates");
 const {
@@ -102,7 +103,11 @@ const getBarberSettings = async (req, res) => {
       whatsappTemplateDefaults: DEFAULT_TEMPLATES,
       paymentSettings: safePaymentSettings,
       ownerPhone: tenant.ownerPhone || "",
-      branding: tenant.branding || {},
+      // لوحة التحكم تعرض الشعار عبر رابطه بدل تحميل الصورة داخل الرد
+      branding: {
+        ...(tenant.branding || {}),
+        logoUrl: publicLogoUrl(tenant.slug, tenant.branding?.logoUrl),
+      },
       tenantId: tenant._id,
       bio: tenant.bio || "",
       socialLinks: tenant.socialLinks || {
@@ -171,8 +176,13 @@ const updateBarberSettings = async (req, res) => {
 
     if (socialLinks) tenant.socialLinks = socialLinks;
     if (!tenant.branding) tenant.branding = {};
-    tenant.branding.logoUrl =
-      branding?.logoUrl || logoUrl || tenant.branding.logoUrl;
+    const requestedLogo = branding?.logoUrl || logoUrl;
+    // "/logo/<slug>?v=..." هو الرابط الذي أرسلناه للوحة؛ يعني أن الشعار لم يتغير
+    if (requestedLogo && !String(requestedLogo).startsWith("/logo/")) {
+      tenant.branding.logoUrl = isDataUriLogo(requestedLogo)
+        ? await compressLogoDataUri(requestedLogo)
+        : requestedLogo;
+    }
     tenant.branding.primaryColor =
       branding?.primaryColor || tenant.branding.primaryColor || "#3b82f6";
     tenant.branding.secondaryColor =
@@ -352,6 +362,9 @@ const updateBarberSettings = async (req, res) => {
 
     res.status(200).json({ message: "تم التحديث بنجاح" });
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
     console.error("Update Settings Error:", error);
     res.status(500).json({ message: "حدث خطأ داخلي في السيرفر أثناء الحفظ" });
   }

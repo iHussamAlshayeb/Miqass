@@ -1,4 +1,5 @@
 const Tenant = require("../models/Tenant");
+const { publicLogoUrl } = require("../utils/logoImage");
 const Appointment = require("../models/Appointment");
 const Customer = require("../models/Customer");
 const SystemSettings = require("../models/SystemSettings");
@@ -50,7 +51,7 @@ const getTopClients = async (req, res) => {
       name: client.salonName,
       slug: client.slug,
       logo:
-        client.branding?.logoUrl ||
+        publicLogoUrl(client.slug, client.branding?.logoUrl) ||
         `https://ui-avatars.com/api/?name=${encodeURIComponent(client.salonName)}&background=3b82f6&color=fff&size=128`,
     }));
 

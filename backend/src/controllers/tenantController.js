@@ -3,6 +3,7 @@ const Barber = require("../models/Barber");
 const Service = require("../models/Service");
 const Review = require("../models/Review");
 const { normalizeBarberLeaves } = require("../utils/barberLeave");
+const { publicLogoUrl } = require("../utils/logoImage");
 
 // قائمة سماح: هذا المسار عام (صفحة الحجز والكشك وبوابة الحلاق)،
 // فلا يُرجع إلا ما تحتاجه هذه الصفحات. أي حقل جديد في Tenant يبقى مخفياً افتراضياً.
@@ -45,6 +46,9 @@ const getTenantBySlug = async (req, res) => {
         .status(404)
         .json({ message: "الصالون غير موجود أو أن اشتراكه منتهي." });
 
+    if (tenant.branding) {
+      tenant.branding.logoUrl = publicLogoUrl(tenant.slug, tenant.branding.logoUrl);
+    }
     tenant.whatsappSettings = {
       isEnabled: Boolean(tenant.whatsappSettings?.isEnabled),
     };

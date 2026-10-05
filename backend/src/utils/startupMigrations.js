@@ -18,6 +18,8 @@ const SECRET_PATHS = [
   "whatsappSettings.apiKey",
 ];
 
+const { compressLogoDataUri, isDataUriLogo } = require("./logoImage");
+
 const getPath = (doc, path) => path.split(".").reduce((value, key) => value?.[key], doc);
 
 /**
@@ -145,11 +147,43 @@ const upgradeStoredSecrets = async () => {
   }
 };
 
+/**
+ * 5) ضغط شعارات base64 الكبيرة (512×512 WebP). عند أي فشل يبقى الشعار كما هو.
+ */
+const LOGO_COMPRESS_THRESHOLD = 40 * 1024;
+const compressStoredLogos = async () => {
+  const cursor = Tenant.collection.find(
+    { "branding.logoUrl": { $regex: "^data:image/" } },
+    { projection: { slug: 1, "branding.logoUrl": 1 } },
+  );
+  let saved = 0;
+  for await (const tenant of cursor) {
+    const logo = tenant.branding?.logoUrl;
+    if (!isDataUriLogo(logo) || logo.length < LOGO_COMPRESS_THRESHOLD) continue;
+    try {
+      const compressed = await compressLogoDataUri(logo);
+      if (compressed.length >= logo.length) continue;
+      const result = await Tenant.collection.updateOne(
+        { _id: tenant._id, "branding.logoUrl": logo },
+        { $set: { "branding.logoUrl": compressed } },
+      );
+      if (result.modifiedCount) {
+        saved += 1;
+        console.log(`🖼️ ضغط شعار ${tenant.slug}: ${Math.round(logo.length / 1024)}KB → ${Math.round(compressed.length / 1024)}KB`);
+      }
+    } catch (error) {
+      console.warn(`⚠️ تعذر ضغط شعار ${tenant.slug}: ${error.message}`);
+    }
+  }
+  return saved;
+};
+
 const runStartupMigrations = async () => {
   for (const migration of [
     migratePaymentAndTaxSettings,
     hashLegacyBarberPins,
     upgradeStoredSecrets,
+    compressStoredLogos,
   ]) {
     try {
       await migration();
@@ -159,4 +193,4 @@ const runStartupMigrations = async () => {
   }
 };
 
-module.exports = { runStartupMigrations, upgradeStoredSecrets };
+module.exports = { runStartupMigrations, upgradeStoredSecrets, compressStoredLogos };

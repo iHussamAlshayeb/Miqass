@@ -9,6 +9,7 @@ const checkMaintenanceMode = require("./middlewares/maintenanceMiddleware");
 const { renderSalonSocialMeta } = require("./utils/salonSocialMeta");
 const { renderSalonShareImage } = require("./utils/salonShareImage");
 const { contentSecurityPolicy } = require("./config/csp");
+const { parseLogoDataUri } = require("./utils/logoImage");
 
 const app = express();
 const frontendDistPath = path.join(__dirname, "..", "frontend", "dist");
@@ -78,7 +79,7 @@ app.get("/api/health", (req, res) => {
 // مسار جلب الشعار (يعمل كـ API Endpoint للواجهة)
 app.get("/logo/:slug", async (req, res) => {
   try {
-    const { slug } = req.params;
+    const slug = String(req.params.slug || "").toLowerCase();
     const tenant = await Tenant.findOne({ slug })
       .select("branding.logoUrl")
       .lean();
@@ -90,18 +91,18 @@ app.get("/logo/:slug", async (req, res) => {
     const logoData = tenant.branding.logoUrl;
 
     if (logoData.startsWith("data:image")) {
-      const matches = logoData.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
-      if (matches && matches.length === 3) {
-        const contentType = matches[1];
-        const base64Data = matches[2];
-        const buffer = Buffer.from(base64Data, "base64");
+      // صيغ نقطية فقط (لا SVG) حتى لا يُخدم محتوى قابل للتنفيذ من نطاقنا
+      const parsed = parseLogoDataUri(logoData);
+      if (!parsed) return res.redirect("https://www.miqass.app/default-logo.png");
 
-        res.writeHead(200, {
-          "Content-Type": contentType,
-          "Cache-Control": "public, max-age=86400", // المتصفح سيكيش الصورة تلقائياً
-        });
-        return res.end(buffer);
-      }
+      res.writeHead(200, {
+        "Content-Type": parsed.contentType,
+        // الرابط المرفق برقم الإصدار (?v=) يتغير مع الشعار، فيمكن تخزينه سنة كاملة
+        "Cache-Control": req.query.v
+          ? "public, max-age=31536000, immutable"
+          : "public, max-age=86400",
+      });
+      return res.end(parsed.buffer);
     }
 
     res.redirect(

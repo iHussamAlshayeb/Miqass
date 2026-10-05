@@ -26,6 +26,10 @@ export default defineConfig({
         target: "http://localhost:5000",
         changeOrigin: true,
       },
+      "/logo": {
+        target: "http://localhost:5000",
+        changeOrigin: true,
+      },
     },
   },
 });
