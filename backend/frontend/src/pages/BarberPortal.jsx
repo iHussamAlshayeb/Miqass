@@ -6,6 +6,8 @@ import "react-datepicker/dist/react-datepicker.css";
 import API from '../services/api';
 import { formatTime12Hour, getTimePeriod } from '../utils/helpers';
 import { FaPhone } from "react-icons/fa";
+import BarberChairIcon from '../components/BarberChairIcon';
+import { getBarberColor, getSelectedBarberColor } from '../utils/barberTheme';
 // 💡 دالة مساعدة للحصول على التاريخ بصيغة YYYY-MM-DD
 const getLocalYYYYMMDD = (dateObj = new Date()) => {
     const year = dateObj.getFullYear();
@@ -212,8 +214,7 @@ const BarberPortal = () => {
     // 💡 الألوان والتلوين الديناميكي
     const brandPrimary = tenantData.branding?.primaryColor || '#2563eb';
     const brandSecondary = tenantData.branding?.secondaryColor || '#64748b';
-    const activeBarberIndex = Math.max(0, barbersList.findIndex(b => b.name === barberName) || 0);
-    const activeThemeColor = activeBarberIndex % 2 === 0 ? brandPrimary : brandSecondary;
+    const activeThemeColor = getSelectedBarberColor(barbersList, barberName, brandPrimary, brandSecondary);
 
     const todayStr = getLocalYYYYMMDD();
     const yesterdayStr = getLocalYYYYMMDD(new Date(new Date().setDate(new Date().getDate() - 1)));
@@ -266,7 +267,7 @@ const BarberPortal = () => {
                                         ) : (
                                             barbersList.map((b, index) => {
                                                 const isSelected = barberName === b.name;
-                                                const chairColor = index % 2 === 0 ? brandPrimary : brandSecondary;
+                                                const chairColor = getBarberColor(b, index, brandPrimary, brandSecondary);
 
                                                 return (
                                                     <button
@@ -282,14 +283,9 @@ const BarberPortal = () => {
                                                             ${isSelected ? 'border-transparent shadow-md scale-105' : 'border-slate-100 bg-white hover:bg-slate-50 hover:border-slate-200'}`}
                                                             style={isSelected ? { backgroundColor: chairColor } : {}}>
 
-                                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+                                                            <BarberChairIcon
                                                                 className={`w-8 h-8 transition-all duration-300 ${isSelected ? 'text-white' : 'opacity-60 group-hover:opacity-100'}`}
-                                                                style={!isSelected ? { color: chairColor } : {}}>
-                                                                <path d="M8 21h8" /><path d="M12 21v-3" /><path d="M9 18h6v-2H9v2z" />
-                                                                <path d="M7 16h10v-5a3 3 0 0 0-3-3h-4a3 3 0 0 0-3 3v5z" />
-                                                                <path d="M4 12h3" /><path d="M17 12h3" /><path d="M12 8V5" />
-                                                                <path d="M10 5h4v-1a1 1 0 0 0-1-1h-2a1 1 0 0 0-1 1v1z" />
-                                                            </svg>
+                                                                style={!isSelected ? { color: chairColor } : {}} />
 
                                                             {isSelected && (
                                                                 <Motion.div layoutId="barberLoginCheck" className="absolute -bottom-1.5 -left-1.5 w-6 h-6 rounded-full bg-white shadow-md flex items-center justify-center text-[10px] font-black border-2 border-white" style={{ color: chairColor }}>✓</Motion.div>

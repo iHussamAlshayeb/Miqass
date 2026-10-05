@@ -11,6 +11,8 @@ import BookingSkeleton from '../components/booking/BookingSkeleton';
 import BookingModal from '../components/booking/BookingModal';
 import CustomerAppointments from '../components/booking/CustomerAppointments';
 import { CalendarDays } from 'lucide-react';
+import BarberChairIcon from '../components/BarberChairIcon';
+import { getBarberColor, getIconBackground, getSelectedBarberColor } from '../utils/barberTheme';
 
 const getNextTimeSlot = (time, durationMinutes) => {
     if (!time) return null;
@@ -287,8 +289,8 @@ const BookingScreen = () => {
     const brandSecondary = tenantData?.branding?.secondaryColor || '#64748b';
 
     // 💡 منطق التلوين الديناميكي (Dynamic Theming)
-    const activeBarberIndex = Math.max(0, availableBarbers.findIndex(b => b.name === selectedChair));
-    const activeThemeColor = activeBarberIndex % 2 === 0 ? brandPrimary : brandSecondary;
+    // الصفحة تأخذ لون الحلاق المختار (لونه المخصص من الإعدادات إن وُجد)
+    const activeThemeColor = getSelectedBarberColor(availableBarbers, selectedChair, brandPrimary, brandSecondary);
 
     if (isTenantLoading) return <BookingSkeleton />;
 
@@ -408,11 +410,8 @@ const BookingScreen = () => {
                                 const isSelected = selectedChair === bName;
                                 const count = availableBarbers.length;
 
-                                const chairColor = barberObj.iconColor || (index % 2 === 0 ? brandPrimary : brandSecondary);
-                                const red = parseInt(chairColor.slice(1, 3), 16);
-                                const green = parseInt(chairColor.slice(3, 5), 16);
-                                const blue = parseInt(chairColor.slice(5, 7), 16);
-                                const iconBackground = (red * 299 + green * 587 + blue * 114) / 1000 > 180 ? '#0f172a' : '#ffffff';
+                                const chairColor = getBarberColor(barberObj, index, brandPrimary, brandSecondary);
+                                const iconBackground = getIconBackground(chairColor);
 
                                 let avatarClass = "w-16 h-16 text-2xl rounded-2xl";
                                 let textClass = "text-xs";
@@ -441,19 +440,10 @@ const BookingScreen = () => {
                                             ${isSelected ? 'shadow-[0_8px_20px_rgba(0,0,0,0.12)] scale-105' : 'border-slate-100 hover:border-slate-200 hover:shadow-sm'}`}
                                             style={{ backgroundColor: iconBackground, ...(isSelected ? { borderColor: chairColor } : {}) }}>
 
-                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+                                            <BarberChairIcon
                                                 className={`transition-all duration-300 ${isSelected ? 'scale-110' : 'opacity-80 scale-100 group-hover:opacity-100 group-hover:scale-105'}`}
                                                 style={{ color: chairColor }}
-                                                width="1em" height="1em">
-                                                <path d="M8 21h8" />
-                                                <path d="M12 21v-3" />
-                                                <path d="M9 18h6v-2H9v2z" />
-                                                <path d="M7 16h10v-5a3 3 0 0 0-3-3h-4a3 3 0 0 0-3 3v5z" />
-                                                <path d="M4 12h3" />
-                                                <path d="M17 12h3" />
-                                                <path d="M12 8V5" />
-                                                <path d="M10 5h4v-1a1 1 0 0 0-1-1h-2a1 1 0 0 0-1 1v1z" />
-                                            </svg>
+                                                width="1em" height="1em" />
 
                                             {isSelected && (
                                                 <Motion.div layoutId="barberCheck"

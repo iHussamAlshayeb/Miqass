@@ -5,6 +5,8 @@ import API from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getLocalDate, formatTime12Hour, getTimePeriod, isBarberOnLeaveOnDate } from '../utils/helpers';
 import { FaPhone } from "react-icons/fa";
+import BarberChairIcon from '../components/BarberChairIcon';
+import { getBarberColor, getSelectedBarberColor } from '../utils/barberTheme';
 
 // ==========================================
 // 💡 مكون بطاقة الولاء (تم ترقيته بالكامل)
@@ -271,9 +273,11 @@ const KioskScreen = () => {
     // 💡 الألوان والتلوين الديناميكي (Dynamic Theming)
     const brandPrimary = tenantData?.branding?.primaryColor || '#3b82f6';
     const brandSecondary = tenantData?.branding?.secondaryColor || '#64748b';
-    const activeBarberIndex = Math.max(0, tenantData?.barbers?.findIndex(b => (b.name || b) === selectedChair) || 0);
+
     // نستخدم اللون الديناميكي فقط في الخطوة 2 و 3 بعد تحديد الحلاق
-    const activeThemeColor = step >= 2 && selectedChair ? (activeBarberIndex % 2 === 0 ? brandPrimary : brandSecondary) : brandPrimary;
+    const activeThemeColor = step >= 2 && selectedChair
+        ? getSelectedBarberColor(tenantData?.barbers || [], selectedChair, brandPrimary, brandSecondary)
+        : brandPrimary;
 
     return (
         <div className="min-h-screen bg-slate-50 font-arabic text-right flex flex-col justify-center items-center p-4 md:p-6 selection:bg-slate-200" dir="rtl">
@@ -396,7 +400,7 @@ const KioskScreen = () => {
                                             const bName = typeof barberObj === 'string' ? barberObj : barberObj.name;
                                             const isSelected = selectedChair === bName;
                                             const count = tenantData.barbers.length;
-                                            const chairColor = index % 2 === 0 ? brandPrimary : brandSecondary;
+                                            const chairColor = getBarberColor(barberObj, index, brandPrimary, brandSecondary);
 
                                             let avatarClass = "w-20 h-20 md:w-24 md:h-24 rounded-2xl md:rounded-3xl";
                                             let textClass = "text-sm md:text-base";
@@ -419,15 +423,10 @@ const KioskScreen = () => {
                                                         ${isSelected ? 'border-transparent shadow-[0_10px_30px_rgba(0,0,0,0.15)] scale-105' : 'border-slate-100 bg-slate-50 hover:bg-slate-100 hover:border-slate-200'}`}
                                                         style={isSelected ? { backgroundColor: chairColor } : {}}>
 
-                                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+                                                        <BarberChairIcon
                                                             className={`transition-all duration-300 ${count === 1 ? 'w-16 h-16 md:w-20 md:h-20' : count === 2 ? 'w-12 h-12 md:w-14 md:h-14' : 'w-10 h-10 md:w-12 md:h-12'} 
                                                             ${isSelected ? 'text-white scale-110' : 'opacity-50 scale-100 group-hover:opacity-100 group-hover:scale-105'}`}
-                                                            style={!isSelected ? { color: chairColor } : {}}>
-                                                            <path d="M8 21h8" /><path d="M12 21v-3" /><path d="M9 18h6v-2H9v2z" />
-                                                            <path d="M7 16h10v-5a3 3 0 0 0-3-3h-4a3 3 0 0 0-3 3v5z" />
-                                                            <path d="M4 12h3" /><path d="M17 12h3" /><path d="M12 8V5" />
-                                                            <path d="M10 5h4v-1a1 1 0 0 0-1-1h-2a1 1 0 0 0-1 1v1z" />
-                                                        </svg>
+                                                            style={!isSelected ? { color: chairColor } : {}} />
 
                                                         {isSelected && (
                                                             <motion.div layoutId="barberCheckKiosk" className={`absolute -bottom-2 -left-2 ${checkSize} rounded-full bg-white shadow-lg flex items-center justify-center font-black border-white`} style={{ color: chairColor }}>✓</motion.div>

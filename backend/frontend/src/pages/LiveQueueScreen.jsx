@@ -5,6 +5,8 @@ import { motion as Motion, AnimatePresence } from 'framer-motion';
 
 // 💡 استيراد الدوال المساعدة للوقت لتوحيد النظام
 import { formatTime12Hour, getTimePeriod } from '../utils/helpers';
+import BarberChairIcon from '../components/BarberChairIcon';
+import { getBarberColor } from '../utils/barberTheme';
 
 const LiveQueueScreen = () => {
     const { slug } = useParams();
@@ -100,8 +102,8 @@ const LiveQueueScreen = () => {
                 {barbers.map((barber, index) => {
                     const barberQueue = appointments.filter(app => app.chair === barber);
 
-                    // 💡 التلوين الديناميكي (Primary للزوجي، Secondary للفردي)
-                    const chairColor = index % 2 === 0 ? brandPrimary : brandSecondary;
+                    // لون الحلاق المخصص من الإعدادات، وإلا التناوب بين لوني الهوية
+                    const chairColor = getBarberColor({ iconColor: data.barberColors?.[barber] }, index, brandPrimary, brandSecondary);
 
                     return (
                         <Motion.div
@@ -120,13 +122,8 @@ const LiveQueueScreen = () => {
                             <div className="bg-slate-900/50 p-5 md:p-6 border-b border-slate-800/80 flex flex-col sm:flex-row justify-between items-center gap-3 text-center sm:text-right relative z-10">
                                 <h2 className="text-xl md:text-2xl lg:text-3xl font-black text-white flex items-center gap-3">
                                     {/* 💡 أيقونة الكرسي الاحترافية ملونة بلون الثيم */}
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
-                                        className="w-8 h-8 md:w-10 md:h-10 drop-shadow-md" style={{ color: chairColor }}>
-                                        <path d="M8 21h8" /><path d="M12 21v-3" /><path d="M9 18h6v-2H9v2z" />
-                                        <path d="M7 16h10v-5a3 3 0 0 0-3-3h-4a3 3 0 0 0-3 3v5z" />
-                                        <path d="M4 12h3" /><path d="M17 12h3" /><path d="M12 8V5" />
-                                        <path d="M10 5h4v-1a1 1 0 0 0-1-1h-2a1 1 0 0 0-1 1v1z" />
-                                    </svg>
+                                    <BarberChairIcon
+                                        className="w-8 h-8 md:w-10 md:h-10 drop-shadow-md" style={{ color: chairColor }} />
                                     {barber}
                                 </h2>
                                 <span className="font-black px-4 py-2 rounded-xl text-sm md:text-base border shadow-sm"

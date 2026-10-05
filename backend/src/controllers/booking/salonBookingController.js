@@ -92,7 +92,7 @@ const getLiveQueue = async (req, res) => {
         .sort({ timeSlot: 1 })
         .lean(),
       Barber.find({ tenantId: tenant._id, isActive: true })
-        .select("name")
+        .select("name iconColor")
         .lean(),
     ]);
 
@@ -112,6 +112,10 @@ const getLiveQueue = async (req, res) => {
         logoUrl: publicLogoUrl(tenant.slug, tenant.branding?.logoUrl),
       },
       barbers: barbers.map((b) => b.name),
+      // ألوان الحلاقين المخصصة لتلوين أعمدة الشاشة
+      barberColors: Object.fromEntries(
+        barbers.filter((b) => b.iconColor).map((b) => [b.name, b.iconColor]),
+      ),
       appointments: formattedAppointments,
     });
   } catch (error) {

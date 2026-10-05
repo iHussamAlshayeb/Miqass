@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { formatTime12Hour, getTimePeriod } from '../../utils/helpers';
 import LoyaltyCard from './LoyaltyCard';
+import { getSelectedBarberColor } from '../../utils/barberTheme';
 
 const BookingModal = ({
     isOpen,
@@ -31,8 +32,7 @@ const BookingModal = ({
     // 💡 منطق التلوين الديناميكي (يتطابق مع الشاشة الرئيسية)
     const brandPrimary = tenantData?.branding?.primaryColor || '#3b82f6';
     const brandSecondary = tenantData?.branding?.secondaryColor || '#64748b';
-    const activeBarberIndex = Math.max(0, tenantData?.barbers?.findIndex(b => b.name === selectedChair) || 0);
-    const activeThemeColor = activeBarberIndex % 2 === 0 ? brandPrimary : brandSecondary;
+    const activeThemeColor = getSelectedBarberColor(tenantData?.barbers || [], selectedChair, brandPrimary, brandSecondary);
 
     const handleClose = () => {
         setQuickSelectError('');
