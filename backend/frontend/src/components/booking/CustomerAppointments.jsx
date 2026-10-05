@@ -10,8 +10,8 @@ const statusLabels = {
     Cancelled: 'ملغي',
 };
 
-const CustomerAppointments = ({ tenant, onClose }) => {
-    const [phone, setPhone] = useState('');
+const CustomerAppointments = ({ tenant, onClose, initialPhone = '', onVerified }) => {
+    const [phone, setPhone] = useState(initialPhone);
     const [code, setCode] = useState('');
     const [stage, setStage] = useState('phone');
     const [token, setToken] = useState('');
@@ -92,6 +92,7 @@ const CustomerAppointments = ({ tenant, onClose }) => {
             });
             await loadAppointments(response.data.token);
             setToken(response.data.token);
+            onVerified?.({ token: response.data.token, phone });
             setStage('appointments');
             setCode('');
             setNotice('');

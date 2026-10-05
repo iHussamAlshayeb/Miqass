@@ -14,6 +14,7 @@ const {
   sendCustomerAccessCode,
   verifyCustomerAccessCode,
   getCustomerAppointments,
+  getCustomerProfile,
   cancelCustomerAppointment,
   rescheduleCustomerAppointment,
 } = require("../controllers/bookingController");
@@ -88,6 +89,14 @@ const customerAccessLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+const loyaltyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "محاولات كثيرة، حاول بعد قليل." },
+});
+
 const customerActionLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 12,
@@ -100,9 +109,10 @@ router.post("/book", bookingLimiter, createAppointment);
 router.post("/customer/send-code", customerAccessLimiter, sendCustomerAccessCode);
 router.post("/customer/verify-code", customerAccessLimiter, verifyCustomerAccessCode);
 router.get("/customer/appointments", customerActionLimiter, getCustomerAppointments);
+router.get("/customer/profile", customerActionLimiter, getCustomerProfile);
 router.post("/customer/appointments/:appointmentId/cancel", customerActionLimiter, cancelCustomerAppointment);
 router.post("/customer/appointments/:appointmentId/reschedule", customerActionLimiter, rescheduleCustomerAppointment);
-router.get("/loyalty/:tenantId/:phone", getCustomerLoyalty);
+router.get("/loyalty/:tenantId/:phone", loyaltyLimiter, getCustomerLoyalty);
 
 router.get("/live-queue/:slug", queueLimiter, getLiveQueue);
 router.post("/barber-portal/queue", barberLimiter, getBarberQueue);

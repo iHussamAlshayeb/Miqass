@@ -428,14 +428,17 @@ const updateWhatsappSettings = async (req, res) => {
 const getCustomerLoyalty = async (req, res) => {
   try {
     const { tenantId, phone } = req.params;
+    if (!mongoose.isValidObjectId(tenantId) || !/^05\d{8}$/.test(phone || "")) {
+      return res.status(400).json({ message: "بيانات غير صالحة" });
+    }
+
+    // مسار عام: يرجع عدد الزيارات فقط. أسماء الأطفال لا تُرجع إلا بعد
+    // التحقق برمز الجوال عبر /customer/profile
     const customer = await Customer.findOne({ tenantId, phone })
-      .select("totalVisits children")
+      .select("totalVisits")
       .lean();
 
-    res.status(200).json({
-      visits: customer ? customer.totalVisits : 0,
-      children: customer ? customer.children : [],
-    });
+    res.status(200).json({ visits: customer ? customer.totalVisits : 0 });
   } catch (error) {
     res.status(500).json({ message: "حدث خطأ أثناء جلب بيانات الولاء" });
   }

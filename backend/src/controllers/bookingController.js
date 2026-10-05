@@ -282,6 +282,27 @@ const getCustomerAppointments = async (req, res) => {
   }
 };
 
+// بيانات العميل المحفوظة (أسماء الأطفال) — تتطلب توكن التحقق برمز الجوال
+const getCustomerProfile = async (req, res) => {
+  try {
+    const access = getCustomerAccess(req);
+    const customer = await Customer.findOne({
+      _id: access.customerId,
+      tenantId: access.tenantId,
+    })
+      .select("totalVisits children")
+      .lean();
+    return res.json({
+      visits: customer?.totalVisits || 0,
+      children: customer?.children || [],
+    });
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json({ message: error.statusCode ? error.message : "تعذر جلب بياناتك." });
+  }
+};
+
 const loadManageableAppointment = async (access, appointmentId, tenant) => {
   if (!mongoose.Types.ObjectId.isValid(appointmentId)) {
     throw accessError("الموعد غير موجود.", 404);
@@ -1133,6 +1154,7 @@ module.exports = {
   sendCustomerAccessCode,
   verifyCustomerAccessCode,
   getCustomerAppointments,
+  getCustomerProfile,
   cancelCustomerAppointment,
   rescheduleCustomerAppointment,
 };

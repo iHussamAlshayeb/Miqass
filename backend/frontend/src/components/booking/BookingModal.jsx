@@ -19,6 +19,7 @@ const BookingModal = ({
     isCheckingLoyalty,
     loyaltyVisits,
     savedChildren, // 💡 استلام مصفوفة الأسماء
+    onRequestSavedNames, // فتح التحقق برمز الجوال لعرض الأسماء المحفوظة
     handleBookingSubmit,
     isLoading,
     bookingError,
@@ -197,6 +198,16 @@ const BookingModal = ({
                                             </Motion.div>
                                         )}
                                     </AnimatePresence>
+                                    {onRequestSavedNames && (
+                                        <button
+                                            type="button"
+                                            onClick={onRequestSavedNames}
+                                            className="mt-3 text-[11px] font-black underline underline-offset-4"
+                                            style={{ color: activeThemeColor }}
+                                        >
+                                            عرض الأسماء المحفوظة (تحقق برمز واتساب)
+                                        </button>
+                                    )}
                                     {quickSelectError && <p role="alert" className="text-sm font-bold text-rose-700">{quickSelectError}</p>}
 
                                     {/* ملخص الفاتورة */}

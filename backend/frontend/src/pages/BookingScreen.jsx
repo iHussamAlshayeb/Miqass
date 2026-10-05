@@ -63,6 +63,9 @@ const BookingScreen = () => {
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [showMyAppointments, setShowMyAppointments] = useState(false);
+    const [myAppointmentsPhone, setMyAppointmentsPhone] = useState('');
+    // توكن التحقق برمز الجوال (صالح 20 دقيقة) — يسمح بعرض أسماء الأطفال المحفوظة
+    const [customerAccess, setCustomerAccess] = useState(null);
     const [childrenNames, setChildrenNames] = useState(['']);
     const [phone, setPhone] = useState('');
     const [selectedChair, setSelectedChair] = useState('');
@@ -180,7 +183,18 @@ const BookingScreen = () => {
                 try {
                     const res = await API.get(`/appointments/loyalty/${tenantData._id}/${phone}`);
                     setLoyaltyVisits(res.data.visits);
-                    setSavedChildren(res.data.children || []);
+                    setSavedChildren([]);
+
+                    if (customerAccess?.phone === phone) {
+                        try {
+                            const profile = await API.get('/appointments/customer/profile', {
+                                headers: { 'X-Booking-Access': customerAccess.token },
+                            });
+                            setSavedChildren(profile.data.children || []);
+                        } catch (profileError) {
+                            if (profileError.response?.status === 401) setCustomerAccess(null);
+                        }
+                    }
                 } catch {
                     setLoyaltyVisits(null); setSavedChildren([]);
                 } finally { setIsCheckingLoyalty(false); }
@@ -190,7 +204,7 @@ const BookingScreen = () => {
         };
         const timeoutId = setTimeout(() => { checkLoyaltyAndFetchData(); }, 500);
         return () => clearTimeout(timeoutId);
-    }, [phone, tenantData]);
+    }, [phone, tenantData, customerAccess]);
 
     const handleBookingSubmit = async (e) => {
         e.preventDefault();
@@ -647,12 +661,25 @@ const BookingScreen = () => {
                 childrenNames={childrenNames} setChildrenNames={setChildrenNames}
                 maxConsecutiveSlots={maxConsecutiveSlots} selectedServicesIds={selectedServicesIds}
                 totals={totals} isCheckingLoyalty={isCheckingLoyalty} loyaltyVisits={loyaltyVisits}
-                savedChildren={savedChildren} handleBookingSubmit={handleBookingSubmit} isLoading={isLoading}
+                savedChildren={savedChildren}
+                onRequestSavedNames={
+                    loyaltyVisits > 0 && savedChildren.length === 0 && tenantData?.whatsappSettings?.isEnabled
+                        ? () => { setMyAppointmentsPhone(phone); setShowMyAppointments(true); }
+                        : null
+                }
+                handleBookingSubmit={handleBookingSubmit} isLoading={isLoading}
                 bookingError={bookingError} bookingErrorField={bookingErrorField}
                 clearBookingError={() => { setBookingError(''); setBookingErrorField(''); }}
             />
 
-            {showMyAppointments && <CustomerAppointments tenant={tenantData} onClose={() => setShowMyAppointments(false)} />}
+            {showMyAppointments && (
+                <CustomerAppointments
+                    tenant={tenantData}
+                    initialPhone={myAppointmentsPhone}
+                    onVerified={setCustomerAccess}
+                    onClose={() => { setShowMyAppointments(false); setMyAppointmentsPhone(''); }}
+                />
+            )}
 
             {/* ─── نافذة الدفع ─── */}
             <AnimatePresence>

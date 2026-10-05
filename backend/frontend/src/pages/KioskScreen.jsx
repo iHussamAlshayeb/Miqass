@@ -138,7 +138,8 @@ const KioskScreen = () => {
                 try {
                     const res = await API.get(`/appointments/loyalty/${tenantData._id}/${phone}`);
                     setLoyaltyVisits(res.data.visits);
-                    setSavedChildren(res.data.children || []);
+                    // أسماء الأطفال لم تعد تُرجع من المسار العام (حماية بيانات القاصرين)
+                    setSavedChildren([]);
                 } catch {
                     setLoyaltyVisits(null);
                     setSavedChildren([]);
