@@ -7,7 +7,6 @@ import {
     Crown,
     DoorOpen,
     KeyRound,
-    Link2Off,
     Loader2,
     LogOut,
     Percent,
@@ -458,32 +457,13 @@ const SuperAdminScreen = () => {
         });
     };
 
-    const handleForceDisconnectZatca = (id, salonName) => {
-        setConfirmDialog({
-            title: 'فك الارتباط الضريبي',
-            message: `سيتم حذف مفاتيح الربط الضريبي لصالون "${salonName}" وإرجاع حالة الزكاة إلى غير مربوط.`,
-            confirmLabel: 'فك الارتباط',
-            tone: 'danger',
-            onConfirm: async () => {
-                try {
-                    const key = sessionStorage.getItem('superAdminKey');
-                    await API.delete(`/admin/tenants/${id}/zatca`, { headers: { 'x-admin-key': key } });
-                    showNotice('success', 'تم فك الارتباط الضريبي بنجاح.');
-                    fetchTenants(key);
-                } catch {
-                    showNotice('error', 'حدث خطأ أثناء فك الارتباط الضريبي.');
-                }
-            }
-        });
-    };
-
     const currentProPrice = getDiscountedPrice(pricing.pro, discount);
     const currentPremiumPrice = getDiscountedPrice(pricing.premium, discount);
 
     const stats = useMemo(() => {
         return tenants.reduce((acc, tenant) => {
             const subscription = getSubscription(tenant);
-            const isZatcaOnboarded = tenant.taxSettings?.isZatcaOnboarded || tenant.settings?.isZatcaOnboarded;
+            const isZakatyLinked = !!(tenant.taxSettings?.zakaty?.tenantId && tenant.taxSettings?.zakaty?.apiKeyId);
 
             acc.total += 1;
             if (subscription.status === 'Pending_Approval') acc.pendingApproval += 1;
@@ -499,7 +479,7 @@ const SuperAdminScreen = () => {
                     acc.free += 1;
                 }
             }
-            if (isZatcaOnboarded) acc.zatca += 1;
+            if (isZakatyLinked) acc.zakaty += 1;
             return acc;
         }, {
             total: 0,
@@ -508,7 +488,7 @@ const SuperAdminScreen = () => {
             free: 0,
             pro: 0,
             premium: 0,
-            zatca: 0,
+            zakaty: 0,
             expectedMonthlyRevenue: 0
         });
     }, [tenants, currentProPrice, currentPremiumPrice]);
@@ -643,7 +623,7 @@ const SuperAdminScreen = () => {
                     <StatCard icon={Store} label="إجمالي الصالونات" value={stats.total.toLocaleString('ar-SA')} />
                     <StatCard icon={Zap} label="Pro" value={stats.pro.toLocaleString('ar-SA')} accent="text-blue-700" />
                     <StatCard icon={Crown} label="Premium" value={stats.premium.toLocaleString('ar-SA')} accent="text-violet-700" />
-                    <StatCard icon={ReceiptText} label="مربوط بالزكاة" value={stats.zatca.toLocaleString('ar-SA')} accent="text-emerald-700" />
+                    <StatCard icon={ReceiptText} label="مربوط بـ Zakaty" value={stats.zakaty.toLocaleString('ar-SA')} accent="text-emerald-700" />
                 </section>
 
                 <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
@@ -895,7 +875,7 @@ const SuperAdminScreen = () => {
                         {filteredTenants.map((tenant) => {
                             const subscription = getSubscription(tenant);
                             const taxNum = tenant.taxSettings?.taxNumber || tenant.settings?.taxNumber || 'غير مسجل';
-                            const isZatcaOnboarded = tenant.taxSettings?.isZatcaOnboarded || tenant.settings?.isZatcaOnboarded;
+                            const isZakatyLinked = !!(tenant.taxSettings?.zakaty?.tenantId && tenant.taxSettings?.zakaty?.apiKeyId);
                             const billingCycle = subscription.billingCycle || 'monthly';
                             const currentSelectValue = billingCycle === 'annual' && subscription.plan !== 'Free'
                                 ? `${subscription.plan}-annual`
@@ -928,10 +908,10 @@ const SuperAdminScreen = () => {
                                             <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
                                                 <div className="mb-2 flex items-center justify-between gap-3">
                                                     <span className="text-xs font-bold text-slate-500">الرقم الضريبي</span>
-                                                    {isZatcaOnboarded ? (
+                                                    {isZakatyLinked ? (
                                                         <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-black text-emerald-700">
                                                             <CheckCircle2 size={13} />
-                                                            متصل
+                                                            Zakaty
                                                         </span>
                                                     ) : (
                                                         <span className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-black text-slate-500">غير مربوط</span>
@@ -939,17 +919,6 @@ const SuperAdminScreen = () => {
                                                 </div>
                                                 <div className="flex items-center justify-between gap-3">
                                                     <span className="text-sm font-black text-slate-800" dir="ltr">{taxNum}</span>
-                                                    {isZatcaOnboarded && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleForceDisconnectZatca(tenant._id, tenant.salonName)}
-                                                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-red-100 bg-red-50 text-red-600 transition-colors hover:bg-red-600 hover:text-white"
-                                                            title="فك الارتباط الضريبي"
-                                                            aria-label="فك الارتباط الضريبي"
-                                                        >
-                                                            <Link2Off size={15} />
-                                                        </button>
-                                                    )}
                                                 </div>
                                             </div>
                                         </div>

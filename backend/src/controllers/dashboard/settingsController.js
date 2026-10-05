@@ -55,7 +55,6 @@ const getBarberSettings = async (req, res) => {
       ownerName: tenant.ownerName || "",
       settings: {
         ...(tenant.settings || {}),
-        isZatcaOnboarded: tenant.taxSettings?.isZatcaOnboarded || false,
       },
       subscription: tenant.subscription || { plan: "Free", status: "active" },
       campaignCredits: tenant.campaignCredits || 0,

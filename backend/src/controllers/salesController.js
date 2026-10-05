@@ -637,7 +637,7 @@ const getZakatyReadiness = async (req, res) => {
       return res.json({ ready: false, issues: [], invoiceNumber: sale.invoiceNumber, zakatyStatus: sale.zakaty.status });
     }
     const [tenant, items] = await Promise.all([
-      Tenant.findById(req.tenantId).select('salonName taxSettings.taxNumber taxSettings.isZatcaOnboarded taxSettings.zakaty').lean(),
+      Tenant.findById(req.tenantId).select('salonName taxSettings.taxNumber taxSettings.zakaty').lean(),
       SaleItem.find({ tenantId: req.tenantId, saleId: sale._id }).lean(),
     ]);
     const result = prepareZakatyInvoice({ tenant, sale, items, baseUrl: process.env.ZAKATY_BASE_URL });

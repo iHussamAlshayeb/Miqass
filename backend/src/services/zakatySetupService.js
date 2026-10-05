@@ -24,9 +24,6 @@ const startZakatySetup = async (tenantId, input) => {
   const { error, payload } = prepareZakatyProvisioning(tenant, seller, environment, taxNumber);
   if (error) throw setupError(error, 400);
   const config = tenant.taxSettings?.zakaty || {};
-  if (tenant.taxSettings?.isZatcaOnboarded) {
-    throw setupError('الصالون مرتبط بمسار ZATCA القديم. يلزم تسوية ذلك الربط قبل تفعيل Zakaty لمنع التبليغ المزدوج.');
-  }
   if (config.tenantId && (config.registeredVatNumber !== taxNumber ||
       config.registeredCrNumber !== payload.tenant.crNumber ||
       config.seller?.legalName !== payload.tenant.name)) {

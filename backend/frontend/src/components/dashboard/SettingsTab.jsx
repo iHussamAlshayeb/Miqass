@@ -13,7 +13,6 @@ import {
 import API from '../../services/api';
 import UpgradeModal from './UpgradeModal';
 
-import ZatcaSection from './settings/ZatcaSection';
 import ZakatySection from './settings/ZakatySection';
 import MarketingSection from './settings/MarketingSection';
 import IdentitySection from './settings/IdentitySection';
@@ -86,7 +85,7 @@ const SettingsTab = ({
     barbers, setBarbers,
     subscription,
     services, setServices,
-    taxNumber, setTaxNumber,
+    setTaxNumber,
     bio, setBio,
     socialLinks, setSocialLinks,
     themeColors, setThemeColors,
@@ -110,46 +109,6 @@ const SettingsTab = ({
     const currentPlan = subscription?.plan || 'Free';
     const fileInputRef = useRef(null);
     const activeTab = SETTINGS_TABS.find((tab) => tab.id === activeSettingsTab) || SETTINGS_TABS[0];
-
-    const [zatcaOtp, setZatcaOtp] = useState('');
-    const [isOnboardingZatca, setIsOnboardingZatca] = useState(false);
-
-    const handleZatcaOnboard = async () => {
-        if (!taxNumber || taxNumber.length !== 15) return alert('الرجاء كتابة الرقم الضريبي (15 رقم) أولاً!');
-        if (!zatcaOtp || zatcaOtp.length !== 6) return alert('الرجاء إدخال رمز OTP صحيح (6 أرقام).');
-
-        setIsOnboardingZatca(true);
-        try {
-            const res = await API.post('/zatca/onboard', {
-                otp: zatcaOtp,
-                taxNumber: taxNumber
-            });
-
-            alert(res.data.message || 'تم الربط بنجاح.');
-            setSettings({ ...settings, isZatcaOnboarded: true });
-
-        } catch (error) {
-            alert(error.response?.data?.message || 'حدث خطأ أثناء محاولة الربط بهيئة الزكاة.');
-        } finally {
-            setIsOnboardingZatca(false);
-        }
-    };
-
-    const handleZatcaDisconnect = async () => {
-        if (!window.confirm("هل أنت متأكد من إلغاء الربط؟ سيتم مسح المفاتيح الضريبية من النظام ولن تتمكن من إرسال الفواتير حتى تقوم بالربط مجدداً.")) {
-            return;
-        }
-
-        try {
-            const res = await API.delete('/zatca/disconnect');
-            alert(res.data.message || 'تم إلغاء الربط ومسح المفاتيح بنجاح.');
-            setSettings({ ...settings, isZatcaOnboarded: false });
-            setZatcaOtp('');
-        } catch (error) {
-            console.error("خطأ في إلغاء الربط:", error);
-            alert(error.response?.data?.message || "حدث خطأ أثناء محاولة إلغاء الربط.");
-        }
-    };
 
     useEffect(() => {
         const fetchWaStatus = async () => {
@@ -409,18 +368,6 @@ const SettingsTab = ({
                 />
 
                 <div role="tabpanel" data-settings-tab="finance" className={activeSettingsTab === 'finance' ? 'block' : 'hidden'}>
-                    {settings?.isZatcaOnboarded && <ZatcaSection
-                        settings={settings}
-                        taxNumber={taxNumber}
-                        setTaxNumber={setTaxNumber}
-                        zatcaOtp={zatcaOtp}
-                        setZatcaOtp={setZatcaOtp}
-                        isOnboardingZatca={isOnboardingZatca}
-                        handleZatcaOnboard={handleZatcaOnboard}
-                        currentPlan={currentPlan}
-                        setUpsellConfig={setUpsellConfig}
-                        handleZatcaDisconnect={handleZatcaDisconnect}
-                    />}
                     <ZakatySection onTaxNumberSaved={setTaxNumber} />
                 </div>
 

@@ -9,7 +9,7 @@ test('automatic setup pauses only for OTP and resumes without duplicate keys or 
   };
   const record = {
     _id: tenantId, salonName: 'صالون الاختبار',
-    taxSettings: { taxNumber: '', isZatcaOnboarded: false, zakaty: {
+    taxSettings: { taxNumber: '', zakaty: {
       apiKey: '', tenantId: '', egsUnitId: '', keyIssuingAt: null,
       setup: { status: '', error: '', lockOwner: '', lockUntil: null, nextAttemptAt: null },
       seller: {},

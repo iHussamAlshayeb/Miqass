@@ -2,10 +2,6 @@ const mongoose = require("mongoose");
 const Appointment = require("../models/Appointment");
 const Tenant = require("../models/Tenant");
 
-const crypto = require("crypto");
-const zatcaXML = require("../utils/zatcaXML");
-const { decrypt } = require("../utils/encryption");
-const zatcaCore = require("../utils/zatcaCore");
 const { generateZatcaQR } = require("../utils/zatca");
 
 const { sendWhatsAppMessage } = require("../utils/whatsapp");
@@ -15,16 +11,6 @@ const {
   getTenantMoyasarSecret,
   getVerifiedMoyasarPayment,
 } = require("../services/paymentGatewayService");
-
-// بيانات ZATCA الحساسة مخزنة مشفرة؛ نفكها فقط عند التوقيع والتبليغ
-const getZatcaCredentials = (tenant) => {
-  const credentials = tenant?.taxSettings?.zatcaCredentials || {};
-  return {
-    binarySecurityToken: credentials.binarySecurityToken,
-    secret: decrypt(credentials.secret),
-    privateKey: decrypt(credentials.privateKey),
-  };
-};
 
 const toMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
@@ -162,108 +148,10 @@ const getInvoiceData = async (req, res) => {
     };
 
     let qrCodeBase64 = null;
-    let isZatcaPhase2 = false;
 
     const timestamp = new Date().toISOString();
-    const issueDate = timestamp.split("T")[0];
-    const issueTime = timestamp.split("T")[1].substring(0, 8);
 
-    if (
-      tenant.taxSettings?.isZatcaOnboarded &&
-      tenant.taxSettings?.zatcaCredentials
-    ) {
-      try {
-        const zatcaCredentials = getZatcaCredentials(tenant);
-        const invoiceDetails = {
-          invoiceNumber: appointment.invoiceNumber || "INV-0000",
-          invoiceCounter: parseInt(
-            (appointment.invoiceNumber || "1").replace(/\D/g, ""),
-          ),
-          uuid: crypto.randomUUID(),
-          issueDate: issueDate,
-          issueTime: issueTime,
-          customerName: appointment.childName || "عميل نقدي",
-          totalNetPrice: baseAmount.toFixed(2),
-          totalVatAmount: vatAmount.toFixed(2),
-          totalAmount: total.toFixed(2),
-        };
-
-        const salonDetails = {
-          salonName: tenant.salonName,
-          taxNumber: tenant.taxSettings.taxNumber,
-          crNumber: tenant.settings?.crNumber || "1234567890",
-          address: tenant.address || "Saudi Arabia",
-          city: tenant.city || "Riyadh",
-          district: tenant.district || "Center",
-          buildingNumber: tenant.buildingNumber || "0000",
-          postalCode: tenant.postalCode || "00000",
-        };
-
-        const servicesArray =
-          appointment.selectedServices?.length > 0
-            ? appointment.selectedServices.map((s) => ({
-                name: s.name,
-                price: s.price,
-                quantity: 1,
-              }))
-            : [{ name: "خدمة حلاقة", price: total, quantity: 1 }];
-
-        const rawXml = zatcaXML.buildSimplifiedInvoiceXML(
-          invoiceDetails,
-          salonDetails,
-          servicesArray,
-        );
-
-        const qrData = {
-          sellerName: tenant.salonName,
-          vatNumber: tenant.taxSettings.taxNumber,
-          timeStamp: timestamp,
-          totalAmount: total.toFixed(2),
-          vatAmount: vatAmount.toFixed(2),
-        };
-
-        const {
-          invoiceHash,
-          xmlBase64,
-          qrCodeBase64: phase2Qr,
-        } = zatcaXML.signZatcaInvoice(
-          rawXml,
-          qrData,
-          zatcaCredentials.privateKey,
-          zatcaCredentials.binarySecurityToken,
-        );
-
-        qrCodeBase64 = phase2Qr;
-        isZatcaPhase2 = true;
-
-        zatcaCore
-          .reportSingleInvoice(
-            invoiceHash,
-            xmlBase64,
-            invoiceDetails.uuid,
-            zatcaCredentials,
-          )
-          .then(() =>
-            console.log(
-              `✅ [ZATCA] تم تبليغ الفاتورة ${invoiceDetails.invoiceNumber} بنجاح!`,
-            ),
-          )
-          .catch((err) =>
-            console.error(
-              `❌ [ZATCA] فشل التبليغ للفاتورة ${invoiceDetails.invoiceNumber}:`,
-              err.validationResults || err.message,
-            ),
-          );
-      } catch (error) {
-        console.error("❌ خطأ داخلي في توليد فاتورة المرحلة الثانية:", error);
-      }
-    }
-
-    if (
-      !isZatcaPhase2 &&
-      tenant.taxSettings?.taxNumber &&
-      typeof generateZatcaQR !== "undefined"
-    ) {
+    if (tenant.taxSettings?.taxNumber) {
       qrCodeBase64 = generateZatcaQR(
         tenant.salonName,
         tenant.taxSettings.taxNumber,
@@ -293,7 +181,7 @@ const getInvoiceData = async (req, res) => {
         vatAmount: vatAmount.toFixed(2),
         baseAmount: baseAmount.toFixed(2),
         qrCode: qrCodeBase64,
-        isZatcaPhase2: isZatcaPhase2,
+        isZatcaPhase2: false,
       },
     });
   } catch (error) {

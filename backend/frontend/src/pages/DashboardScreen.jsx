@@ -485,7 +485,7 @@ const DashboardScreen = () => {
                                 barbers={barbers} setBarbers={setBarbers}
                                 subscription={subscription}
                                 services={services} setServices={setServices}
-                                taxNumber={taxNumber} setTaxNumber={setTaxNumber}
+                                setTaxNumber={setTaxNumber}
                                 bio={bio} setBio={setBio}
                                 socialLinks={socialLinks} setSocialLinks={setSocialLinks}
                                 themeColors={themeColors} setThemeColors={setThemeColors}

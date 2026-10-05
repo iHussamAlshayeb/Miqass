@@ -13,8 +13,6 @@ const {
 const SECRET_PATHS = [
   "paymentSettings.moyasarSecretKey",
   "taxSettings.zakaty.apiKey",
-  "taxSettings.zatcaCredentials.secret",
-  "taxSettings.zatcaCredentials.privateKey",
   "whatsappSettings.apiKey",
 ];
 

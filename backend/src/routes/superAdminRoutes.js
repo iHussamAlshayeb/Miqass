@@ -8,7 +8,6 @@ const {
   deleteTenant,
   restoreDeletedTenant,
   impersonateTenant,
-  forceDisconnectZatca,
   toggleMaintenanceMode,
   getSystemPricing,
   updateSystemPricing,
@@ -46,6 +45,5 @@ router.put("/pricing", updateSystemPricing);
 router.put("/promos/:id/toggle", togglePromoCode);
 router.delete("/tenants/:id", deleteTenant);
 router.post("/tenants/:id/restore", restoreDeletedTenant);
-router.delete("/tenants/:id/zatca", forceDisconnectZatca);
 
 module.exports = router;

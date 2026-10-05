@@ -47,7 +47,7 @@ test("startup migration upgrades legacy secrets and encrypts plaintext ones", as
   const docs = [{
     _id: "t1",
     paymentSettings: { moyasarSecretKey: legacyEncrypt("sk_live_1") },
-    taxSettings: { zatcaCredentials: { secret: "zatca-secret", privateKey: "-----BEGIN EC PRIVATE KEY-----" }, zakaty: { apiKey: encrypt("zk") } },
+    taxSettings: { zakaty: { apiKey: encrypt("zk") } },
     whatsappSettings: { apiKey: "wa-plain-key" },
   }, {
     _id: "t2",
@@ -73,8 +73,6 @@ test("startup migration upgrades legacy secrets and encrypts plaintext ones", as
   const set = updates[0].update.$set;
   assert.equal(decrypt(set["paymentSettings.moyasarSecretKey"]), "sk_live_1");
   assert.match(set["paymentSettings.moyasarSecretKey"], /^v2:/);
-  assert.equal(decrypt(set["taxSettings.zatcaCredentials.secret"]), "zatca-secret");
-  assert.equal(decrypt(set["taxSettings.zatcaCredentials.privateKey"]), "-----BEGIN EC PRIVATE KEY-----");
   assert.equal(decrypt(set["whatsappSettings.apiKey"]), "wa-plain-key");
   assert.equal(set["whatsappSettings.apiKeyHash"], hashForLookup("wa-plain-key"));
   assert.equal(set["taxSettings.zakaty.apiKey"], undefined, "v2 values are not rewritten");

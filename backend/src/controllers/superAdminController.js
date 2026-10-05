@@ -20,7 +20,7 @@ const getAllTenants = async (req, res) => {
   try {
     const tenants = await Tenant.find()
       .select(
-        "-password -taxSettings.zatcaCredentials -taxSettings.zakaty.apiKey -resetPasswordToken -resetPasswordExpires -whatsappSettings.apiKey -whatsappSettings.apiKeyHash -whatsappSettings.webhookSecret -paymentSettings.moyasarSecretKey",
+        "-password -taxSettings.zakaty.apiKey -resetPasswordToken -resetPasswordExpires -whatsappSettings.apiKey -whatsappSettings.apiKeyHash -whatsappSettings.webhookSecret -paymentSettings.moyasarSecretKey",
       )
       .sort({ createdAt: -1 })
       .lean();
@@ -195,46 +195,12 @@ const impersonateTenant = async (req, res) => {
   }
 };
 
-const forceDisconnectZatca = async (req, res) => {
-  try {
-    const tenantId = req.params.id;
-
-    const result = await Tenant.updateOne(
-      { _id: tenantId },
-      {
-        $set: {
-          "taxSettings.isZatcaOnboarded": false,
-          "taxSettings.zatcaCredentials": {
-            binarySecurityToken: null,
-            secret: null,
-            privateKey: null,
-          },
-        },
-      },
-    );
-
-    if (result.matchedCount === 0) {
-      return res.status(404).json({ message: "الصالون غير موجود" });
-    }
-
-    res
-      .status(200)
-      .json({ message: "تم فك الارتباط الضريبي ومسح المفاتيح بنجاح." });
-  } catch (error) {
-    console.error("Admin Force Disconnect ZATCA Error:", error);
-    res
-      .status(500)
-      .json({ message: error.message || "حدث خطأ أثناء محاولة فك الارتباط." });
-  }
-};
-
 module.exports = {
   getAllTenants,
   updateTenantStatus,
   deleteTenant,
   restoreDeletedTenant,
   impersonateTenant,
-  forceDisconnectZatca,
   toggleMaintenanceMode,
   getSystemPricing,
   updateSystemPricing,

@@ -1,19 +1,9 @@
 const express = require("express");
 const router = express.Router();
 const rateLimit = require("../middlewares/rateLimit");
+// وسيط الفوترة الإلكترونية الوحيد: Zakaty
 const zatcaController = require("../controllers/zatcaController");
 const { protect } = require("../middlewares/authMiddleware");
-
-const onboardLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 2,
-  message: {
-    message:
-      "لقد قمت بعدة محاولات للربط. يرجى الانتظار 15 دقيقة لضمان سلامة الشهادات الرقمية 🛑",
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
 
 const generalZatcaLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -22,8 +12,6 @@ const generalZatcaLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
-
-router.post("/onboard", protect, onboardLimiter, zatcaController.onboardZatca);
 
 router.get('/zakaty/config', protect, zatcaController.getZakatyConfig);
 
@@ -37,9 +25,5 @@ router.post('/zakaty/provision', protect, zatcaController.provisionZakatySalon);
 router.post('/zakaty/issue-key', protect, zatcaController.issueZakatyKey);
 router.get('/zakaty/device', protect, zatcaController.getZakatyDevice);
 router.post('/zakaty/device/:step', protect, zatcaController.stepZakatyDevice);
-
-router.get("/status", protect, zatcaController.checkZatcaStatus);
-router.patch("/sync", protect, zatcaController.syncTenantZatcaInfo);
-router.delete("/disconnect", protect, zatcaController.disconnectZatca);
 
 module.exports = router;

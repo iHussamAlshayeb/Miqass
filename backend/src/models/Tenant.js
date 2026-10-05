@@ -63,7 +63,6 @@ const tenantSchema = new mongoose.Schema(
 
     taxSettings: {
       taxNumber: { type: String, default: "" },
-      isZatcaOnboarded: { type: Boolean, default: false },
       zakaty: {
         apiKey: { type: String, default: "" },
         tenantId: { type: String, default: "" },
@@ -88,12 +87,6 @@ const tenantSchema = new mongoose.Schema(
           city: { type: String, default: "" },
           postalCode: { type: String, default: "" },
         },
-      },
-
-      zatcaCredentials: {
-        binarySecurityToken: { type: String, default: null },
-        secret: { type: String, default: null },
-        privateKey: { type: String, default: null },
       },
     },
 

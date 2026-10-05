@@ -56,7 +56,7 @@ const processZakatySale = async (req, res, submit) => {
     if (sale.status !== 'Paid') return res.status(409).json({ message: 'يجب إكمال دفع البيع قبل إرساله.' });
 
     const tenant = await Tenant.findById(tenantId)
-      .select('salonName taxSettings.taxNumber taxSettings.isZatcaOnboarded taxSettings.zakaty')
+      .select('salonName taxSettings.taxNumber taxSettings.zakaty')
       .lean();
     if (!tenant) return res.status(404).json({ message: 'الصالون غير موجود.' });
     if (sale.appointmentId) {
