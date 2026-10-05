@@ -15,6 +15,7 @@ const {
   verifyCustomerAccessCode,
   getCustomerAppointments,
   getCustomerProfile,
+  getPaymentReturnStatus,
   cancelCustomerAppointment,
   rescheduleCustomerAppointment,
 } = require("../controllers/bookingController");
@@ -116,6 +117,7 @@ router.post("/customer/send-code", customerAccessLimiter, sendCustomerAccessCode
 router.post("/customer/verify-code", customerAccessLimiter, verifyCustomerAccessCode);
 router.get("/customer/appointments", customerActionLimiter, getCustomerAppointments);
 router.get("/customer/profile", customerActionLimiter, getCustomerProfile);
+router.get("/payment-status/:appointmentId", queueLimiter, getPaymentReturnStatus);
 router.post("/customer/appointments/:appointmentId/cancel", customerActionLimiter, cancelCustomerAppointment);
 router.post("/customer/appointments/:appointmentId/reschedule", customerActionLimiter, rescheduleCustomerAppointment);
 router.get("/loyalty/:tenantId/:phone", loyaltyLimiter, getCustomerLoyalty);

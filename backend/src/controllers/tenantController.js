@@ -23,6 +23,8 @@ const PUBLIC_TENANT_FIELDS = [
   "settings.closedDates",
   "settings.maxBookingDate",
   "settings.locationUrl",
+  "settings.contactPhone",
+  "ownerPhone",
   "settings.isLoyaltyEnabled",
   "settings.loyaltyVisitsRequired",
   "whatsappSettings.isEnabled",
@@ -45,6 +47,11 @@ const getTenantBySlug = async (req, res) => {
       return res
         .status(404)
         .json({ message: "الصالون غير موجود أو أن اشتراكه منتهي." });
+
+    // رقم التواصل العام: المخصص في الإعدادات، وإلا جوال المالك (يُرسل أصلاً في رسائل واتساب للعملاء)
+    tenant.contactPhone = tenant.settings?.contactPhone || tenant.ownerPhone || "";
+    delete tenant.ownerPhone;
+    if (tenant.settings) delete tenant.settings.contactPhone;
 
     if (tenant.branding) {
       tenant.branding.logoUrl = publicLogoUrl(tenant.slug, tenant.branding.logoUrl);

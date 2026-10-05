@@ -34,7 +34,7 @@ const fullTenant = {
   bio: "نبذة",
   branding: { logoUrl: "/logo.png", primaryColor: "#000000" },
   socialLinks: { instagram: "x" },
-  settings: { slotDuration: 30, closedDates: [], isLoyaltyEnabled: true, googleReviewLink: "g" },
+  settings: { slotDuration: 30, closedDates: [], isLoyaltyEnabled: true, googleReviewLink: "g", contactPhone: "0551112222" },
   taxSettings: { taxNumber: "300000000000003", zatcaCredentials: { secret: "z" }, zakaty: { apiKey: "k" } },
   whatsappSettings: { apiKey: "WA-SECRET-KEY", isEnabled: true, sessionId: "SESS-ID", webhookSecret: "WH-SECRET" },
   subscription: { plan: "Premium", status: "Active" },
@@ -86,6 +86,13 @@ test("public tenant endpoint exposes only allow-listed fields", async () => {
     assert.equal(res.body.tenant.settings.slotDuration, 30);
     assert.equal(res.body.tenant.paymentSettings.depositAmount, 20);
     assert.equal(res.body.barbers[0].hasPin, true);
+    assert.equal(res.body.tenant.contactPhone, "0551112222", "custom public contact number");
+
+    // بدون رقم تواصل مخصص: يُستخدم جوال المالك (يُرسل أصلاً للعملاء في رسائل واتساب)
+    delete fullTenant.settings.contactPhone;
+    await getTenantBySlug({ params: { slug: "salon" } }, res);
+    assert.equal(res.body.tenant.contactPhone, "0550000000");
+    assert.equal(res.body.tenant.ownerPhone, undefined);
   } finally {
     [Tenant.findOne, Barber.find, Service.find, Review.find] = originals;
   }

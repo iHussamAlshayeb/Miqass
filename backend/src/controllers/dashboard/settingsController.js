@@ -100,6 +100,7 @@ const updateBarberSettings = async (req, res) => {
       breakEnd,
       maxBookingDate,
       locationUrl,
+      contactPhone,
       ownerPhone,
       logoUrl,
       barbers,
@@ -160,6 +161,10 @@ const updateBarberSettings = async (req, res) => {
       breakEnd,
       maxBookingDate,
       locationUrl,
+      contactPhone:
+        contactPhone !== undefined
+          ? String(contactPhone).replace(/[^\d+]/g, "").slice(0, 15)
+          : tenant.settings.contactPhone,
       googleReviewLink,
       enableGoogleReviews,
       isLoyaltyEnabled,

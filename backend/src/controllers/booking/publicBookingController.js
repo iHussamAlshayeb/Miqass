@@ -542,7 +542,44 @@ const getAvailableSlots = async (req, res) => {
   }
 };
 
+// حالة الحجز بعد الرجوع من بوابة الدفع (عام: يُرجع الحالة والموعد فقط بلا بيانات شخصية)
+const getPaymentReturnStatus = async (req, res) => {
+  try {
+    const { appointmentId } = req.params;
+    const slug = String(req.query.slug || "").toLowerCase();
+    if (!mongoose.isValidObjectId(appointmentId) || !slug) {
+      return res.status(400).json({ message: "بيانات غير صالحة" });
+    }
+    const tenant = await Tenant.findOne({ slug, deletedAt: null }).select("_id").lean();
+    if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
+
+    const appointment = await Appointment.findOne({ _id: appointmentId, tenantId: tenant._id })
+      .select("status date timeSlot barberName payment.status")
+      .lean();
+    if (!appointment) return res.status(404).json({ message: "الموعد غير موجود" });
+
+    const state =
+      appointment.status === "Booked" && appointment.payment?.status === "Paid"
+        ? "confirmed"
+        : appointment.status === "Pending_Payment"
+          ? "pending"
+          : appointment.status === "Cancelled"
+            ? "cancelled"
+            : "confirmed";
+
+    return res.json({
+      state,
+      date: appointment.date,
+      timeSlot: appointment.timeSlot,
+      barberName: appointment.barberName,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: "تعذر التحقق من حالة الدفع" });
+  }
+};
+
 module.exports = {
+  getPaymentReturnStatus,
   createAppointment,
   getAvailableSlots,
 };

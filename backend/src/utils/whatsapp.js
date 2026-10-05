@@ -85,8 +85,9 @@ const sendWhatsAppMessage = async (
     const salonName = tenant?.salonName || "الصالون";
     const locationUrl =
       tenant?.settings?.locationUrl || "رابط الموقع غير متوفر";
-    const contactPhone = tenant?.ownerPhone
-      ? `\n📞 للتواصل: ${tenant.ownerPhone}`
+    const publicPhone = tenant?.settings?.contactPhone || tenant?.ownerPhone;
+    const contactPhone = publicPhone
+      ? `\n📞 للتواصل: ${publicPhone}`
       : "";
     const seatName = barberName ? `\n💈 الكرسي/الحلاق: ${barberName}` : "";
 
@@ -182,8 +183,9 @@ const sendReminderMessage = async (
     const friendlyTime = formatTimeForMessage(time);
     const salonName = tenant?.salonName || "الصالون";
     const locationUrl = tenant?.settings?.locationUrl || "";
-    const contactPhone = tenant?.ownerPhone
-      ? `\n📞 للاستفسار: ${tenant.ownerPhone}`
+    const publicPhone = tenant?.settings?.contactPhone || tenant?.ownerPhone;
+    const contactPhone = publicPhone
+      ? `\n📞 للاستفسار: ${publicPhone}`
       : "";
     const seatName = barberName ? `\n💈 الكرسي/الحلاق: ${barberName}` : "";
 

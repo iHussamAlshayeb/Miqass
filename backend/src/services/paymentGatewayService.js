@@ -5,7 +5,8 @@ const { decrypt } = require("../utils/encryption");
 // بوابة الدفع الوحيدة المدعومة لعربون الحجز: ميسر (عبر فواتير Moyasar Invoices)
 const MOYASAR_PROVIDER = "moyasar";
 const MOYASAR_API_BASE = "https://api.moyasar.com/v1";
-const PAYMENT_LINK_TTL_MINUTES = 30;
+// يطابق مهلة إلغاء المواعيد غير المدفوعة في cleanupPendingPayments (15 دقيقة)
+const PAYMENT_LINK_TTL_MINUTES = 15;
 const MOYASAR_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
 const toMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;

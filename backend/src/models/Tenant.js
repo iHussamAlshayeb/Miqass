@@ -50,6 +50,8 @@ const tenantSchema = new mongoose.Schema(
       closedDates: { type: [String], default: [] },
       maxBookingDate: { type: String, default: "" },
       locationUrl: { type: String, default: "" },
+      // رقم التواصل الظاهر للعملاء في صفحة الحجز (منفصل عن جوال المالك)
+      contactPhone: { type: String, default: "" },
 
       googleReviewLink: { type: String, default: "" },
       enableGoogleReviews: { type: Boolean, default: false },

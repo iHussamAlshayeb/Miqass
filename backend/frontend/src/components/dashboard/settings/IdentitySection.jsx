@@ -50,6 +50,11 @@ const IdentitySection = ({
                 <input type="text" value={ownerPhone || ''} onChange={(e) => setOwnerPhone(e.target.value)} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-lg font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 transition-all text-sm tracking-wider" placeholder="0500000000" dir="ltr" />
             </div>
             <div>
+                <label className="block text-xs font-bold text-slate-500 mb-2">رقم التواصل الظاهر للعملاء (اختياري)</label>
+                <input type="text" inputMode="tel" value={settings?.contactPhone || ''} onChange={(e) => setSettings({ ...settings, contactPhone: e.target.value })} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-lg font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 transition-all text-sm tracking-wider" placeholder={ownerPhone || '0500000000'} dir="ltr" />
+                <p className="mt-1 text-[10px] font-bold text-slate-400">يظهر في زر الاتصال بصفحة الحجز ورسائل واتساب. إذا تركته فارغاً يُستخدم رقم الجوال أعلاه.</p>
+            </div>
+            <div>
                 <label className="flex items-center gap-1.5 text-xs font-bold text-slate-500 mb-2">
                     <MapPin size={13} />
                     رابط خرائط جوجل

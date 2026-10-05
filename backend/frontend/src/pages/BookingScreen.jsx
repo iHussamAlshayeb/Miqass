@@ -10,6 +10,7 @@ import TimeSlotsSkeleton from '../components/booking/TimeSlotsSkeleton';
 import BookingSkeleton from '../components/booking/BookingSkeleton';
 import BookingModal from '../components/booking/BookingModal';
 import CustomerAppointments from '../components/booking/CustomerAppointments';
+import BookingSuccess from '../components/booking/BookingSuccess';
 import { CalendarDays } from 'lucide-react';
 import BarberChairIcon from '../components/BarberChairIcon';
 import { getBarberColor, getIconBackground, getSelectedBarberColor } from '../utils/barberTheme';
@@ -86,6 +87,8 @@ const BookingScreen = () => {
     const [paymentDetails, setPaymentDetails] = useState(null);
     const [showPaymentForm, setShowPaymentForm] = useState(false);
     const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
+    // شاشة ما بعد الحجز (أو بعد الرجوع من بوابة الدفع)
+    const [successInfo, setSuccessInfo] = useState(null);
 
     const availableBarbers = useMemo(
         () => (tenantData?.barbers || []).filter((barber) => !isBarberOnLeaveOnDate(barber, selectedDate)),
@@ -117,6 +120,32 @@ const BookingScreen = () => {
             }
         };
         if (slug) fetchTenant();
+    }, [slug]);
+
+    // الرجوع من بوابة الدفع (?payment=return&appointmentId=...): نعرض حالة الحجز،
+    // ونعيد التحقق بضع مرات لأن إشعار الدفع من البوابة قد يتأخر ثوانٍ
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const appointmentId = params.get('appointmentId');
+        if (params.get('payment') !== 'return' || !appointmentId || !slug) return undefined;
+        window.history.replaceState(null, '', window.location.pathname);
+
+        let stopped = false;
+        let timer;
+        const check = async (attempt) => {
+            try {
+                const res = await API.get(`/appointments/payment-status/${appointmentId}`, { params: { slug } });
+                if (stopped) return;
+                setSuccessInfo((current) => ({ ...(current || {}), ...res.data }));
+                if (res.data.state === 'pending' && attempt < 10) {
+                    timer = setTimeout(() => check(attempt + 1), 3000);
+                }
+            } catch {
+                // رابط غير صالح أو موعد غير موجود: لا نعرض شيئاً
+            }
+        };
+        check(0);
+        return () => { stopped = true; clearTimeout(timer); };
     }, [slug]);
 
     const calculateTotals = () => {
@@ -236,9 +265,19 @@ const BookingScreen = () => {
                 setPaymentDetails(response.data.paymentDetails);
                 setShowPaymentForm(true);
             } else {
-                alert(`تم حجز ${validNames.length} موعد بنجاح! 🎉`);
                 handleCloseModal();
-                window.location.reload();
+                setSuccessInfo({
+                    state: 'confirmed',
+                    names: validNames,
+                    date: selectedDate,
+                    timeSlot: selectedTime,
+                    barberName: selectedChair,
+                    durationMinutes: (totals.duration || tenantData.settings?.slotDuration || 30) * validNames.length,
+                });
+                // تجهيز الصفحة لحجز جديد وتحديث الأوقات المتاحة
+                setSelectedTime(null);
+                setChildrenNames(['']);
+                setAvailabilityRetry((value) => value + 1);
             }
         } catch (error) {
             setBookingError(error.response?.data?.message || 'تعذر إكمال الحجز الآن. حاول مرة أخرى.');
@@ -334,8 +373,8 @@ const BookingScreen = () => {
                                 <FaMapMarkerAlt className="text-sm" />
                             </a>
                         )}
-                        {tenantData.phone && (
-                            <a href={`tel:${tenantData.phone}`}
+                        {tenantData.contactPhone && (
+                            <a href={`tel:${tenantData.contactPhone}`} aria-label="اتصال بالصالون"
                                 className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center hover:bg-emerald-100 active:scale-95 transition">
                                 <FaPhone className="text-sm" />
                             </a>
@@ -660,6 +699,16 @@ const BookingScreen = () => {
                 handleBookingSubmit={handleBookingSubmit} isLoading={isLoading}
                 bookingError={bookingError} bookingErrorField={bookingErrorField}
                 clearBookingError={() => { setBookingError(''); setBookingErrorField(''); }}
+            />
+
+            <BookingSuccess
+                info={successInfo}
+                salonName={tenantData.salonName}
+                locationUrl={tenantData.settings?.locationUrl}
+                contactPhone={tenantData.contactPhone}
+                themeColor={activeThemeColor}
+                onClose={() => setSuccessInfo(null)}
+                onManage={() => { setSuccessInfo(null); setShowMyAppointments(true); }}
             />
 
             {showMyAppointments && (
