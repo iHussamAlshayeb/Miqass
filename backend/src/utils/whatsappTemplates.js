@@ -66,15 +66,24 @@ const ALLOWED_VARIABLES = Object.freeze({
   retention: ['اسم_الصالون', 'اسم_العميل', 'رابط_الحجز'],
 });
 
-const getTemplates = (tenant) => ({
-  ...DEFAULT_TEMPLATES,
-  ...(tenant?.whatsappSettings?.templates || {}),
-});
+// القوالب المخزنة قد تكون null أو فارغة (أو subdocument من Mongoose)،
+// فنأخذ فقط النصوص غير الفارغة ونرجع للافتراضي في غير ذلك.
+const getTemplates = (tenant) => {
+  const raw = tenant?.whatsappSettings?.templates;
+  const custom = raw && typeof raw.toObject === 'function' ? raw.toObject() : raw || {};
+  const merged = { ...DEFAULT_TEMPLATES };
+  for (const key of Object.keys(DEFAULT_TEMPLATES)) {
+    if (typeof custom[key] === 'string' && custom[key].trim()) merged[key] = custom[key];
+  }
+  return merged;
+};
 
-const renderTemplate = (tenant, type, values) =>
-  getTemplates(tenant)[type].replace(/\{([^{}]+)\}/g, (match, key) =>
+const renderTemplate = (tenant, type, values = {}) => {
+  const template = getTemplates(tenant)[type] ?? DEFAULT_TEMPLATES[type] ?? '';
+  return template.replace(/\{([^{}]+)\}/g, (match, key) =>
     Object.hasOwn(values, key) ? String(values[key] ?? '') : match,
   );
+};
 
 const validateTemplates = (templates) => {
   if (!templates || typeof templates !== 'object' || Array.isArray(templates)) return 'بيانات القوالب غير صالحة.';

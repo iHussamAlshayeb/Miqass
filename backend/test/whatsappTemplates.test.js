@@ -29,3 +29,15 @@ test('template validation rejects unknown types, variables, empty and oversized 
   assert.ok(validateTemplates({ reminder: '  ' }));
   assert.ok(validateTemplates({ reminder: 'x'.repeat(4001) }));
 });
+
+test('null, undefined or empty stored templates fall back to defaults', () => {
+  const tenant = { whatsappSettings: { templates: { confirmation: null, cancellation: undefined, reminder: '   ' } } };
+  assert.equal(getTemplates(tenant).confirmation, DEFAULT_TEMPLATES.confirmation);
+  assert.equal(getTemplates(tenant).cancellation, DEFAULT_TEMPLATES.cancellation);
+  assert.equal(getTemplates(tenant).reminder, DEFAULT_TEMPLATES.reminder);
+  assert.doesNotThrow(() => renderTemplate(tenant, 'confirmation', {}));
+  assert.doesNotThrow(() => renderTemplate(tenant, 'cancellation', {}));
+  const subdoc = { toObject: () => ({ confirmation: null, reminder: 'أهلاً {اسم_العميل}' }) };
+  assert.equal(renderTemplate({ whatsappSettings: { templates: subdoc } }, 'reminder', { اسم_العميل: 'علي' }), 'أهلاً علي');
+  assert.equal(getTemplates({ whatsappSettings: { templates: subdoc } }).confirmation, DEFAULT_TEMPLATES.confirmation);
+});
