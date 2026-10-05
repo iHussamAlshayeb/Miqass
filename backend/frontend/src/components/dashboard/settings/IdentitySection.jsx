@@ -6,6 +6,9 @@ import {
 } from 'lucide-react';
 
 // 1. قسم الهوية والتواصل وتخصيص الواجهة
+// الشعار المرفوع يصل كرابط داخلي (/logo/...) أو base64؛ حقل الرابط يعرض الروابط الخارجية فقط
+const isExternalLogo = (value) => /^https?:\/\//i.test(value || '');
+
 const IdentitySection = ({
     salonName,
     setSalonName,
@@ -27,7 +30,7 @@ const IdentitySection = ({
     fileInputRef,
     handleLogoUpload,
 }) => (
-    <section role="tabpanel" className={`${activeSettingsTab === 'identity' ? 'block' : 'hidden'} bg-white p-5 md:p-7 rounded-lg shadow-sm border border-slate-100`}>
+    <section role="tabpanel" data-settings-tab="identity" className={`${activeSettingsTab === 'identity' ? 'block' : 'hidden'} bg-white p-5 md:p-7 rounded-lg shadow-sm border border-slate-100`}>
         <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-2 border-b border-slate-50 pb-4">
             الهوية، التواصل، وتخصيص الواجهة
         </h3>
@@ -51,7 +54,7 @@ const IdentitySection = ({
                     <MapPin size={13} />
                     رابط خرائط جوجل
                 </label>
-                <input type="url" value={settings?.locationUrl || ''} onChange={(e) => setSettings({ ...settings, locationUrl: e.target.value })} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-lg font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 transition-all text-sm" placeholder="https://maps.google.com/..." dir="ltr" />
+                <input type="text" inputMode="url" value={settings?.locationUrl || ''} onChange={(e) => setSettings({ ...settings, locationUrl: e.target.value })} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-lg font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 transition-all text-sm" placeholder="https://maps.google.com/..." dir="ltr" />
             </div>
 
             <div className="md:col-span-2 bg-slate-50/50 p-4 rounded-lg border border-slate-100">
@@ -72,7 +75,15 @@ const IdentitySection = ({
                         <button type="button" onClick={() => fileInputRef.current.click()} className="bg-white border border-slate-200 text-slate-700 font-black px-6 py-2.5 rounded-lg text-sm hover:bg-slate-50 hover:text-blue-600 transition-colors shadow-sm">
                             رفع صورة من الجهاز
                         </button>
-                        <input type="url" value={logoUrl || ''} onChange={(e) => setLogoUrl(e.target.value)} className="w-full p-3 bg-white border border-slate-200 rounded-lg font-bold text-slate-500 outline-none focus:border-blue-400 text-xs" placeholder="أو ضع رابط الصورة مباشرة هنا..." dir="ltr" />
+                        <input
+                            type="text"
+                            inputMode="url"
+                            value={isExternalLogo(logoUrl) ? logoUrl : ''}
+                            onChange={(e) => setLogoUrl(e.target.value)}
+                            className="w-full p-3 bg-white border border-slate-200 rounded-lg font-bold text-slate-500 outline-none focus:border-blue-400 text-xs"
+                            placeholder={logoUrl && !isExternalLogo(logoUrl) ? 'تم رفع الشعار — أو ضع رابط صورة بدلاً منه' : 'أو ضع رابط الصورة مباشرة هنا...'}
+                            dir="ltr"
+                        />
                     </div>
                 </div>
             </div>
@@ -129,15 +140,15 @@ const IdentitySection = ({
                     <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4 mt-2">
                         <div>
                             <label className="block text-xs font-bold text-slate-500 mb-2">إنستجرام</label>
-                            <input type="url" value={socialLinks?.instagram || ''} onChange={(e) => setSocialLinks({ ...socialLinks, instagram: e.target.value })} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-pink-100 focus:border-pink-400 transition-all text-sm font-bold text-slate-700" placeholder="https://instagram.com/..." dir="ltr" />
+                            <input type="text" inputMode="url" value={socialLinks?.instagram || ''} onChange={(e) => setSocialLinks({ ...socialLinks, instagram: e.target.value })} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-pink-100 focus:border-pink-400 transition-all text-sm font-bold text-slate-700" placeholder="https://instagram.com/..." dir="ltr" />
                         </div>
                         <div>
                             <label className="block text-xs font-bold text-slate-500 mb-2">تيك توك</label>
-                            <input type="url" value={socialLinks?.tiktok || ''} onChange={(e) => setSocialLinks({ ...socialLinks, tiktok: e.target.value })} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-800 transition-all text-sm font-bold text-slate-700" placeholder="https://tiktok.com/@..." dir="ltr" />
+                            <input type="text" inputMode="url" value={socialLinks?.tiktok || ''} onChange={(e) => setSocialLinks({ ...socialLinks, tiktok: e.target.value })} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-800 transition-all text-sm font-bold text-slate-700" placeholder="https://tiktok.com/@..." dir="ltr" />
                         </div>
                         <div>
                             <label className="block text-xs font-bold text-slate-500 mb-2">سناب شات</label>
-                            <input type="url" value={socialLinks?.snapchat || ''} onChange={(e) => setSocialLinks({ ...socialLinks, snapchat: e.target.value })} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-yellow-100 focus:border-yellow-400 transition-all text-sm font-bold text-slate-700" placeholder="https://snapchat.com/add/..." dir="ltr" />
+                            <input type="text" inputMode="url" value={socialLinks?.snapchat || ''} onChange={(e) => setSocialLinks({ ...socialLinks, snapchat: e.target.value })} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-yellow-100 focus:border-yellow-400 transition-all text-sm font-bold text-slate-700" placeholder="https://snapchat.com/add/..." dir="ltr" />
                         </div>
                     </div>
                 </div>

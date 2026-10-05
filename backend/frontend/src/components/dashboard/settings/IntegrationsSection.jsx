@@ -37,7 +37,7 @@ const IntegrationsSection = ({
     templateSaved,
     waStatus,
 }) => (
-    <section role="tabpanel" className={`${activeSettingsTab === 'integrations' ? 'block' : 'hidden'} bg-white p-5 md:p-7 rounded-lg shadow-sm border border-slate-100`}>
+    <section role="tabpanel" data-settings-tab="integrations" className={`${activeSettingsTab === 'integrations' ? 'block' : 'hidden'} bg-white p-5 md:p-7 rounded-lg shadow-sm border border-slate-100`}>
         <div className="flex justify-between items-center mb-6">
             <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
                 ربط الواتساب الآلي

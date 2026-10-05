@@ -365,7 +365,18 @@ const SettingsTab = ({
                 </div>
             </div>
 
-            <form id="settings-form" onSubmit={handleSaveSettings} className="space-y-4">
+            <form
+                id="settings-form"
+                onSubmit={handleSaveSettings}
+                // إذا كان الحقل غير المكتمل في تبويب مخفي، ننتقل إليه حتى يظهر سبب منع الحفظ
+                onInvalidCapture={(e) => {
+                    const panel = e.target.closest('[data-settings-tab]');
+                    if (panel && panel.dataset.settingsTab !== activeSettingsTab) {
+                        setActiveSettingsTab(panel.dataset.settingsTab);
+                    }
+                }}
+                className="space-y-4"
+            >
 
                 <IdentitySection
                     salonName={salonName}
@@ -397,7 +408,7 @@ const SettingsTab = ({
                     activeSettingsTab={activeSettingsTab}
                 />
 
-                <div role="tabpanel" className={activeSettingsTab === 'finance' ? 'block' : 'hidden'}>
+                <div role="tabpanel" data-settings-tab="finance" className={activeSettingsTab === 'finance' ? 'block' : 'hidden'}>
                     {settings?.isZatcaOnboarded && <ZatcaSection
                         settings={settings}
                         taxNumber={taxNumber}
@@ -444,7 +455,7 @@ const SettingsTab = ({
                     setUpsellConfig={setUpsellConfig}
                 />
 
-                <div role="tabpanel" className={activeSettingsTab === 'marketing' ? 'block' : 'hidden'}>
+                <div role="tabpanel" data-settings-tab="marketing" className={activeSettingsTab === 'marketing' ? 'block' : 'hidden'}>
                     <MarketingSection
                         settings={settings}
                         setSettings={setSettings}

@@ -68,7 +68,8 @@ const MarketingSection = ({ settings, setSettings, currentPlan, setUpsellConfig 
                         <div className="px-4 sm:px-5 pb-5 pt-1 border-t border-slate-100">
                             <label className="block text-xs font-black text-slate-600 mb-2">رابط التقييم المباشر</label>
                             <input
-                                type="url"
+                                type="text"
+                                inputMode="url"
                                 value={settings.googleReviewLink || ''}
                                 onChange={(event) => setSettings({ ...settings, googleReviewLink: event.target.value })}
                                 className="w-full p-3.5 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all"
