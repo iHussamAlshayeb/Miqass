@@ -1,29 +1,51 @@
-const nodemailer = require("nodemailer");
+const axios = require("axios");
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || "smtp-relay.brevo.com",
-  port: process.env.SMTP_PORT || 587,
-  secure: false,
-  auth: {
-    user: process.env.SMTP_EMAIL,
-    pass: process.env.SMTP_PASSWORD,
-  },
-});
+// إرسال البريد عبر Resend API (https://resend.com/docs/api-reference/emails/send-email)
+const RESEND_API_URL = "https://api.resend.com/emails";
 
-try {
-  transporter.verify((error, success) => {
-    if (error) {
-      console.error(
-        "❌ تحذير: خطأ في الاتصال بسيرفر الإيميلات (لن تتوقف بقية الخدمات):",
-        error.message,
-      );
-    } else {
-      console.log("📧 سيرفر الإيميلات (Brevo) جاهز للإرسال! ✅");
-    }
-  });
-} catch (e) {
-  console.log("⚠️ تم تخطي فحص SMTP لتجنب إيقاف السيرفر.");
+if (process.env.RESEND_API_KEY) {
+  console.log("📧 خدمة الإيميلات (Resend) جاهزة للإرسال! ✅");
+} else {
+  console.warn("⚠️ RESEND_API_KEY غير مضبوط — لن تُرسل الإيميلات (بقية الخدمات تعمل).");
 }
+
+// القيم القادمة من المستخدم (اسم المالك/الصالون) تُهرَّب قبل إدراجها في HTML
+const escapeHtml = (value) =>
+  String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[char]);
+
+const sendEmail = async ({ to, subject, html }) => {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) throw new Error("RESEND_API_KEY غير مضبوط");
+
+  try {
+    const { data } = await axios.post(
+      RESEND_API_URL,
+      {
+        from: fromAddress,
+        to: [to],
+        subject,
+        html,
+        ...(process.env.REPLY_TO_EMAIL ? { reply_to: process.env.REPLY_TO_EMAIL } : {}),
+      },
+      {
+        timeout: 15000,
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+      },
+    );
+    return data;
+  } catch (error) {
+    throw new Error(error.response?.data?.message || error.message);
+  }
+};
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "https://www.miqass.app";
 
@@ -57,13 +79,13 @@ const baseTemplate = (title, content, buttonText, buttonLink) => `
 </div>
 `;
 
-const fromAddress = `"${process.env.FROM_NAME || "Miqass App"}" <${process.env.FROM_EMAIL || "noreply@miqass.app"}>`;
+const fromAddress = `${process.env.FROM_NAME || "Miqass App"} <${process.env.FROM_EMAIL || "noreply@miqass.app"}>`;
 
 const sendWelcomeEmail = async (email, ownerName, salonName) => {
   try {
     const content = `
-        أهلاً بك يا <strong>${ownerName}</strong> في نظام مِقَص! 🎉<br><br>
-        تم إنشاء مساحة عمل صالونك "<strong>${salonName}</strong>" بنجاح على <strong>الباقة الأساسية (المجانية)</strong>.<br>
+        أهلاً بك يا <strong>${escapeHtml(ownerName)}</strong> في نظام مِقَص! 🎉<br><br>
+        تم إنشاء مساحة عمل صالونك "<strong>${escapeHtml(salonName)}</strong>" بنجاح على <strong>الباقة الأساسية (المجانية)</strong>.<br>
         صالونك الآن جاهز لاستقبال الحجوزات فوراً عبر رابطك المخصص، ويمكنك إدارة مواعيدك بكل سهولة.<br><br>
         <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; padding: 15px; border-radius: 12px; font-size: 14px; margin-top: 15px;">
             💡 <strong>نصيحة:</strong> للحصول على سكرتير الواتساب الآلي وشاشة الانتظار التلفزيونية، يمكنك ترقية باقتك إلى (Pro) أو (VIP) من داخل لوحة التحكم في أي وقت.
@@ -76,8 +98,7 @@ const sendWelcomeEmail = async (email, ownerName, salonName) => {
       `${FRONTEND_URL}/login`,
     );
 
-    await transporter.sendMail({
-      from: fromAddress,
+    await sendEmail({
       to: email,
       subject: "🎉 تم إنشاء حسابك المجاني بنجاح",
       html,
@@ -90,8 +111,8 @@ const sendWelcomeEmail = async (email, ownerName, salonName) => {
 const sendActivationEmail = async (email, ownerName, planName, endDate) => {
   try {
     const content = `
-        أخبار رائعة يا <strong>${ownerName}</strong>! 🌟<br><br>
-        تم ترقية وتفعيل اشتراكك في <strong>${planName}</strong> بنجاح.<br>
+        أخبار رائعة يا <strong>${escapeHtml(ownerName)}</strong>! 🌟<br><br>
+        تم ترقية وتفعيل اشتراكك في <strong>${escapeHtml(planName)}</strong> بنجاح.<br>
         صالونك الآن مجهز بأحدث أدوات الأتمتة الاحترافية لخدمة عملائك بأرقى مستوى.<br><br>
         ${endDate ? `<div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; padding: 10px 15px; border-radius: 8px; display: inline-block; font-weight: bold;">تاريخ التجديد القادم: ${new Date(endDate).toLocaleDateString("en-GB")}</div>` : ""}
     `;
@@ -102,8 +123,7 @@ const sendActivationEmail = async (email, ownerName, planName, endDate) => {
       `${FRONTEND_URL}/dashboard`,
     );
 
-    await transporter.sendMail({
-      from: fromAddress,
+    await sendEmail({
       to: email,
       subject: `✅ تم تفعيل باقة ${planName} لصالونك`,
       html,
@@ -116,8 +136,8 @@ const sendActivationEmail = async (email, ownerName, planName, endDate) => {
 const sendRenewalReminderEmail = async (email, ownerName, daysLeft) => {
   try {
     const content = `
-        مرحباً <strong>${ownerName}</strong>،<br><br>
-        نود تذكيرك بأن اشتراك باقتك المتقدمة في نظام مِقَص سينتهي خلال <strong>${daysLeft} أيام</strong> ⏳.<br><br>
+        مرحباً <strong>${escapeHtml(ownerName)}</strong>،<br><br>
+        نود تذكيرك بأن اشتراك باقتك المتقدمة في نظام مِقَص سينتهي خلال <strong>${escapeHtml(daysLeft)} أيام</strong> ⏳.<br><br>
         لضمان استمرار عمل سكرتير الواتساب الآلي، وعدم توقف الميزات الاحترافية، يرجى المبادرة بتجديد الاشتراك.<br>
         <span style="color: #ef4444; font-size: 13px;"><em>(في حال عدم التجديد، سيعود حسابك تلقائياً للباقة المجانية المحدودة).</em></span>
     `;
@@ -128,8 +148,7 @@ const sendRenewalReminderEmail = async (email, ownerName, daysLeft) => {
       `${FRONTEND_URL}/settings`,
     );
 
-    await transporter.sendMail({
-      from: fromAddress,
+    await sendEmail({
       to: email,
       subject: "⏳ تذكير بتجديد اشتراك باقتك في مِقَص",
       html,
@@ -142,7 +161,7 @@ const sendRenewalReminderEmail = async (email, ownerName, daysLeft) => {
 const sendPasswordResetEmail = async (email, ownerName, resetLink) => {
   try {
     const content = `
-        مرحباً <strong>${ownerName}</strong>،<br><br>
+        مرحباً <strong>${escapeHtml(ownerName)}</strong>،<br><br>
         لقد استلمنا طلباً لإعادة تعيين كلمة المرور الخاصة بلوحة تحكم صالونك.<br>
         إذا كنت أنت من طلب ذلك، يرجى الضغط على الزر أدناه لإعداد كلمة مرور جديدة.<br><br>
         <span style="color: #64748b; font-size: 13px;"><em>إذا لم تقم بهذا الطلب، يمكنك تجاهل هذه الرسالة بأمان وسيبقى حسابك محمياً.</em></span>
@@ -154,8 +173,7 @@ const sendPasswordResetEmail = async (email, ownerName, resetLink) => {
       resetLink,
     );
 
-    await transporter.sendMail({
-      from: fromAddress,
+    await sendEmail({
       to: email,
       subject: "🔐 طلب إعادة تعيين كلمة المرور - مِقَص",
       html,
