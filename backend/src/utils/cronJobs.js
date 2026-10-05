@@ -187,6 +187,9 @@ const processRetentionCampaign = async () => {
 };
 
 let isProcessingCampaigns = false;
+// عند الإيقاف: لا نبدأ رسالة حملة جديدة، ونترك الحالية تكتمل
+let isShuttingDown = false;
+const scheduledTasks = [];
 let isReconcilingCampaignDeliveries = false;
 
 const CAMPAIGN_BATCH_SIZE = 20;
@@ -463,6 +466,7 @@ const processBroadcastCampaigns = async () => {
 
     let processedInBatch = 0;
     while (processedInBatch < CAMPAIGN_BATCH_SIZE) {
+      if (isShuttingDown) break;
       if (hasReachedCampaignDailyLimit(campaign)) break;
 
       const canContinue = await Campaign.exists({
@@ -787,6 +791,12 @@ const cleanupPendingPayments = async () => {
 
 const { purgeExpiredTenants } = require("../services/tenantDeletionService");
 
+const schedule = (...args) => {
+  const task = cron.schedule(...args);
+  scheduledTasks.push(task);
+  return task;
+};
+
 const startCronJobs = () => {
   console.log("تم تشغيل نظام العمليات الخلفية (Cron Jobs) بنجاح...");
 
@@ -794,23 +804,23 @@ const startCronJobs = () => {
     console.error("خطأ في بدء طابور الإشعارات:", error.message),
   );
 
-  cron.schedule("*/15 * * * *", processAutomatedReminders);
+  schedule("*/15 * * * *", processAutomatedReminders);
 
-  cron.schedule("*/5 * * * *", cleanupPendingPayments);
+  schedule("*/5 * * * *", cleanupPendingPayments);
 
-  cron.schedule("0 8 * * *", processSubscriptionReminders);
+  schedule("0 8 * * *", processSubscriptionReminders);
 
-  cron.schedule("0 10 * * *", processRetentionCampaign);
+  schedule("0 10 * * *", processRetentionCampaign);
 
-  cron.schedule("* * * * *", processBroadcastCampaigns);
+  schedule("* * * * *", processBroadcastCampaigns);
 
-  cron.schedule("*/5 * * * *", reconcileCampaignDeliveries);
+  schedule("*/5 * * * *", reconcileCampaignDeliveries);
 
-  cron.schedule("*/15 * * * * *", processNotificationQueue);
+  schedule("*/15 * * * * *", processNotificationQueue);
 
-  cron.schedule("* * * * *", reconcileNotificationDeliveries);
+  schedule("* * * * *", reconcileNotificationDeliveries);
   // حذف نهائي للصالونات المحذوفة مؤقتاً بعد انتهاء مدة الاحتفاظ (30 يوماً)
-  cron.schedule(
+  schedule(
     "10 4 * * *",
     () => purgeExpiredTenants().catch((error) =>
       console.error("خطأ في الحذف النهائي للصالونات:", error.message),
@@ -818,12 +828,33 @@ const startCronJobs = () => {
     { timezone: "Asia/Riyadh" },
   );
 
-  cron.schedule("* * * * *", () => processPendingZakatySetups().catch((error) =>
+  schedule("* * * * *", () => processPendingZakatySetups().catch((error) =>
     console.error('Zakaty setup recovery failed:', error.message)));
+};
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * إيقاف المهام المجدولة ثم انتظار انتهاء دفعة الحملة/المطابقة الجارية
+ * (بحد أقصى timeoutMs). يُرجع true إذا انتهت كل الأعمال الجارية.
+ */
+const stopCronJobs = async (timeoutMs = 15000) => {
+  isShuttingDown = true;
+  for (const task of scheduledTasks.splice(0)) {
+    try {
+      task.stop();
+    } catch {}
+  }
+  const deadline = Date.now() + timeoutMs;
+  while ((isProcessingCampaigns || isReconcilingCampaignDeliveries) && Date.now() < deadline) {
+    await sleep(200);
+  }
+  return !isProcessingCampaigns && !isReconcilingCampaignDeliveries;
 };
 
 module.exports = {
   startCronJobs,
+  stopCronJobs,
   processBroadcastCampaigns,
   reconcileCampaignDeliveries,
   processNotificationQueue,

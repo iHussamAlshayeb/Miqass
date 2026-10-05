@@ -1,8 +1,13 @@
 require("dotenv").config();
+const mongoose = require("mongoose");
 const app = require("./src/app");
 const connectDB = require("./src/config/db");
-const { startCronJobs } = require("./src/utils/cronJobs");
+const redisClient = require("./src/utils/redisClient");
+const { startCronJobs, stopCronJobs } = require("./src/utils/cronJobs");
 const { runStartupMigrations } = require("./src/utils/startupMigrations");
+const { createShutdown } = require("./src/utils/shutdown");
+
+let shutdown = null;
 
 const startServer = async () => {
   try {
@@ -12,10 +17,11 @@ const startServer = async () => {
 
     await runStartupMigrations();
 
-    if (process.env.DISABLE_CRON_JOBS === "true") {
-      console.log("⏸️ تم تعطيل المهام المجدولة عبر DISABLE_CRON_JOBS.");
-    } else {
+    const cronEnabled = process.env.DISABLE_CRON_JOBS !== "true";
+    if (cronEnabled) {
       startCronJobs();
+    } else {
+      console.log("⏸️ تم تعطيل المهام المجدولة عبر DISABLE_CRON_JOBS.");
     }
 
     const PORT = process.env.PORT || 5000;
@@ -24,26 +30,33 @@ const startServer = async () => {
       console.log(`🌍 بيئة التشغيل: ${process.env.NODE_ENV || "development"}`);
     });
 
-    process.on("SIGTERM", () => {
-      console.log("⚠️ تم استلام إشارة SIGTERM، جاري إغلاق السيرفر بهدوء...");
-      server.close(() => {
-        console.log("🏁 تم إنهاء جميع العمليات وإغلاق السيرفر بنجاح.");
-        process.exit(0);
-      });
+    // Docker يمنح 30 ثانية (stop_grace_period)؛ نُنهي خلال 25
+    shutdown = createShutdown({
+      server,
+      stopCronJobs: cronEnabled ? stopCronJobs : null,
+      mongoose,
+      redisClient,
+      timeoutMs: 25000,
     });
+    process.on("SIGTERM", () => shutdown("SIGTERM", 0));
+    process.on("SIGINT", () => shutdown("SIGINT", 0));
   } catch (error) {
-    console.error("❌ فشل بدء تشغيل السيرفر:", error.message);
+    console.error("❌ فشل بدء تشغيل السيرفر:", error);
     process.exit(1);
   }
 };
 
-process.on("unhandledRejection", (err) => {
-  console.error("🛑 خطأ غير متوقع (Unhandled Rejection):", err.message);
+// وعد مرفوض بلا معالجة: نسجّله كاملاً ونكمل (أغلبها مهام خلفية غير حرجة،
+// وإيقاف الخادم بسببها قد يُسقط الموقع بلا داعٍ)
+process.on("unhandledRejection", (reason) => {
+  console.error("🛑 Unhandled Rejection:", reason instanceof Error ? reason.stack : reason);
 });
 
-process.on("uncaughtException", (err) => {
-  console.error("⚠️ خطأ برمي (Uncaught Exception):", err.message);
-  process.exit(1);
+// استثناء غير ممسوك: حالة البرنامج غير مضمونة، فنُغلق بشكل منظم ويعيد Docker التشغيل
+process.on("uncaughtException", (error) => {
+  console.error("⚠️ Uncaught Exception:", error.stack || error);
+  if (shutdown) shutdown("uncaughtException", 1);
+  else process.exit(1);
 });
 
 startServer();
