@@ -14,6 +14,28 @@ const {
   sendPasswordResetEmail,
 } = require("../utils/emailService");
 
+const MIN_PASSWORD_LENGTH = 8;
+const MAX_PASSWORD_LENGTH = 72; // حد bcrypt الفعلي
+const GENERIC_LOGIN_ERROR = "البريد الإلكتروني أو كلمة المرور غير صحيحة.";
+const GENERIC_RESET_MESSAGE =
+  "إذا كان البريد مسجلاً لدينا، سيصلك رابط استعادة كلمة المرور خلال دقائق.";
+// hash ثابت لمقارنة وهمية حتى لا يكشف زمن الرد وجود الحساب من عدمه
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync("miqass-dummy-password", 10);
+
+// يقبل النصوص فقط؛ أي كائن (مثل {"$ne": null}) يتحول إلى نص فارغ
+const asString = (value) => (typeof value === "string" ? value.trim() : "");
+const normalizeEmail = (value) => asString(value).toLowerCase();
+const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+const isValidNewPassword = (password) =>
+  typeof password === "string" &&
+  password.length >= MIN_PASSWORD_LENGTH &&
+  password.length <= MAX_PASSWORD_LENGTH;
+const PASSWORD_RULE_MESSAGE = `كلمة المرور يجب أن تكون ${MIN_PASSWORD_LENGTH} أحرف على الأقل.`;
+
+// نخزن hash لرمز الاستعادة فقط، والرمز الأصلي يذهب في الرابط بالإيميل
+const hashResetToken = (token) =>
+  crypto.createHash("sha256").update(String(token)).digest("hex");
+
 const VALID_PLANS = ["Pro", "Premium"];
 const VALID_BILLING_CYCLES = ["monthly", "annual"];
 
@@ -82,8 +104,19 @@ const consumePromo = async (promoCodeId) => {
 // 1. تسجيل صالون جديد
 const registerTenant = async (req, res) => {
   try {
-    const { salonName, slug, ownerName, ownerPhone, email, password } =
-      req.body;
+    const salonName = asString(req.body?.salonName);
+    const slug = asString(req.body?.slug).toLowerCase();
+    const ownerName = asString(req.body?.ownerName);
+    const ownerPhone = asString(req.body?.ownerPhone);
+    const email = normalizeEmail(req.body?.email);
+    const { password } = req.body || {};
+
+    if (!salonName || !slug || !ownerName || !ownerPhone || !isValidEmail(email)) {
+      return res.status(400).json({ message: "يرجى تعبئة جميع البيانات بشكل صحيح." });
+    }
+    if (!isValidNewPassword(password)) {
+      return res.status(400).json({ message: PASSWORD_RULE_MESSAGE });
+    }
 
     const existingTenant = await Tenant.findOne({
       $or: [{ email }, { slug }],
@@ -312,15 +345,18 @@ const freeActivation = async (req, res) => {
 // 4. تسجيل الدخول
 const loginTenant = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const email = normalizeEmail(req.body?.email);
+    const password = typeof req.body?.password === "string" ? req.body.password : "";
 
-    const tenant = await Tenant.findOne({ email }).lean();
-    if (!tenant)
-      return res.status(404).json({ message: "البريد الإلكتروني غير مسجل." });
-
-    const isMatch = await bcrypt.compare(password, tenant.password);
-    if (!isMatch)
-      return res.status(400).json({ message: "كلمة المرور غير صحيحة." });
+    const tenant = email ? await Tenant.findOne({ email }).lean() : null;
+    // نفس الرسالة ونفس زمن المعالجة تقريباً سواء كان الحساب موجوداً أم لا
+    const isMatch = await bcrypt.compare(
+      password,
+      tenant?.password || DUMMY_PASSWORD_HASH,
+    );
+    if (!tenant || !isMatch || !password) {
+      return res.status(401).json({ message: GENERIC_LOGIN_ERROR });
+    }
 
     if (tenant.subscription.status === "Pending") {
       return res.status(403).json({
@@ -399,17 +435,15 @@ const submitBankTransfer = async (req, res) => {
 // 6. استعادة كلمة المرور
 const forgotPassword = async (req, res) => {
   try {
-    const { email } = req.body;
-    const tenant = await Tenant.findOne({ email });
+    const email = normalizeEmail(req.body?.email);
+    const tenant = isValidEmail(email) ? await Tenant.findOne({ email }) : null;
 
-    if (!tenant)
-      return res
-        .status(404)
-        .json({ message: "لا يوجد حساب مسجل بهذا البريد الإلكتروني." });
+    // رد موحّد حتى لا يُستخدم هذا المسار لمعرفة الإيميلات المسجلة
+    if (!tenant) return res.status(200).json({ message: GENERIC_RESET_MESSAGE });
 
     const resetToken = crypto.randomBytes(32).toString("hex");
 
-    tenant.resetPasswordToken = resetToken;
+    tenant.resetPasswordToken = hashResetToken(resetToken);
     tenant.resetPasswordExpires = Date.now() + 3600000; // 1 Hour
     await tenant.save();
 
@@ -418,9 +452,7 @@ const forgotPassword = async (req, res) => {
       (e) => console.error(e),
     );
 
-    res.status(200).json({
-      message: "تم إرسال رابط استعادة كلمة المرور إلى بريدك الإلكتروني.",
-    });
+    res.status(200).json({ message: GENERIC_RESET_MESSAGE });
   } catch (error) {
     console.error("Error in forgot password:", error);
     res.status(500).json({ message: "حدث خطأ أثناء معالجة الطلب." });
@@ -430,11 +462,20 @@ const forgotPassword = async (req, res) => {
 // 7. تعيين كلمة المرور الجديدة
 const resetPassword = async (req, res) => {
   try {
-    const { token } = req.params;
-    const { newPassword } = req.body;
+    const token = asString(req.params?.token);
+    const { newPassword } = req.body || {};
+
+    if (!/^[a-f0-9]{64}$/.test(token)) {
+      return res
+        .status(400)
+        .json({ message: "رابط الاستعادة غير صالح أو انتهت صلاحيته." });
+    }
+    if (!isValidNewPassword(newPassword)) {
+      return res.status(400).json({ message: PASSWORD_RULE_MESSAGE });
+    }
 
     const tenant = await Tenant.findOne({
-      resetPasswordToken: token,
+      resetPasswordToken: hashResetToken(token),
       resetPasswordExpires: { $gt: Date.now() },
     });
 
@@ -448,6 +489,9 @@ const resetPassword = async (req, res) => {
 
     tenant.resetPasswordToken = undefined;
     tenant.resetPasswordExpires = undefined;
+    // كل الجلسات الصادرة قبل هذه اللحظة تصبح غير صالحة (انظر authMiddleware)
+    // نطرح ثانية لأن iat في JWT بالثواني، حتى لا يُرفض دخول يتم فوراً بعد التغيير
+    tenant.passwordChangedAt = new Date(Date.now() - 1000);
     await tenant.save();
 
     res.status(200).json({

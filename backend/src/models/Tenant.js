@@ -23,6 +23,8 @@ const tenantSchema = new mongoose.Schema(
     password: { type: String, required: true },
     resetPasswordToken: String,
     resetPasswordExpires: Date,
+    // أي توكن صادر قبل هذا التاريخ يُرفض
+    passwordChangedAt: { type: Date, default: null },
 
     branding: {
       logoUrl: { type: String, default: "/default-logo.png" },

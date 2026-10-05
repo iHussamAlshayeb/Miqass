@@ -1,6 +1,8 @@
 const jwt = require("jsonwebtoken");
 
-const protect = (req, res, next) => {
+const Tenant = require("../models/Tenant");
+
+const protect = async (req, res, next) => {
   let token;
 
   if (
@@ -25,9 +27,26 @@ const protect = (req, res, next) => {
         .json({ message: "غير مصرح لك، التوكن غير صالح لهذه العملية." });
     }
 
-    req.tenantId = decoded.tenantId;
+    // إلغاء الجلسات القديمة بعد تغيير كلمة المرور، ورفض توكنات الحسابات المحذوفة
+    const tenant = await Tenant.findById(decoded.tenantId)
+      .select("passwordChangedAt")
+      .lean();
+    if (!tenant) {
+      return res
+        .status(401)
+        .json({ message: "الحساب غير موجود.", isExpired: true });
+    }
+    if (
+      tenant.passwordChangedAt &&
+      decoded.iat * 1000 < new Date(tenant.passwordChangedAt).getTime()
+    ) {
+      return res.status(401).json({
+        message: "تم تغيير كلمة المرور، يرجى تسجيل الدخول مجدداً.",
+        isExpired: true,
+      });
+    }
 
-    next();
+    req.tenantId = decoded.tenantId;
   } catch (error) {
     if (error.name === "TokenExpiredError") {
       return res.status(401).json({
@@ -36,10 +55,18 @@ const protect = (req, res, next) => {
       });
     }
 
-    return res
-      .status(401)
-      .json({ message: "غير مصرح لك، التوكن غير صالح أو تم التلاعب به." });
+    if (error.name === "JsonWebTokenError" || error.name === "NotBeforeError") {
+      return res
+        .status(401)
+        .json({ message: "غير مصرح لك، التوكن غير صالح أو تم التلاعب به." });
+    }
+
+    console.error("Auth middleware error:", error.message);
+    return res.status(500).json({ message: "تعذر التحقق من الجلسة، حاول مجدداً." });
   }
+
+  // خارج try حتى لا تتحول أخطاء المسارات اللاحقة إلى 401
+  return next();
 };
 
 module.exports = { protect };

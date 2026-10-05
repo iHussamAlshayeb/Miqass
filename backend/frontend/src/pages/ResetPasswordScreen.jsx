@@ -15,8 +15,8 @@ const ResetPasswordScreen = () => {
     const handleSubmit = async (event) => {
         event.preventDefault();
 
-        if (newPassword.length < 6) {
-            setError('كلمة المرور يجب أن تكون 6 أحرف على الأقل.');
+        if (newPassword.length < 8) {
+            setError('كلمة المرور يجب أن تكون 8 أحرف على الأقل.');
             return;
         }
 

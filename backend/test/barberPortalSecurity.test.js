@@ -113,18 +113,20 @@ test("barber portal accepts a valid session token and rejects a forged one", asy
   });
 });
 
-test("dashboard auth rejects customer and barber tokens", () => {
-  const run = (token) => {
+test("dashboard auth rejects customer and barber tokens", async () => {
+  const run = async (token) => {
     const res = response();
     let passed = false;
-    protect({ headers: { authorization: `Bearer ${token}` } }, res, () => { passed = true; });
+    await protect({ headers: { authorization: `Bearer ${token}` } }, res, () => { passed = true; });
     return passed;
   };
 
-  assert.equal(run(jwt.sign({ tenantId }, process.env.JWT_SECRET, { expiresIn: "1h" })), true);
-  assert.equal(run(signBarberToken({ tenantId, barberId })), false);
-  assert.equal(
-    run(jwt.sign({ tenantId, scope: "customer-bookings" }, process.env.JWT_SECRET, { audience: "customer-bookings" })),
-    false,
-  );
+  await withStubs([[Tenant, "findById", () => chain({ _id: tenantId, passwordChangedAt: null })]], async () => {
+    assert.equal(await run(jwt.sign({ tenantId }, process.env.JWT_SECRET, { expiresIn: "1h" })), true);
+    assert.equal(await run(signBarberToken({ tenantId, barberId })), false);
+    assert.equal(
+      await run(jwt.sign({ tenantId, scope: "customer-bookings" }, process.env.JWT_SECRET, { audience: "customer-bookings" })),
+      false,
+    );
+  });
 });
