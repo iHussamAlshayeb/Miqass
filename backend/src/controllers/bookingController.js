@@ -1046,7 +1046,7 @@ const cancelAppointment = async (req, res) => {
 // 4. جلب الطابور المباشر للعملاء
 const getLiveQueue = async (req, res) => {
   try {
-    const { slug } = req.params;
+    const slug = String(req.params.slug || "");
     const tenant = await Tenant.findOne({ slug })
       .select("_id salonName branding")
       .lean();
@@ -1060,10 +1060,8 @@ const getLiveQueue = async (req, res) => {
 
     const [appointments, barbers] = await Promise.all([
       Appointment.find({ tenantId: tenant._id, date: today, status: "Booked" })
-        .select(
-          "childName timeSlot barberName status customerId totalPrice selectedServices",
-        )
-        .populate("customerId", "phone")
+        // شاشة عامة: لا جوالات ولا أسعار ولا خدمات — فقط ما يُعرض على الشاشة
+        .select("childName timeSlot barberName status")
         .sort({ timeSlot: 1 })
         .lean(),
       Barber.find({ tenantId: tenant._id, isActive: true })
@@ -1077,9 +1075,6 @@ const getLiveQueue = async (req, res) => {
       timeSlot: app.timeSlot,
       chair: app.barberName,
       status: app.status,
-      customerPhone: app.customerId?.phone || "غير معروف",
-      totalPrice: app.totalPrice || 0,
-      selectedServices: app.selectedServices || [],
     }));
 
     res.status(200).json({
