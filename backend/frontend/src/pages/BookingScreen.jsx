@@ -404,7 +404,7 @@ const BookingScreen = () => {
                             <h2 className="text-slate-900 font-black text-base">اختر الحلاق</h2>
                             <span className="text-xs font-bold text-slate-400">{availableBarbers.length} متاحين</span>
                         </div>
-                        <div className={`flex overflow-x-auto hide-scrollbar gap-4 pb-2 px-1 snap-x ${availableBarbers.length <= 3 ? 'justify-center' : 'justify-start -mx-1'}`}>
+                        <div className={`flex overflow-x-auto hide-scrollbar gap-4 pt-3 pb-4 px-3 snap-x ${availableBarbers.length <= 3 ? 'justify-center' : 'justify-start -mx-1'}`}>
                             {availableBarbers.map((barberObj, index) => {
                                 const bName = barberObj.name;
                                 const isSelected = selectedChair === bName;
@@ -483,7 +483,7 @@ const BookingScreen = () => {
                             />
                         </div>
                     </div>
-                    <div className="flex overflow-x-auto hide-scrollbar gap-2 pb-1 -mx-1 px-1 snap-x">
+                    <div className="flex overflow-x-auto hide-scrollbar gap-2 pt-2 pb-2 -mx-1 px-2 snap-x">
                         {quickDates.map(d => {
                             const isSelected = selectedDate === d.iso;
                             const disabled = d.isClosed;

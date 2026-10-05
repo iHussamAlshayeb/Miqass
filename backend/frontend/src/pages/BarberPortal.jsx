@@ -261,7 +261,7 @@ const BarberPortal = () => {
                                 {/* 💡 اختيار الحلاق - تصميم الكروت بدلاً من القائمة المنسدلة */}
                                 <div>
                                     <label className="block text-sm font-bold text-slate-500 mb-3 px-1">اختر الكرسي (الاسم):</label>
-                                    <div className="flex overflow-x-auto hide-scrollbar gap-3 pb-2 -mx-2 px-2 snap-x">
+                                    <div className="flex overflow-x-auto hide-scrollbar gap-3 pt-3 pb-3 -mx-2 px-3 snap-x">
                                         {barbersList.length === 0 ? (
                                             <p className="text-xs text-slate-400 font-bold p-4 text-center w-full bg-slate-50 rounded-2xl border border-slate-100">لا يوجد طاقم مسجل</p>
                                         ) : (

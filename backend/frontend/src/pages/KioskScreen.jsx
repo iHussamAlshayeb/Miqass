@@ -395,7 +395,7 @@ const KioskScreen = () => {
                                     <div className="flex items-center justify-between mb-4 px-1">
                                         <h3 className="text-lg md:text-2xl font-black text-slate-800">1. اختر الحلاق:</h3>
                                     </div>
-                                    <div className={`flex overflow-x-auto hide-scrollbar gap-4 pb-4 px-1 snap-x ${tenantData.barbers.length <= 3 ? 'justify-center' : 'justify-start -mx-1'}`}>
+                                    <div className={`flex overflow-x-auto hide-scrollbar gap-4 pt-4 pb-5 px-3 snap-x ${tenantData.barbers.length <= 3 ? 'justify-center' : 'justify-start -mx-1'}`}>
                                         {tenantData.barbers.map((barberObj, index) => {
                                             const bName = typeof barberObj === 'string' ? barberObj : barberObj.name;
                                             const isSelected = selectedChair === bName;
