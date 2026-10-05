@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { CalendarCheck, ChevronLeft, ChevronRight, Download, FileDown, Gift, Info, Search, Upload, UserPlus, Users } from 'lucide-react';
 import * as XLSX from 'xlsx';
+
+const MAX_IMPORT_FILE_BYTES = 5 * 1024 * 1024;
+const MAX_IMPORT_ROWS = 5000; // يطابق حد السيرفر في importCustomers
 import API from '../../services/api';
 
 const bookingFilterOptions = [
@@ -69,18 +72,36 @@ const CustomersTab = () => {
         const file = event.target.files[0];
         if (!file) return;
 
+        // حماية إضافية: لا نقرأ ملفات ضخمة داخل المتصفح
+        if (file.size > MAX_IMPORT_FILE_BYTES) {
+            alert('حجم الملف كبير جداً. الحد الأقصى 5 ميجابايت.');
+            event.target.value = null;
+            return;
+        }
+
         setIsImporting(true);
         const reader = new FileReader();
+        // ملفات CSV تُقرأ كنص UTF-8 حتى لا تتشوه الحروف العربية
+        const isCsv = /\.csv$/i.test(file.name) || file.type === 'text/csv';
 
         reader.onload = async (readerEvent) => {
             try {
-                const workbook = XLSX.read(readerEvent.target.result, { type: 'binary' });
+                // sheetRows يوقف التحليل بعد الحد المسموح بدل قراءة الملف كاملاً
+                // (+1 لصف العناوين، +1 لاكتشاف تجاوز الحد بدل القص الصامت)
+                const workbook = XLSX.read(readerEvent.target.result, {
+                    type: isCsv ? 'string' : 'array',
+                    sheetRows: MAX_IMPORT_ROWS + 2,
+                });
                 const worksheetName = workbook.SheetNames[0];
                 const worksheet = workbook.Sheets[worksheetName];
                 const data = XLSX.utils.sheet_to_json(worksheet);
 
                 if (data.length === 0) {
                     alert('الملف فارغ.');
+                    return;
+                }
+                if (data.length > MAX_IMPORT_ROWS) {
+                    alert(`الحد الأقصى ${MAX_IMPORT_ROWS} عميل في الملف الواحد. قسّم الملف وحاول مجدداً.`);
                     return;
                 }
 
@@ -107,7 +128,14 @@ const CustomersTab = () => {
             }
         };
 
-        reader.readAsBinaryString(file);
+        reader.onerror = () => {
+            alert('تعذر قراءة الملف.');
+            setIsImporting(false);
+            event.target.value = null;
+        };
+
+        if (isCsv) reader.readAsText(file, 'UTF-8');
+        else reader.readAsArrayBuffer(file);
     };
 
     const handleDownloadImportTemplate = () => {
