@@ -98,6 +98,10 @@ const SettingsTab = ({
     const [leaveDrafts, setLeaveDrafts] = useState({});
     const [activeSettingsTab, setActiveSettingsTab] = useState('identity');
     const [qrCode, setQrCode] = useState('');
+    const [qrRaw, setQrRaw] = useState('');
+    const [waProvider, setWaProvider] = useState('');
+    const [waProviders, setWaProviders] = useState([]);
+    const [selectedWaProvider, setSelectedWaProvider] = useState('wasender');
     const [waStatus, setWaStatus] = useState('DISCONNECTED');
     const [isWaLoading, setIsWaLoading] = useState(false);
     const [activeMessageType, setActiveMessageType] = useState('confirmation');
@@ -110,35 +114,49 @@ const SettingsTab = ({
     const fileInputRef = useRef(null);
     const activeTab = SETTINGS_TABS.find((tab) => tab.id === activeSettingsTab) || SETTINGS_TABS[0];
 
+    // يطبق بيانات الجلسة القادمة من أي وسيط (WaSender يرجع رابط صورة، Whatsi قد يرجع نص QR خام)
+    const applyWaSession = (session) => {
+        if (!session) return;
+        const status = session.status?.toUpperCase();
+        setWaStatus(status);
+        if (session.provider) setWaProvider(session.provider);
+        if (status !== 'CONNECTED') {
+            if (session.qr_code) { setQrCode(session.qr_code); setQrRaw(''); }
+            else if (session.qr_raw) { setQrRaw(session.qr_raw); setQrCode(''); }
+        }
+    };
+
     useEffect(() => {
         const fetchWaStatus = async () => {
             try {
                 const res = await API.get('/whatsapp/session-data');
-                if (res.data?.session) {
-                    setWaStatus(res.data.session.status);
-                    if (res.data.session.qr_code) setQrCode(res.data.session.qr_code);
-                }
+                applyWaSession(res.data?.session);
             } catch { console.log('لا توجد جلسة واتساب نشطة حالياً.'); }
         };
+        const fetchWaProviders = async () => {
+            try {
+                const res = await API.get('/whatsapp/providers');
+                const available = (res.data?.providers || []).filter((provider) => provider.available);
+                setWaProviders(available);
+                if (available.length && !available.some((provider) => provider.id === 'wasender')) {
+                    setSelectedWaProvider(available[0].id);
+                }
+            } catch { setWaProviders([]); }
+        };
         fetchWaStatus();
+        fetchWaProviders();
     }, []);
 
     useEffect(() => {
         let interval;
-        const pendingStates = ['CREATED', 'STARTING', 'NEED_SCAN', 'SCAN_QR_CODE', 'CONNECTING'];
+        const pendingStates = ['CREATED', 'STARTING', 'NEED_SCAN', 'SCAN_QR_CODE', 'CONNECTING', 'CREATING', 'QR_READY'];
         const currentStatus = waStatus?.toUpperCase();
 
         if (pendingStates.includes(currentStatus)) {
             interval = setInterval(async () => {
                 try {
                     const res = await API.get(`/whatsapp/session-data?t=${new Date().getTime()}`);
-                    if (res.data?.session) {
-                        const newStatus = res.data.session.status?.toUpperCase();
-                        setWaStatus(newStatus);
-                        if (newStatus !== 'CONNECTED' && res.data.session.qr_code) {
-                            setQrCode(res.data.session.qr_code);
-                        }
-                    }
+                    applyWaSession(res.data?.session);
                 } catch (error) { console.error('خطأ في تحديث الباركود', error); }
             }, 5000);
         }
@@ -148,14 +166,13 @@ const SettingsTab = ({
     const handleConnectWhatsapp = async () => {
         setIsWaLoading(true);
         try {
-            await API.post('/whatsapp/create-session');
+            await API.post('/whatsapp/create-session', { provider: selectedWaProvider });
+            setWaProvider(selectedWaProvider);
             setWaStatus('STARTING');
             setTimeout(async () => {
                 try {
                     const qrRes = await API.get('/whatsapp/session-data');
-                    const status = qrRes.data?.session?.status?.toUpperCase();
-                    setWaStatus(status);
-                    if (qrRes.data?.session?.qr_code) setQrCode(qrRes.data.session.qr_code);
+                    applyWaSession(qrRes.data?.session);
                 } catch (err) { console.error(err); }
                 setIsWaLoading(false);
             }, 3000);
@@ -172,6 +189,7 @@ const SettingsTab = ({
             await API.post('/whatsapp/disconnect');
             setWaStatus('DISCONNECTED');
             setQrCode('');
+            setQrRaw('');
         } catch { alert('حدث خطأ أثناء إلغاء الربط.'); }
         finally { setIsWaLoading(false); }
     };
@@ -444,6 +462,11 @@ const SettingsTab = ({
                 isSavingTemplates={isSavingTemplates}
                 isWaLoading={isWaLoading}
                 qrCode={qrCode}
+                qrRaw={qrRaw}
+                waProvider={waProvider}
+                waProviders={waProviders}
+                selectedWaProvider={selectedWaProvider}
+                setSelectedWaProvider={setSelectedWaProvider}
                 setActiveMessageType={setActiveMessageType}
                 setTemplateError={setTemplateError}
                 setTemplateSaved={setTemplateSaved}

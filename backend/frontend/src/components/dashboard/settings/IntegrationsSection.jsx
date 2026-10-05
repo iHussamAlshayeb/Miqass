@@ -6,6 +6,9 @@ import {
     Smartphone,
     Unplug,
 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
+
+const PROVIDER_LABELS = { wasender: 'WaSender', whatsi: 'Whatsi' };
 
 const WHATSAPP_MESSAGE_TYPES = [
     { key: 'confirmation', label: 'تأكيد الحجز', variables: ['اسم_الصالون', 'اسم_العميل', 'التاريخ', 'الوقت', 'الحلاق', 'الموقع', 'رقم_التواصل'] },
@@ -29,6 +32,11 @@ const IntegrationsSection = ({
     isSavingTemplates,
     isWaLoading,
     qrCode,
+    qrRaw,
+    waProvider,
+    waProviders = [],
+    selectedWaProvider,
+    setSelectedWaProvider,
     setActiveMessageType,
     setTemplateError,
     setTemplateSaved,
@@ -63,7 +71,7 @@ const IntegrationsSection = ({
                                 <CheckCircle2 size={28} />
                             </div>
                             <h3 className="font-black text-emerald-800 text-xl mb-1">الواتساب متصل ويعمل بنجاح!</h3>
-                            <p className="text-xs font-bold text-emerald-600/80 mb-6">النظام الآن يرسل التنبيهات لعملائك آلياً.</p>
+                            <p className="text-xs font-bold text-emerald-600/80 mb-6">النظام الآن يرسل التنبيهات لعملائك آلياً{PROVIDER_LABELS[waProvider] ? ` عبر ${PROVIDER_LABELS[waProvider]}` : ''}.</p>
                             <button onClick={handleDisconnectWhatsapp} disabled={isWaLoading} className="bg-white border border-red-100 text-red-500 hover:bg-red-500 hover:text-white font-black px-8 py-3 rounded-lg transition-all text-sm shadow-sm inline-flex items-center gap-2">
                                 <Unplug size={15} />
                                 إلغاء الربط مؤقتاً
@@ -71,7 +79,7 @@ const IntegrationsSection = ({
                         </div>
                     );
                 }
-                if (['CREATED', 'STARTING', 'NEED_SCAN', 'SCAN_QR_CODE', 'CONNECTING'].includes(currentStatus) || qrCode) {
+                if (['CREATED', 'STARTING', 'NEED_SCAN', 'SCAN_QR_CODE', 'CONNECTING', 'CREATING', 'QR_READY'].includes(currentStatus) || qrCode || qrRaw) {
                     return (
                         <div className="bg-slate-50 border border-slate-200 p-8 rounded-lg text-center flex flex-col items-center">
                             <div className="w-11 h-11 bg-white border border-slate-100 text-slate-600 rounded-lg flex items-center justify-center mb-3">
@@ -84,6 +92,8 @@ const IntegrationsSection = ({
                                     <div className="animate-pulse flex flex-col items-center"><div className="border-4 border-slate-200 border-t-emerald-500 rounded-full w-12 h-12 animate-spin mb-3" /><p className="text-sm font-black text-emerald-600">جاري إتمام الاتصال...</p></div>
                                 ) : qrCode ? (
                                     <img src={qrCode} alt="WhatsApp QR Code" className="w-full h-full object-contain rounded-lg" />
+                                ) : qrRaw ? (
+                                    <QRCodeSVG value={qrRaw} size={224} level="M" title="WhatsApp QR Code" />
                                 ) : (
                                     <div className="animate-pulse flex flex-col items-center"><div className="border-4 border-slate-200 border-t-blue-500 rounded-full w-12 h-12 animate-spin mb-3" /><p className="text-sm font-black text-slate-500">جاري توليد الكود...</p></div>
                                 )}
@@ -99,6 +109,19 @@ const IntegrationsSection = ({
                         </div>
                         <h3 className="font-black text-slate-800 text-xl mb-2">رقم الواتساب غير مربوط</h3>
                         <p className="text-xs font-bold text-slate-500 mb-6">اربط جوال الصالون لتمكين إرسال الفواتير والتنبيهات للعملاء آلياً.</p>
+                        {waProviders.length > 1 && (
+                            <fieldset className="mb-6 w-full max-w-sm">
+                                <legend className="mb-2 text-xs font-black text-slate-600">وسيط الواتساب</legend>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {waProviders.map((provider) => (
+                                        <label key={provider.id} className={`cursor-pointer rounded-lg border px-3 py-2.5 text-sm font-black transition-colors ${selectedWaProvider === provider.id ? 'border-emerald-500 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'}`}>
+                                            <input type="radio" name="wa-provider" value={provider.id} checked={selectedWaProvider === provider.id} onChange={() => setSelectedWaProvider(provider.id)} className="sr-only" />
+                                            {provider.name}
+                                        </label>
+                                    ))}
+                                </div>
+                            </fieldset>
+                        )}
                         <button onClick={handleConnectWhatsapp} disabled={isWaLoading} className="bg-emerald-600 text-white font-black px-10 py-4 rounded-lg hover:bg-emerald-700 active:scale-95 transition-all text-sm shadow-lg shadow-emerald-600/30 inline-flex items-center gap-2">
                             <MessageCircle size={16} />
                             {isWaLoading ? 'جاري تجهيز السيرفر...' : 'بدء ربط الواتساب'}

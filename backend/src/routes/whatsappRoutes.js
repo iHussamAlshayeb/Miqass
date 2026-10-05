@@ -4,6 +4,8 @@ const rateLimit = require("../middlewares/rateLimit");
 const { protect } = require("../middlewares/authMiddleware");
 
 const {
+  getWhatsappProviders,
+  handleWhatsiWebhook,
   createWhatsappSession,
   getWhatsappSessionData,
   disconnectWhatsappSession,
@@ -36,8 +38,10 @@ router.post(
   createWhatsappSession,
 );
 
+router.get("/providers", protect, getWhatsappProviders);
 router.get("/session-data", protect, getWhatsappSessionData);
 router.post("/disconnect", protect, disconnectWhatsappSession);
 router.post("/webhook", webhookLimiter, handleWhatsappWebhook);
+router.post("/whatsi/webhook", webhookLimiter, handleWhatsiWebhook);
 
 module.exports = router;

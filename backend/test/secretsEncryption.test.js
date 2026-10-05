@@ -128,7 +128,7 @@ test("manual WhatsApp key update stores ciphertext and never echoes the key", as
     await updateWhatsappSettings({ tenantId: "t1", body: { apiKey: " wa-new ", isEnabled: true } }, res);
     assert.equal(decrypt(update["whatsappSettings.apiKey"]), "wa-new");
     assert.equal(update["whatsappSettings.apiKeyHash"], hashForLookup("wa-new"));
-    assert.deepEqual(res.body.whatsappSettings, { isEnabled: true, sessionStatus: "DISCONNECTED", hasApiKey: true });
+    assert.deepEqual(res.body.whatsappSettings, { isEnabled: true, sessionStatus: "DISCONNECTED", hasApiKey: true, provider: "wasender" });
   } finally {
     Tenant.findByIdAndUpdate = original;
   }

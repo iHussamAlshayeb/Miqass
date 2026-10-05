@@ -14,6 +14,7 @@ const toSafeWhatsappSettings = (settings = {}) => ({
   isEnabled: Boolean(settings?.isEnabled),
   sessionStatus: settings?.sessionStatus || "DISCONNECTED",
   hasApiKey: Boolean(settings?.apiKey),
+  provider: settings?.provider === "whatsi" ? "whatsi" : "wasender",
 });
 
 // 1. جلب إعدادات الصالون بالكامل

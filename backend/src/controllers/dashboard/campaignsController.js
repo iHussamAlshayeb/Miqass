@@ -7,6 +7,7 @@ const {
   parseCampaignDailyLimit,
 } = require("../../utils/campaignSchedule");
 const { normalizeSaudiMobile } = require("../../utils/saudiMobile");
+const { isWhatsappReady } = require("../../utils/whatsapp");
 
 const getBroadcastCustomerFilter = (tenantId) => ({
   tenantId,
@@ -466,16 +467,13 @@ const sendBroadcastTest = async (req, res) => {
 
     const tenant = await Tenant.findById(req.tenantId)
       .select(
-        "salonName ownerPhone whatsappSettings.isEnabled whatsappSettings.apiKey",
+        "salonName ownerPhone whatsappSettings.isEnabled whatsappSettings.apiKey whatsappSettings.provider whatsappSettings.sessionId",
       )
       .lean();
     if (!tenant) {
       return res.status(404).json({ message: "الصالون غير موجود." });
     }
-    if (
-      !tenant.whatsappSettings?.isEnabled ||
-      !tenant.whatsappSettings?.apiKey
-    ) {
+    if (!isWhatsappReady(tenant)) {
       return res.status(400).json({
         message: "يجب ربط واتساب وتفعيله قبل إرسال رسالة الاختبار.",
       });

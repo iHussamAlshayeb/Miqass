@@ -2,12 +2,47 @@ const axios = require("axios");
 const { normalizeWasenderMessageStatus } = require("./wasender");
 const { renderTemplate } = require("./whatsappTemplates");
 const { decrypt } = require("./encryption");
+const {
+  isWhatsiConfigured,
+  sendWhatsiText,
+  getWhatsiMessage,
+  normalizeWhatsiMessageStatus,
+} = require("./whatsi");
 
 // مفتاح WaSender مخزّن مشفراً؛ نفكه فقط لحظة الإرسال
 const getTenantApiKey = (tenant) => decrypt(tenant?.whatsappSettings?.apiKey) || null;
 
 const WASENDER_API_BASE_URL = "https://www.wasenderapi.com";
 const API_URL = `${WASENDER_API_BASE_URL}/api/send-message`;
+
+// وسيط الواتساب لكل صالون: wasender (الافتراضي) أو whatsi
+const isWhatsiTenant = (tenant) => tenant?.whatsappSettings?.provider === "whatsi";
+
+// يرجع بيانات الإرسال المتاحة للصالون أو null إن لم يكن الربط جاهزاً
+const getSendCredential = (tenant) => {
+  if (isWhatsiTenant(tenant)) {
+    return tenant?.whatsappSettings?.sessionId && isWhatsiConfigured() ? "whatsi" : null;
+  }
+  return getTenantApiKey(tenant);
+};
+
+const isWhatsappReady = (tenant) =>
+  Boolean(tenant?.whatsappSettings?.isEnabled && getSendCredential(tenant));
+
+// إرسال نص عبر وسيط الصالون. Whatsi يقبل الرسالة في الطابور ويرجع 202 مباشرة.
+const postText = async (tenant, credential, body, options = {}) => {
+  if (isWhatsiTenant(tenant)) {
+    const data = await sendWhatsiText(String(tenant._id), body.to, body.text, options.clientMessageId);
+    return { data: { success: true, data } };
+  }
+  return axios.post(API_URL, body, {
+    headers: {
+      Authorization: `Bearer ${credential}`,
+      "Content-Type": "application/json",
+    },
+    timeout: 8000,
+  });
+};
 
 const formatTimeForMessage = (timeStr) => {
   if (!timeStr) return "";
@@ -73,7 +108,7 @@ const sendWhatsAppMessage = async (
   tenant,
 ) => {
   try {
-    const customApiKey = getTenantApiKey(tenant);
+    const customApiKey = getSendCredential(tenant);
     const isEnabled = tenant?.whatsappSettings?.isEnabled;
 
     if (!isEnabled || !customApiKey) return false;
@@ -97,17 +132,7 @@ const sendWhatsAppMessage = async (
       رقم_التواصل: contactPhone,
     });
 
-    await axios.post(
-      API_URL,
-      { to: formattedPhone, text: message },
-      {
-        headers: {
-          Authorization: `Bearer ${customApiKey}`,
-          "Content-Type": "application/json",
-        },
-        timeout: 8000,
-      },
-    );
+    await postText(tenant, customApiKey, { to: formattedPhone, text: message });
 
     console.log(`✅ تم إرسال رسالة التأكيد لصالون ${salonName} بنجاح.`);
     return true;
@@ -125,7 +150,7 @@ const sendCancellationMessage = async (
   reason = "",
 ) => {
   try {
-    const customApiKey = getTenantApiKey(tenant);
+    const customApiKey = getSendCredential(tenant);
     const isEnabled = tenant?.whatsappSettings?.isEnabled;
 
     if (!isEnabled || !customApiKey) return false;
@@ -144,17 +169,7 @@ const sendCancellationMessage = async (
       سبب_الإلغاء: reasonText, رابط_الحجز: bookingLink,
     });
 
-    await axios.post(
-      API_URL,
-      { to: formattedPhone, text: message },
-      {
-        headers: {
-          Authorization: `Bearer ${customApiKey}`,
-          "Content-Type": "application/json",
-        },
-        timeout: 8000,
-      },
-    );
+    await postText(tenant, customApiKey, { to: formattedPhone, text: message });
 
     console.log(`✅ تم إرسال رسالة الإلغاء لصالون ${salonName}.`);
     return true;
@@ -172,7 +187,7 @@ const sendReminderMessage = async (
   tenant,
 ) => {
   try {
-    const customApiKey = getTenantApiKey(tenant);
+    const customApiKey = getSendCredential(tenant);
     const isEnabled = tenant?.whatsappSettings?.isEnabled;
 
     if (!isEnabled || !customApiKey) return false;
@@ -194,17 +209,7 @@ const sendReminderMessage = async (
       الحلاق: seatName, الموقع: locationUrl, رقم_التواصل: contactPhone,
     });
 
-    await axios.post(
-      API_URL,
-      { to: formattedPhone, text: message },
-      {
-        headers: {
-          Authorization: `Bearer ${customApiKey}`,
-          "Content-Type": "application/json",
-        },
-        timeout: 8000,
-      },
-    );
+    await postText(tenant, customApiKey, { to: formattedPhone, text: message });
 
     console.log(`✅ تم إرسال رسالة التذكير لصالون ${salonName}.`);
     return true;
@@ -221,7 +226,7 @@ const sendReviewRequestMessage = async (
   appointmentId,
 ) => {
   try {
-    const customApiKey = getTenantApiKey(tenant);
+    const customApiKey = getSendCredential(tenant);
     const isEnabled = tenant?.whatsappSettings?.isEnabled;
 
     if (!isEnabled || !customApiKey) return false;
@@ -239,17 +244,7 @@ const sendReviewRequestMessage = async (
       اسم_الصالون: salonName, اسم_العميل: childName, رابط_التقييم: reviewUrl,
     });
 
-    await axios.post(
-      API_URL,
-      { to: formattedPhone, text: message },
-      {
-        headers: {
-          Authorization: `Bearer ${customApiKey}`,
-          "Content-Type": "application/json",
-        },
-        timeout: 8000,
-      },
-    );
+    await postText(tenant, customApiKey, { to: formattedPhone, text: message });
 
     console.log(
       `✅ [WhatsApp] تم إرسال رابط التقييم لـ ${childName} (${reviewUrl})`,
@@ -263,7 +258,7 @@ const sendReviewRequestMessage = async (
 
 const sendLoyaltyRewardMessage = async (phone, customerName, tenant) => {
   try {
-    const customApiKey = getTenantApiKey(tenant);
+    const customApiKey = getSendCredential(tenant);
     const isEnabled = tenant?.whatsappSettings?.isEnabled;
 
     if (!isEnabled || !customApiKey) return false;
@@ -279,17 +274,7 @@ const sendLoyaltyRewardMessage = async (phone, customerName, tenant) => {
       اسم_الصالون: salonName, اسم_العميل: customerName, رابط_الحجز: bookingLink,
     });
 
-    await axios.post(
-      API_URL,
-      { to: formattedPhone, text: message },
-      {
-        headers: {
-          Authorization: `Bearer ${customApiKey}`,
-          "Content-Type": "application/json",
-        },
-        timeout: 8000,
-      },
-    );
+    await postText(tenant, customApiKey, { to: formattedPhone, text: message });
 
     console.log(`✅ تم إرسال رسالة مكافأة الولاء لعميل صالون ${salonName}.`);
     return true;
@@ -301,7 +286,7 @@ const sendLoyaltyRewardMessage = async (phone, customerName, tenant) => {
 
 const sendRetentionMessage = async (phone, customerName, tenant) => {
   try {
-    const customApiKey = getTenantApiKey(tenant);
+    const customApiKey = getSendCredential(tenant);
     const isEnabled = tenant?.whatsappSettings?.isEnabled;
 
     if (!isEnabled || !customApiKey) return false;
@@ -317,17 +302,7 @@ const sendRetentionMessage = async (phone, customerName, tenant) => {
       اسم_الصالون: salonName, اسم_العميل: customerName, رابط_الحجز: bookingLink,
     });
 
-    await axios.post(
-      API_URL,
-      { to: formattedPhone, text: message },
-      {
-        headers: {
-          Authorization: `Bearer ${customApiKey}`,
-          "Content-Type": "application/json",
-        },
-        timeout: 8000,
-      },
-    );
+    await postText(tenant, customApiKey, { to: formattedPhone, text: message });
 
     console.log(
       `✅ تم إرسال رسالة إعادة الاستهداف للعميل ${customerName} - صالون ${salonName}`,
@@ -339,8 +314,8 @@ const sendRetentionMessage = async (phone, customerName, tenant) => {
   }
 };
 
-const sendCampaignMessage = async (phone, messageText, tenant) => {
-  const customApiKey = getTenantApiKey(tenant);
+const sendCampaignMessage = async (phone, messageText, tenant, options = {}) => {
+  const customApiKey = getSendCredential(tenant);
   const isEnabled = tenant?.whatsappSettings?.isEnabled;
 
   if (!isEnabled || !customApiKey) {
@@ -363,17 +338,23 @@ const sendCampaignMessage = async (phone, messageText, tenant) => {
   }
 
   try {
-    const response = await axios.post(
-      API_URL,
+    const response = await postText(
+      tenant,
+      customApiKey,
       { to: formattedPhone, text: messageText },
-      {
-        headers: {
-          Authorization: `Bearer ${customApiKey}`,
-          "Content-Type": "application/json",
-        },
-        timeout: 8000,
-      },
+      { clientMessageId: options.clientMessageId },
     );
+
+    if (isWhatsiTenant(tenant)) {
+      const queued = response.data?.data || {};
+      const whatsiStatus = normalizeWhatsiMessageStatus(queued.status) || { code: 1, status: "pending" };
+      return {
+        success: true,
+        providerMessageId: String(queued.id || ""),
+        providerStatus: whatsiStatus.status,
+        providerStatusCode: whatsiStatus.code,
+      };
+    }
 
     if (response.data?.success === false) {
       return {
@@ -426,22 +407,15 @@ const sendCampaignMessage = async (phone, messageText, tenant) => {
 };
 
 const sendBookingAccessCode = async (phone, code, tenant) => {
-  const apiKey = getTenantApiKey(tenant);
+  const apiKey = getSendCredential(tenant);
   const formattedPhone = formatPhoneNumber(phone);
   if (!tenant?.whatsappSettings?.isEnabled || !apiKey || !formattedPhone) return false;
 
   try {
-    await axios.post(
-      API_URL,
-      {
+    await postText(tenant, apiKey, {
         to: formattedPhone,
         text: `رمز عرض وإدارة مواعيدك لدى ${tenant.salonName}: ${code}\nصالح لمدة 5 دقائق. لا تشاركه مع أحد.`,
-      },
-      {
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        timeout: 8000,
-      },
-    );
+      });
     return true;
   } catch (error) {
     handleWhatsAppError("رمز إدارة المواعيد", error);
@@ -450,18 +424,14 @@ const sendBookingAccessCode = async (phone, code, tenant) => {
 };
 
 const sendRescheduleMessage = async (phone, childName, date, time, barberName, tenant) => {
-  const apiKey = getTenantApiKey(tenant);
+  const apiKey = getSendCredential(tenant);
   const formattedPhone = formatPhoneNumber(phone);
   if (!tenant?.whatsappSettings?.isEnabled || !apiKey || !formattedPhone) return false;
   try {
-    await axios.post(
-      API_URL,
-      {
+    await postText(tenant, apiKey, {
         to: formattedPhone,
         text: `تم تعديل موعد ${childName} لدى ${tenant.salonName}.\nالموعد الجديد: ${date} الساعة ${formatTimeForMessage(time)}\nالموظف: ${barberName}`,
-      },
-      { headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, timeout: 8000 },
-    );
+      });
     return true;
   } catch (error) {
     handleWhatsAppError("تعديل الموعد", error);
@@ -470,8 +440,25 @@ const sendRescheduleMessage = async (phone, childName, date, time, barberName, t
 };
 
 const getCampaignMessageInfo = async (providerMessageId, tenant) => {
-  const customApiKey = getTenantApiKey(tenant);
   const normalizedMessageId = String(providerMessageId ?? "").trim();
+  if (isWhatsiTenant(tenant)) {
+    if (!getSendCredential(tenant) || !normalizedMessageId) return null;
+    try {
+      const message = await getWhatsiMessage(String(tenant._id), normalizedMessageId);
+      const providerStatus = normalizeWhatsiMessageStatus(message.status);
+      if (!providerStatus) return null;
+      return {
+        providerStatus,
+        providerWhatsappMessageId: String(message.waMessageId || "").trim(),
+      };
+    } catch (error) {
+      if (error.response?.status !== 404) {
+        console.warn(`تعذر مزامنة حالة رسالة Whatsi ${normalizedMessageId}:`, error.response?.status || error.message);
+      }
+      return null;
+    }
+  }
+  const customApiKey = getTenantApiKey(tenant);
   if (!customApiKey || !normalizedMessageId) return null;
 
   try {
@@ -504,6 +491,7 @@ const getCampaignMessageInfo = async (providerMessageId, tenant) => {
 const getWhatsAppStatus = () => ({ status: "API_ACTIVE", qr: "" });
 
 module.exports = {
+  isWhatsappReady,
   sendWhatsAppMessage,
   sendBookingAccessCode,
   sendRescheduleMessage,

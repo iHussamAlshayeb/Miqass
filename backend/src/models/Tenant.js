@@ -91,6 +91,8 @@ const tenantSchema = new mongoose.Schema(
     },
 
     whatsappSettings: {
+      // وسيط الواتساب: wasender (الافتراضي) أو whatsi
+      provider: { type: String, enum: ["wasender", "whatsi"], default: "wasender" },
       apiKey: { type: String, default: "" }, // مشفّر (encryption.js)
       apiKeyHash: { type: String, default: null }, // HMAC للبحث في الـ webhook
       isEnabled: { type: Boolean, default: false },

@@ -50,7 +50,17 @@ app.use(
   }),
 );
 
-app.use(express.json({ limit: "5mb" }));
+app.use(
+  express.json({
+    limit: "5mb",
+    // Webhook Whatsi يُتحقق من توقيعه على الجسم الخام كما وصل
+    verify: (req, res, buf) => {
+      if (req.originalUrl?.startsWith("/api/whatsapp/whatsi/webhook")) {
+        req.rawBody = buf.toString("utf8");
+      }
+    },
+  }),
+);
 app.use(express.urlencoded({ limit: "5mb", extended: true }));
 
 // تقارير مخالفات CSP (قبل وضع الصيانة حتى تُستقبل دائماً)

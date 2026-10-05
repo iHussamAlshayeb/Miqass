@@ -6,7 +6,7 @@ const Barber = require("../../models/Barber");
 const mongoose = require("mongoose");
 const crypto = require("node:crypto");
 const jwt = require("jsonwebtoken");
-const { sendCancellationMessage, sendBookingAccessCode, sendRescheduleMessage } = require("../../utils/whatsapp");
+const { sendCancellationMessage, sendBookingAccessCode, sendRescheduleMessage, isWhatsappReady } = require("../../utils/whatsapp");
 const { sendAdminNotification } = require("../../utils/onesignal");
 const { isBarberOnLeave } = require("../../utils/barberLeave");
 const {
@@ -49,9 +49,9 @@ const sendCustomerAccessCode = async (req, res) => {
       return res.status(400).json({ message: "أدخل رقم جوال صحيحاً." });
     }
     const tenant = await Tenant.findById(tenantId)
-      .select("salonName whatsappSettings.apiKey whatsappSettings.isEnabled")
+      .select("salonName whatsappSettings.apiKey whatsappSettings.isEnabled whatsappSettings.provider whatsappSettings.sessionId")
       .lean();
-    if (!tenant?.whatsappSettings?.isEnabled || !tenant.whatsappSettings.apiKey) {
+    if (!isWhatsappReady(tenant)) {
       return res.status(503).json({ message: "التحقق عبر واتساب غير متاح لهذا الصالون حالياً. تواصل مع الصالون." });
     }
 

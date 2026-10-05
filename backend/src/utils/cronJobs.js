@@ -12,6 +12,7 @@ const {
   sendRetentionMessage,
   sendCampaignMessage,
   getCampaignMessageInfo,
+  isWhatsappReady,
 } = require("./whatsapp");
 const { sendRenewalReminderEmail } = require("./emailService");
 const {
@@ -522,6 +523,8 @@ const processBroadcastCampaigns = async () => {
         customer.phone,
         personalizedMessage,
         campaign.tenantId,
+        // يمنع تكرار الرسالة عند إعادة المحاولة (يدعمه Whatsi)
+        { clientMessageId: `campaign-${campaign._id}-${customer._id}` },
       );
       const recipientUpdate = {
         lastProgressAt: new Date(),
@@ -689,7 +692,7 @@ const reconcileCampaignDeliveries = async () => {
 
     let checkedCount = 0;
     for (const campaign of campaigns) {
-      if (!campaign.tenantId?.whatsappSettings?.apiKey) continue;
+      if (!isWhatsappReady(campaign.tenantId)) continue;
 
       for (const recipient of campaign.targetCustomers) {
         if (checkedCount >= 20) return;
