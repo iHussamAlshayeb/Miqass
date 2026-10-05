@@ -19,7 +19,7 @@ const escapeHtml = (value) =>
     "'": "&#39;",
   })[char]);
 
-const sendEmail = async ({ to, subject, html }) => {
+const sendEmail = async ({ to, subject, html, text }) => {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) throw new Error("RESEND_API_KEY غير مضبوط");
 
@@ -31,6 +31,7 @@ const sendEmail = async ({ to, subject, html }) => {
         to: [to],
         subject,
         html,
+        ...(text ? { text } : {}),
         ...(process.env.REPLY_TO_EMAIL ? { reply_to: process.env.REPLY_TO_EMAIL } : {}),
       },
       {
@@ -48,141 +49,185 @@ const sendEmail = async ({ to, subject, html }) => {
 };
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "https://www.miqass.app";
+const BRAND = "مِقَص";
+const BRAND_TAGLINE = "نظام إدارة صالونات الحلاقة والتجميل";
 
-const baseTemplate = (title, content, buttonText, buttonLink) => `
-<div dir="rtl" style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f8fafc; padding: 40px 20px; text-align: right;">
-    <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 24px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05); border: 1px solid #f1f5f9;">
-        <div style="background-color: #0f172a; padding: 30px; text-align: center;">
-            <h1 style="color: #ffffff; margin: 0; font-size: 28px;">نظام مِقَص السحابي</h1>
-        </div>
-        <div style="padding: 40px 30px;">
-            <h2 style="color: #1e293b; margin-top: 0; font-size: 22px;">${title}</h2>
-            <div style="color: #475569; font-size: 16px; line-height: 1.6; margin-bottom: 30px;">
-                ${content}
-            </div>
-            ${
-              buttonText && buttonLink
-                ? `
-            <div style="text-align: center;">
-                <a href="${buttonLink}" style="display: inline-block; background-color: #2563eb; color: #ffffff; font-weight: bold; text-decoration: none; padding: 14px 30px; border-radius: 12px; font-size: 16px;">
-                    ${buttonText}
-                </a>
-            </div>
-            `
-                : ""
-            }
-        </div>
-        <div style="background-color: #f8fafc; padding: 20px; text-align: center; border-top: 1px solid #f1f5f9;">
-            <p style="color: #94a3b8; font-size: 12px; margin: 0;">© ${new Date().getFullYear()} نظام مِقَص السحابي لصالونات الحلاقة والتجميل</p>
-        </div>
+const fromAddress = `${process.env.FROM_NAME || "Miqass"} <${process.env.FROM_EMAIL || "noreply@miqass.app"}>`;
+
+const footerNote = () =>
+  process.env.REPLY_TO_EMAIL
+    ? "للاستفسار، يمكنك الرد مباشرة على هذه الرسالة."
+    : "هذه رسالة آلية، يرجى عدم الرد عليها.";
+
+const formatDays = (value) => {
+  const days = Number(value);
+  if (days === 1) return "يوم واحد";
+  if (days === 2) return "يومين";
+  if (days >= 3 && days <= 10) return `${days} أيام`;
+  return `${days} يوماً`;
+};
+
+/**
+ * يبني الرسالة بصيغتين: HTML ونص عادي (الرسائل التي تحتوي على نسخة نصية
+ * تُصنَّف أفضل لدى مزودي البريد). كل النصوص تُهرَّب قبل إدراجها في HTML.
+ */
+const renderEmail = ({ heading, greeting, paragraphs = [], note, button }) => {
+  const year = new Date().getFullYear();
+  const paragraphHtml = paragraphs
+    .map((text) => `<p style="margin: 0 0 14px;">${escapeHtml(text)}</p>`)
+    .join("");
+
+  const html = `<!doctype html>
+<html lang="ar" dir="rtl">
+<body style="margin: 0; padding: 0; background-color: #f4f5f7;">
+<div dir="rtl" style="font-family: Tahoma, Arial, sans-serif; background-color: #f4f5f7; padding: 32px 16px; text-align: right;">
+  <div style="max-width: 560px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
+    <div style="background-color: #0f172a; padding: 20px 28px;">
+      <span style="color: #ffffff; font-size: 20px; font-weight: bold;">${BRAND}</span>
     </div>
+    <div style="padding: 32px 28px; color: #334155; font-size: 15px; line-height: 1.8;">
+      <h1 style="margin: 0 0 20px; color: #0f172a; font-size: 20px;">${escapeHtml(heading)}</h1>
+      ${greeting ? `<p style="margin: 0 0 14px;">${escapeHtml(greeting)}</p>` : ""}
+      ${paragraphHtml}
+      ${
+        button
+          ? `<div style="margin: 28px 0;">
+        <a href="${escapeHtml(button.url)}" style="display: inline-block; background-color: #1d4ed8; color: #ffffff; font-weight: bold; text-decoration: none; padding: 12px 28px; border-radius: 6px; font-size: 15px;">${escapeHtml(button.text)}</a>
+      </div>
+      <p style="margin: 0 0 14px; color: #64748b; font-size: 13px;">إذا لم يعمل الزر، انسخ الرابط التالي في المتصفح:<br><span dir="ltr" style="word-break: break-all;">${escapeHtml(button.url)}</span></p>`
+          : ""
+      }
+      ${
+        note
+          ? `<p style="margin: 20px 0 0; padding-top: 16px; border-top: 1px solid #e5e7eb; color: #64748b; font-size: 13px;">${escapeHtml(note)}</p>`
+          : ""
+      }
+    </div>
+    <div style="background-color: #f8fafc; padding: 16px 28px; border-top: 1px solid #e5e7eb; color: #94a3b8; font-size: 12px; line-height: 1.6;">
+      ${escapeHtml(footerNote())}<br>
+      &copy; ${year} ${BRAND} - ${BRAND_TAGLINE}
+    </div>
+  </div>
 </div>
-`;
+</body>
+</html>`;
 
-const fromAddress = `${process.env.FROM_NAME || "Miqass App"} <${process.env.FROM_EMAIL || "noreply@miqass.app"}>`;
+  const text = [
+    heading,
+    "",
+    greeting,
+    ...paragraphs,
+    button ? `\n${button.text}:\n${button.url}` : null,
+    note ? `\n${note}` : null,
+    "",
+    "--",
+    footerNote(),
+    `${BRAND} - ${BRAND_TAGLINE}`,
+  ]
+    .filter((line) => line !== null && line !== undefined)
+    .join("\n");
+
+  return { html, text };
+};
 
 const sendWelcomeEmail = async (email, ownerName, salonName) => {
   try {
-    const content = `
-        أهلاً بك يا <strong>${escapeHtml(ownerName)}</strong> في نظام مِقَص! 🎉<br><br>
-        تم إنشاء مساحة عمل صالونك "<strong>${escapeHtml(salonName)}</strong>" بنجاح على <strong>الباقة الأساسية (المجانية)</strong>.<br>
-        صالونك الآن جاهز لاستقبال الحجوزات فوراً عبر رابطك المخصص، ويمكنك إدارة مواعيدك بكل سهولة.<br><br>
-        <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; padding: 15px; border-radius: 12px; font-size: 14px; margin-top: 15px;">
-            💡 <strong>نصيحة:</strong> للحصول على سكرتير الواتساب الآلي وشاشة الانتظار التلفزيونية، يمكنك ترقية باقتك إلى (Pro) أو (VIP) من داخل لوحة التحكم في أي وقت.
-        </div>
-    `;
-    const html = baseTemplate(
-      "مرحباً بك في نظام مِقَص! 🚀",
-      content,
-      "الذهاب للوحة التحكم",
-      `${FRONTEND_URL}/login`,
-    );
+    const { html, text } = renderEmail({
+      heading: `مرحباً بك في ${BRAND}`,
+      greeting: `مرحباً ${ownerName}،`,
+      paragraphs: [
+        `تم إنشاء حساب صالون «${salonName}» بنجاح على الباقة المجانية.`,
+        "يمكنك الآن استقبال الحجوزات عبر رابط صالونك المخصص، وإدارة المواعيد والعملاء من لوحة التحكم.",
+      ],
+      note: "تتوفر ميزات إضافية مثل رسائل واتساب الآلية وشاشة الانتظار ضمن باقتي Pro وPremium، ويمكنك الترقية في أي وقت من لوحة التحكم.",
+      button: { text: "الدخول إلى لوحة التحكم", url: `${FRONTEND_URL}/login` },
+    });
 
     await sendEmail({
       to: email,
-      subject: "🎉 تم إنشاء حسابك المجاني بنجاح",
+      subject: `تم إنشاء حساب صالونك في ${BRAND}`,
       html,
+      text,
     });
   } catch (error) {
-    console.error(`❌ فشل إرسال بريد الترحيب لـ ${email}:`, error.message);
+    console.error(`فشل إرسال بريد الترحيب إلى ${email}:`, error.message);
   }
 };
 
 const sendActivationEmail = async (email, ownerName, planName, endDate) => {
   try {
-    const content = `
-        أخبار رائعة يا <strong>${escapeHtml(ownerName)}</strong>! 🌟<br><br>
-        تم ترقية وتفعيل اشتراكك في <strong>${escapeHtml(planName)}</strong> بنجاح.<br>
-        صالونك الآن مجهز بأحدث أدوات الأتمتة الاحترافية لخدمة عملائك بأرقى مستوى.<br><br>
-        ${endDate ? `<div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; padding: 10px 15px; border-radius: 8px; display: inline-block; font-weight: bold;">تاريخ التجديد القادم: ${new Date(endDate).toLocaleDateString("en-GB")}</div>` : ""}
-    `;
-    const html = baseTemplate(
-      "تمت الترقية بنجاح! ✅",
-      content,
-      "تصفح الميزات الجديدة",
-      `${FRONTEND_URL}/dashboard`,
-    );
+    const paragraphs = [
+      `تم تفعيل اشتراكك في باقة ${planName} بنجاح، وأصبحت جميع ميزات الباقة متاحة في حسابك.`,
+    ];
+    if (endDate) {
+      paragraphs.push(
+        `تاريخ التجديد القادم: ${new Date(endDate).toLocaleDateString("en-GB")}`,
+      );
+    }
+
+    const { html, text } = renderEmail({
+      heading: "تأكيد تفعيل الاشتراك",
+      greeting: `مرحباً ${ownerName}،`,
+      paragraphs,
+      button: { text: "الانتقال إلى لوحة التحكم", url: `${FRONTEND_URL}/dashboard` },
+    });
 
     await sendEmail({
       to: email,
-      subject: `✅ تم تفعيل باقة ${planName} لصالونك`,
+      subject: `تم تفعيل باقة ${planName} في ${BRAND}`,
       html,
+      text,
     });
   } catch (error) {
-    console.error(`❌ فشل إرسال بريد الترقية لـ ${email}:`, error.message);
+    console.error(`فشل إرسال بريد التفعيل إلى ${email}:`, error.message);
   }
 };
 
 const sendRenewalReminderEmail = async (email, ownerName, daysLeft) => {
   try {
-    const content = `
-        مرحباً <strong>${escapeHtml(ownerName)}</strong>،<br><br>
-        نود تذكيرك بأن اشتراك باقتك المتقدمة في نظام مِقَص سينتهي خلال <strong>${escapeHtml(daysLeft)} أيام</strong> ⏳.<br><br>
-        لضمان استمرار عمل سكرتير الواتساب الآلي، وعدم توقف الميزات الاحترافية، يرجى المبادرة بتجديد الاشتراك.<br>
-        <span style="color: #ef4444; font-size: 13px;"><em>(في حال عدم التجديد، سيعود حسابك تلقائياً للباقة المجانية المحدودة).</em></span>
-    `;
-    const html = baseTemplate(
-      "تنبيه: اقترب موعد التجديد ⏰",
-      content,
-      "تجديد الاشتراك الآن 💳",
-      `${FRONTEND_URL}/settings`,
-    );
+    const { html, text } = renderEmail({
+      heading: "تذكير بموعد تجديد الاشتراك",
+      greeting: `مرحباً ${ownerName}،`,
+      paragraphs: [
+        `ينتهي اشتراكك في ${BRAND} خلال ${formatDays(daysLeft)}.`,
+        "لضمان استمرار ميزات باقتك دون انقطاع، نرجو تجديد الاشتراك قبل تاريخ الانتهاء.",
+      ],
+      note: "في حال عدم التجديد، سيتحول الحساب تلقائياً إلى الباقة المجانية.",
+      button: { text: "تجديد الاشتراك", url: `${FRONTEND_URL}/settings` },
+    });
 
     await sendEmail({
       to: email,
-      subject: "⏳ تذكير بتجديد اشتراك باقتك في مِقَص",
+      subject: `تذكير: ينتهي اشتراكك في ${BRAND} خلال ${formatDays(daysLeft)}`,
       html,
+      text,
     });
   } catch (error) {
-    console.error(`❌ فشل إرسال بريد التذكير لـ ${email}:`, error.message);
+    console.error(`فشل إرسال بريد التذكير إلى ${email}:`, error.message);
   }
 };
 
 const sendPasswordResetEmail = async (email, ownerName, resetLink) => {
   try {
-    const content = `
-        مرحباً <strong>${escapeHtml(ownerName)}</strong>،<br><br>
-        لقد استلمنا طلباً لإعادة تعيين كلمة المرور الخاصة بلوحة تحكم صالونك.<br>
-        إذا كنت أنت من طلب ذلك، يرجى الضغط على الزر أدناه لإعداد كلمة مرور جديدة.<br><br>
-        <span style="color: #64748b; font-size: 13px;"><em>إذا لم تقم بهذا الطلب، يمكنك تجاهل هذه الرسالة بأمان وسيبقى حسابك محمياً.</em></span>
-    `;
-    const html = baseTemplate(
-      "إعادة تعيين كلمة المرور 🔐",
-      content,
-      "تغيير كلمة المرور",
-      resetLink,
-    );
+    const { html, text } = renderEmail({
+      heading: "إعادة تعيين كلمة المرور",
+      greeting: `مرحباً ${ownerName}،`,
+      paragraphs: [
+        `تلقينا طلباً لإعادة تعيين كلمة المرور لحساب صالونك في ${BRAND}.`,
+        "لإنشاء كلمة مرور جديدة، استخدم الرابط أدناه. صلاحية الرابط ساعة واحدة.",
+      ],
+      note: "إذا لم تطلب إعادة تعيين كلمة المرور، يمكنك تجاهل هذه الرسالة ولن يطرأ أي تغيير على حسابك.",
+      button: { text: "إعادة تعيين كلمة المرور", url: resetLink },
+    });
 
     await sendEmail({
       to: email,
-      subject: "🔐 طلب إعادة تعيين كلمة المرور - مِقَص",
+      subject: `إعادة تعيين كلمة المرور - ${BRAND}`,
       html,
+      text,
     });
   } catch (error) {
-    console.error(
-      `❌ فشل إرسال بريد استعادة كلمة المرور لـ ${email}:`,
-      error.message,
-    );
+    console.error(`فشل إرسال بريد استعادة كلمة المرور إلى ${email}:`, error.message);
     throw new Error("فشل إرسال الإيميل");
   }
 };
