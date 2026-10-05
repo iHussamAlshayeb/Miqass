@@ -99,6 +99,9 @@ const tenantSchema = new mongoose.Schema(
       sessionId: { type: String, default: null },
       sessionStatus: { type: String, default: "DISCONNECTED" },
       webhookSecret: { type: String },
+      // Whatsi: رقم الإرسال (اختياري) وسر توقيع الـ Webhook (مشفّر)
+      whatsiFrom: { type: String, default: "" },
+      whatsiWebhookSecret: { type: String, default: "" },
       templates: {
         confirmation: { type: String },
         cancellation: { type: String },

@@ -98,7 +98,7 @@ const SettingsTab = ({
     const [leaveDrafts, setLeaveDrafts] = useState({});
     const [activeSettingsTab, setActiveSettingsTab] = useState('identity');
     const [qrCode, setQrCode] = useState('');
-    const [qrRaw, setQrRaw] = useState('');
+    const [whatsiInfo, setWhatsiInfo] = useState(null);
     const [waProvider, setWaProvider] = useState('');
     const [waProviders, setWaProviders] = useState([]);
     const [selectedWaProvider, setSelectedWaProvider] = useState('wasender');
@@ -114,16 +114,17 @@ const SettingsTab = ({
     const fileInputRef = useRef(null);
     const activeTab = SETTINGS_TABS.find((tab) => tab.id === activeSettingsTab) || SETTINGS_TABS[0];
 
-    // يطبق بيانات الجلسة القادمة من أي وسيط (WaSender يرجع رابط صورة، Whatsi قد يرجع نص QR خام)
+    // يطبق بيانات الربط القادمة من أي وسيط (WaSender: جلسة + QR، Whatsi: مفتاح API + حالة الرقم)
     const applyWaSession = (session) => {
         if (!session) return;
         const status = session.status?.toUpperCase();
         setWaStatus(status);
         if (session.provider) setWaProvider(session.provider);
-        if (status !== 'CONNECTED') {
-            if (session.qr_code) { setQrCode(session.qr_code); setQrRaw(''); }
-            else if (session.qr_raw) { setQrRaw(session.qr_raw); setQrCode(''); }
+        if (session.provider === 'whatsi') {
+            setWhatsiInfo(session);
+            return;
         }
+        if (status !== 'CONNECTED' && session.qr_code) setQrCode(session.qr_code);
     };
 
     useEffect(() => {
@@ -149,7 +150,7 @@ const SettingsTab = ({
 
     useEffect(() => {
         let interval;
-        const pendingStates = ['CREATED', 'STARTING', 'NEED_SCAN', 'SCAN_QR_CODE', 'CONNECTING', 'CREATING', 'QR_READY'];
+        const pendingStates = ['CREATED', 'STARTING', 'NEED_SCAN', 'SCAN_QR_CODE', 'CONNECTING'];
         const currentStatus = waStatus?.toUpperCase();
 
         if (pendingStates.includes(currentStatus)) {
@@ -166,8 +167,8 @@ const SettingsTab = ({
     const handleConnectWhatsapp = async () => {
         setIsWaLoading(true);
         try {
-            await API.post('/whatsapp/create-session', { provider: selectedWaProvider });
-            setWaProvider(selectedWaProvider);
+            await API.post('/whatsapp/create-session', { provider: 'wasender' });
+            setWaProvider('wasender');
             setWaStatus('STARTING');
             setTimeout(async () => {
                 try {
@@ -189,9 +190,24 @@ const SettingsTab = ({
             await API.post('/whatsapp/disconnect');
             setWaStatus('DISCONNECTED');
             setQrCode('');
-            setQrRaw('');
+            setWhatsiInfo(null);
+            setWaProvider('');
         } catch { alert('حدث خطأ أثناء إلغاء الربط.'); }
         finally { setIsWaLoading(false); }
+    };
+
+    // ربط Whatsi أو تحديث إعداداته؛ يرجع { ok, message } لعرضه داخل النموذج
+    const handleSaveWhatsi = async (payload) => {
+        setIsWaLoading(true);
+        try {
+            const res = await API.put('/whatsapp/whatsi', payload);
+            applyWaSession(res.data?.session);
+            return { ok: true, message: res.data?.message };
+        } catch (error) {
+            return { ok: false, message: error.response?.data?.message || 'تعذر حفظ إعدادات Whatsi.' };
+        } finally {
+            setIsWaLoading(false);
+        }
     };
 
     const handleLogoUpload = (e) => {
@@ -462,7 +478,8 @@ const SettingsTab = ({
                 isSavingTemplates={isSavingTemplates}
                 isWaLoading={isWaLoading}
                 qrCode={qrCode}
-                qrRaw={qrRaw}
+                whatsiInfo={whatsiInfo}
+                handleSaveWhatsi={handleSaveWhatsi}
                 waProvider={waProvider}
                 waProviders={waProviders}
                 selectedWaProvider={selectedWaProvider}

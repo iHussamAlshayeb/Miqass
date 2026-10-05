@@ -14,6 +14,7 @@ const SECRET_PATHS = [
   "paymentSettings.moyasarSecretKey",
   "taxSettings.zakaty.apiKey",
   "whatsappSettings.apiKey",
+  "whatsappSettings.whatsiWebhookSecret",
 ];
 
 const { compressLogoDataUri, isDataUriLogo } = require("./logoImage");

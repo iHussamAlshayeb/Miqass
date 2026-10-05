@@ -467,7 +467,7 @@ const sendBroadcastTest = async (req, res) => {
 
     const tenant = await Tenant.findById(req.tenantId)
       .select(
-        "salonName ownerPhone whatsappSettings.isEnabled whatsappSettings.apiKey whatsappSettings.provider whatsappSettings.sessionId",
+        "salonName ownerPhone whatsappSettings.isEnabled whatsappSettings.apiKey whatsappSettings.provider whatsappSettings.whatsiFrom",
       )
       .lean();
     if (!tenant) {

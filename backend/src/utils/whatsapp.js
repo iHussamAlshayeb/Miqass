@@ -3,9 +3,9 @@ const { normalizeWasenderMessageStatus } = require("./wasender");
 const { renderTemplate } = require("./whatsappTemplates");
 const { decrypt } = require("./encryption");
 const {
-  isWhatsiConfigured,
   sendWhatsiText,
   getWhatsiMessage,
+  isWhatsiNumberError,
   normalizeWhatsiMessageStatus,
 } = require("./whatsi");
 
@@ -18,12 +18,18 @@ const API_URL = `${WASENDER_API_BASE_URL}/api/send-message`;
 // وسيط الواتساب لكل صالون: wasender (الافتراضي) أو whatsi
 const isWhatsiTenant = (tenant) => tenant?.whatsappSettings?.provider === "whatsi";
 
-// يرجع بيانات الإرسال المتاحة للصالون أو null إن لم يكن الربط جاهزاً
-const getSendCredential = (tenant) => {
-  if (isWhatsiTenant(tenant)) {
-    return tenant?.whatsappSettings?.sessionId && isWhatsiConfigured() ? "whatsi" : null;
-  }
-  return getTenantApiKey(tenant);
+// مفتاح الإرسال للصالون (WaSender أو Whatsi) مخزن مشفراً؛ null إن لم يكن الربط جاهزاً
+const getSendCredential = (tenant) => getTenantApiKey(tenant);
+
+// عند رفض Whatsi لأن رقم الصالون غير متصل، نحدّث حالة الربط ليظهر التنبيه في لوحة التحكم
+const markWhatsiNumberDisconnected = (tenant) => {
+  if (!tenant?._id) return;
+  // تحميل متأخر لتجنب الاعتماد الدائري بين النماذج والأدوات
+  const Tenant = require("../models/Tenant");
+  Tenant.updateOne(
+    { _id: tenant._id, "whatsappSettings.provider": "whatsi" },
+    { $set: { "whatsappSettings.sessionStatus": "DISCONNECTED" } },
+  ).catch(() => {});
 };
 
 const isWhatsappReady = (tenant) =>
@@ -32,8 +38,18 @@ const isWhatsappReady = (tenant) =>
 // إرسال نص عبر وسيط الصالون. Whatsi يقبل الرسالة في الطابور ويرجع 202 مباشرة.
 const postText = async (tenant, credential, body, options = {}) => {
   if (isWhatsiTenant(tenant)) {
-    const data = await sendWhatsiText(String(tenant._id), body.to, body.text, options.clientMessageId);
-    return { data: { success: true, data } };
+    try {
+      const data = await sendWhatsiText(credential, {
+        to: body.to,
+        text: body.text,
+        from: tenant?.whatsappSettings?.whatsiFrom || undefined,
+        clientMessageId: options.clientMessageId,
+      });
+      return { data: { success: true, data } };
+    } catch (error) {
+      if (isWhatsiNumberError(error)) markWhatsiNumberDisconnected(tenant);
+      throw error;
+    }
   }
   return axios.post(API_URL, body, {
     headers: {
@@ -442,9 +458,10 @@ const sendRescheduleMessage = async (phone, childName, date, time, barberName, t
 const getCampaignMessageInfo = async (providerMessageId, tenant) => {
   const normalizedMessageId = String(providerMessageId ?? "").trim();
   if (isWhatsiTenant(tenant)) {
-    if (!getSendCredential(tenant) || !normalizedMessageId) return null;
+    const whatsiKey = getSendCredential(tenant);
+    if (!whatsiKey || !normalizedMessageId) return null;
     try {
-      const message = await getWhatsiMessage(String(tenant._id), normalizedMessageId);
+      const message = await getWhatsiMessage(whatsiKey, normalizedMessageId);
       const providerStatus = normalizeWhatsiMessageStatus(message.status);
       if (!providerStatus) return null;
       return {

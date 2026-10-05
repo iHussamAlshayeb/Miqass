@@ -6,7 +6,7 @@ import {
     Smartphone,
     Unplug,
 } from 'lucide-react';
-import { QRCodeSVG } from 'qrcode.react';
+import WhatsiSettings from './WhatsiSettings';
 
 const PROVIDER_LABELS = { wasender: 'WaSender', whatsi: 'Whatsi' };
 
@@ -32,7 +32,8 @@ const IntegrationsSection = ({
     isSavingTemplates,
     isWaLoading,
     qrCode,
-    qrRaw,
+    whatsiInfo,
+    handleSaveWhatsi,
     waProvider,
     waProviders = [],
     selectedWaProvider,
@@ -64,6 +65,18 @@ const IntegrationsSection = ({
         ) : (
             (() => {
                 const currentStatus = waStatus?.toUpperCase() || 'DISCONNECTED';
+                if (waProvider === 'whatsi' && whatsiInfo) {
+                    return (
+                        <WhatsiSettings
+                            key={`linked-${whatsiInfo.from}`}
+                            linked
+                            info={whatsiInfo}
+                            onSave={handleSaveWhatsi}
+                            onDisconnect={handleDisconnectWhatsapp}
+                            isBusy={isWaLoading}
+                        />
+                    );
+                }
                 if (currentStatus === 'WORKING' || currentStatus === 'CONNECTED') {
                     return (
                         <div className="bg-emerald-50 border border-emerald-200 p-8 rounded-lg text-center flex flex-col items-center">
@@ -79,7 +92,7 @@ const IntegrationsSection = ({
                         </div>
                     );
                 }
-                if (['CREATED', 'STARTING', 'NEED_SCAN', 'SCAN_QR_CODE', 'CONNECTING', 'CREATING', 'QR_READY'].includes(currentStatus) || qrCode || qrRaw) {
+                if (['CREATED', 'STARTING', 'NEED_SCAN', 'SCAN_QR_CODE', 'CONNECTING'].includes(currentStatus) || qrCode) {
                     return (
                         <div className="bg-slate-50 border border-slate-200 p-8 rounded-lg text-center flex flex-col items-center">
                             <div className="w-11 h-11 bg-white border border-slate-100 text-slate-600 rounded-lg flex items-center justify-center mb-3">
@@ -92,8 +105,6 @@ const IntegrationsSection = ({
                                     <div className="animate-pulse flex flex-col items-center"><div className="border-4 border-slate-200 border-t-emerald-500 rounded-full w-12 h-12 animate-spin mb-3" /><p className="text-sm font-black text-emerald-600">جاري إتمام الاتصال...</p></div>
                                 ) : qrCode ? (
                                     <img src={qrCode} alt="WhatsApp QR Code" className="w-full h-full object-contain rounded-lg" />
-                                ) : qrRaw ? (
-                                    <QRCodeSVG value={qrRaw} size={224} level="M" title="WhatsApp QR Code" />
                                 ) : (
                                     <div className="animate-pulse flex flex-col items-center"><div className="border-4 border-slate-200 border-t-blue-500 rounded-full w-12 h-12 animate-spin mb-3" /><p className="text-sm font-black text-slate-500">جاري توليد الكود...</p></div>
                                 )}
@@ -122,10 +133,16 @@ const IntegrationsSection = ({
                                 </div>
                             </fieldset>
                         )}
+                        {selectedWaProvider === 'whatsi' ? (
+                            <div className="w-full max-w-2xl">
+                                <WhatsiSettings linked={false} info={null} onSave={handleSaveWhatsi} onDisconnect={handleDisconnectWhatsapp} isBusy={isWaLoading} />
+                            </div>
+                        ) : (
                         <button onClick={handleConnectWhatsapp} disabled={isWaLoading} className="bg-emerald-600 text-white font-black px-10 py-4 rounded-lg hover:bg-emerald-700 active:scale-95 transition-all text-sm shadow-lg shadow-emerald-600/30 inline-flex items-center gap-2">
                             <MessageCircle size={16} />
                             {isWaLoading ? 'جاري تجهيز السيرفر...' : 'بدء ربط الواتساب'}
                         </button>
+                        )}
                     </div>
                 );
             })()

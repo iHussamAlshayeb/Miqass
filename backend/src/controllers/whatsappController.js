@@ -1,7 +1,7 @@
 const axios = require("axios");
 const crypto = require("crypto");
 const Tenant = require("../models/Tenant");
-const { encrypt, hashForLookup } = require("../utils/encryption");
+const { encrypt, decrypt, hashForLookup } = require("../utils/encryption");
 const {
   WASENDER_WEBHOOK_EVENTS,
   extractWasenderEventDate,
@@ -13,15 +13,13 @@ const {
 const {
   updateCampaignMessageDelivery,
 } = require("../services/campaignDeliveryService");
+const mongoose = require("mongoose");
 const {
   WHATSI_EVENT_STATUS,
-  isWhatsiConfigured,
-  createWhatsiSession,
-  getWhatsiSession,
-  getWhatsiQr,
-  deleteWhatsiSession,
+  isWhatsiApiKeyFormat,
+  normalizeWhatsiNumber,
+  verifyWhatsiApiKey,
   normalizeWhatsiMessageStatus,
-  normalizeWhatsiSessionStatus,
   verifyWhatsiSignature,
 } = require("../utils/whatsi");
 
@@ -29,98 +27,112 @@ const WHATSAPP_PROVIDERS = ["wasender", "whatsi"];
 
 const isWasenderConfigured = () => Boolean(String(process.env.WASENDER_MASTER_TOKEN || "").trim());
 
-const describeProviderError = (error) =>
-  error.response?.data?.message || error.response?.data?.error || error.message;
+const getBackendUrl = () => String(process.env.BACKEND_URL || "").trim().replace(/\/+$/, "");
 
-// الوسطاء المتاحون للربط حسب إعدادات الخادم
+// رابط الـ Webhook الخاص بكل صالون، يُضاف في صفحة Webhooks داخل تطبيق Whatsi
+const getWhatsiWebhookUrl = (tenantId) => {
+  const backendUrl = getBackendUrl();
+  return backendUrl ? `${backendUrl}/api/whatsapp/whatsi/webhook/${tenantId}` : "";
+};
+
+const presentWhatsiSettings = (tenant) => ({
+  provider: "whatsi",
+  status: String(tenant.whatsappSettings?.sessionStatus || "CONNECTED").toUpperCase(),
+  from: tenant.whatsappSettings?.whatsiFrom || "",
+  hasWebhookSecret: Boolean(tenant.whatsappSettings?.whatsiWebhookSecret),
+  webhookUrl: getWhatsiWebhookUrl(tenant._id),
+});
+
+// الوسطاء المتاحون للربط
 const getWhatsappProviders = async (req, res) => {
   res.status(200).json({
     providers: [
       { id: "wasender", name: "WaSender", available: isWasenderConfigured() },
-      { id: "whatsi", name: "Whatsi", available: isWhatsiConfigured() },
+      { id: "whatsi", name: "Whatsi", available: true },
     ],
   });
 };
 
-const createWhatsiSessionForTenant = async (req, res) => {
-  if (!isWhatsiConfigured()) {
-    return res.status(400).json({ message: "وسيط Whatsi غير مفعل على الخادم." });
-  }
-  const tenant = await Tenant.findById(req.tenantId).select("salonName slug").lean();
-  if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
-
-  try {
-    const data = await createWhatsiSession(String(tenant._id), tenant.salonName || tenant.slug);
-    const session = data.session || {};
-    if (!session.id) throw new Error("Whatsi did not return a session id");
-
-    await Tenant.updateOne(
-      { _id: tenant._id },
-      {
-        $set: {
-          "whatsappSettings.provider": "whatsi",
-          "whatsappSettings.sessionId": session.id,
-          "whatsappSettings.sessionStatus": normalizeWhatsiSessionStatus(session.status),
-          "whatsappSettings.isEnabled": true,
-          // Whatsi يستخدم مفتاح تكامل المنصة، فلا نخزن مفتاحاً لكل صالون
-          "whatsappSettings.apiKey": null,
-          "whatsappSettings.apiKeyHash": null,
-          "whatsappSettings.webhookSecret": null,
-        },
-      },
-    );
-
-    return res.status(200).json({
-      message: "تم إنشاء طلب الربط عبر Whatsi",
-      session: { id: session.id, status: normalizeWhatsiSessionStatus(session.status), provider: "whatsi" },
-    });
-  } catch (error) {
-    console.error("❌ Whatsi create session error:", describeProviderError(error));
-    return res.status(502).json({ message: "تعذر الاتصال بوسيط Whatsi، حاول لاحقاً." });
-  }
+const WHATSI_KEY_ERRORS = {
+  invalid_key: "مفتاح Whatsi غير صحيح أو ملغى. أنشئ مفتاحاً جديداً من صفحة «الربط و API» في Whatsi.",
+  account_inactive: "حساب Whatsi موقوف. تواصل مع إدارة Whatsi.",
+  unreachable: "تعذر الوصول إلى Whatsi للتحقق من المفتاح، حاول بعد قليل.",
 };
 
-const getWhatsiSessionData = async (req, res, tenant) => {
-  const externalAccountId = String(tenant._id);
+// ربط Whatsi بمفتاح API الخاص بالصالون (أو تحديث رقم الإرسال وسر الـ Webhook)
+const saveWhatsiSettings = async (req, res) => {
   try {
-    const data = await getWhatsiSession(externalAccountId);
-    const status = normalizeWhatsiSessionStatus(data.session?.status);
-    const session = { id: data.session?.id, status, provider: "whatsi", phone_number: data.session?.phoneNumber || null };
+    const tenant = await Tenant.findById(req.tenantId)
+      .select("_id whatsappSettings.provider whatsappSettings.apiKey whatsappSettings.sessionId whatsappSettings.sessionStatus whatsappSettings.whatsiFrom whatsappSettings.whatsiWebhookSecret")
+      .lean();
+    if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
 
-    if (status !== "CONNECTED") {
-      try {
-        const qr = await getWhatsiQr(externalAccountId);
-        if (qr.qrType === "DATA_URL") session.qr_code = qr.qr;
-        else if (qr.qr) session.qr_raw = qr.qr;
-        if (qr.status) session.status = normalizeWhatsiSessionStatus(qr.status);
-      } catch (qrError) {
-        console.log(`⏳ رمز Whatsi غير متوفر حالياً: ${describeProviderError(qrError)}`);
+    const settings = tenant.whatsappSettings || {};
+    const linkedWhatsi = settings.provider === "whatsi" && Boolean(settings.apiKey);
+    if (settings.provider !== "whatsi" && settings.sessionId) {
+      return res.status(409).json({ message: "ألغِ ربط WaSender أولاً قبل التحويل إلى Whatsi." });
+    }
+
+    const { apiKey, fromNumber, webhookSecret } = req.body || {};
+    const changes = {};
+
+    const trimmedKey = typeof apiKey === "string" ? apiKey.trim() : "";
+    if (trimmedKey) {
+      if (!isWhatsiApiKeyFormat(trimmedKey)) {
+        return res.status(400).json({ message: "صيغة المفتاح غير صحيحة؛ مفتاح Whatsi يبدأ بـ wg_live_." });
+      }
+      const check = await verifyWhatsiApiKey(trimmedKey);
+      if (!check.valid) {
+        return res.status(check.reason === "unreachable" ? 502 : 400).json({ message: WHATSI_KEY_ERRORS[check.reason] });
+      }
+      changes["whatsappSettings.apiKey"] = encrypt(trimmedKey);
+      changes["whatsappSettings.apiKeyHash"] = hashForLookup(trimmedKey);
+      changes["whatsappSettings.sessionStatus"] = "CONNECTED";
+    } else if (!linkedWhatsi) {
+      return res.status(400).json({ message: "الصق مفتاح API من تطبيق Whatsi لإتمام الربط." });
+    }
+
+    if (typeof fromNumber === "string") {
+      if (fromNumber.trim()) {
+        const normalized = normalizeWhatsiNumber(fromNumber);
+        if (!normalized) {
+          return res.status(400).json({ message: "رقم الإرسال غير صالح؛ اكتبه بالصيغة الدولية مثل 966500000001." });
+        }
+        changes["whatsappSettings.whatsiFrom"] = normalized;
+      } else {
+        changes["whatsappSettings.whatsiFrom"] = "";
       }
     }
 
-    Tenant.updateOne(
-      { _id: tenant._id },
-      { $set: { "whatsappSettings.sessionStatus": session.status } },
-    ).catch((err) => console.error("Error updating status silently:", err));
-
-    return res.status(200).json({ session });
-  } catch (error) {
-    if (error.response?.status === 404) {
-      return res.status(404).json({ message: "لا توجد جلسة نشطة، يرجى إنشاء جلسة أولاً." });
+    if (typeof webhookSecret === "string" && webhookSecret.trim()) {
+      const secret = webhookSecret.trim();
+      if (secret.length < 8 || secret.length > 300) {
+        return res.status(400).json({ message: "سر توقيع الـ Webhook غير صالح." });
+      }
+      changes["whatsappSettings.whatsiWebhookSecret"] = encrypt(secret);
     }
-    console.error("❌ Whatsi session error:", describeProviderError(error));
-    return res.status(502).json({ message: "حدث خطأ أثناء جلب بيانات الواتساب" });
-  }
-};
 
-const safelyMatchesSecret = (receivedSecret, expectedSecret) => {
-  const received = Buffer.from(String(receivedSecret || ""));
-  const expected = Buffer.from(String(expectedSecret || ""));
-  return (
-    received.length > 0 &&
-    received.length === expected.length &&
-    crypto.timingSafeEqual(received, expected)
-  );
+    Object.assign(changes, {
+      "whatsappSettings.provider": "whatsi",
+      "whatsappSettings.isEnabled": true,
+      "whatsappSettings.sessionId": null,
+      "whatsappSettings.webhookSecret": null,
+    });
+
+    const updated = await Tenant.findByIdAndUpdate(
+      tenant._id,
+      { $set: changes },
+      { returnDocument: "after", select: "_id whatsappSettings" },
+    ).lean();
+
+    return res.status(200).json({
+      message: trimmedKey ? "تم ربط الواتساب عبر Whatsi بنجاح." : "تم حفظ إعدادات Whatsi.",
+      session: presentWhatsiSettings(updated),
+    });
+  } catch (error) {
+    console.error("❌ Whatsi settings error:", error.message);
+    return res.status(500).json({ message: "حدث خطأ أثناء حفظ إعدادات Whatsi." });
+  }
 };
 
 const createWhatsappSession = async (req, res) => {
@@ -128,7 +140,9 @@ const createWhatsappSession = async (req, res) => {
   if (!WHATSAPP_PROVIDERS.includes(requestedProvider)) {
     return res.status(400).json({ message: "وسيط الواتساب غير معروف." });
   }
-  if (requestedProvider === "whatsi") return createWhatsiSessionForTenant(req, res);
+  if (requestedProvider === "whatsi") {
+    return res.status(400).json({ message: "Whatsi يُربط بمفتاح API من تطبيق Whatsi، وليس برمز QR هنا." });
+  }
 
   try {
     const tenantId = req.tenantId;
@@ -245,16 +259,19 @@ const getWhatsappSessionData = async (req, res) => {
     const tenant = await Tenant.findById(req.tenantId)
       .select("whatsappSettings")
       .lean();
+    if (tenant?.whatsappSettings?.provider === "whatsi") {
+      if (!tenant.whatsappSettings.apiKey) {
+        return res.status(404).json({ message: "لا يوجد ربط نشط." });
+      }
+      return res.status(200).json({ session: presentWhatsiSettings(tenant) });
+    }
+
     const sessionId = tenant?.whatsappSettings?.sessionId;
 
     if (!sessionId) {
       return res
         .status(404)
         .json({ message: "لا توجد جلسة نشطة، يرجى إنشاء جلسة أولاً." });
-    }
-
-    if (tenant.whatsappSettings.provider === "whatsi") {
-      return getWhatsiSessionData(req, res, tenant);
     }
 
     const sessionResponse = await axios.get(
@@ -319,11 +336,8 @@ const disconnectWhatsappSession = async (req, res) => {
       .lean();
     const sessionId = tenant?.whatsappSettings?.sessionId;
 
-    if (sessionId && tenant.whatsappSettings.provider === "whatsi") {
-      await deleteWhatsiSession(String(req.tenantId)).catch((error) =>
-        console.log("⚠️ تعذر فصل جلسة Whatsi:", describeProviderError(error)),
-      );
-    } else if (sessionId) {
+    // Whatsi: الرقم يبقى مربوطاً في تطبيق Whatsi، ونحذف المفتاح من مقص فقط
+    if (sessionId && tenant.whatsappSettings.provider !== "whatsi") {
       await axios
         .post(
           `https://www.wasenderapi.com/api/whatsapp-sessions/${sessionId}/disconnect`,
@@ -350,6 +364,8 @@ const disconnectWhatsappSession = async (req, res) => {
           "whatsappSettings.isEnabled": false,
           "whatsappSettings.apiKey": null,
           "whatsappSettings.apiKeyHash": null,
+          "whatsappSettings.whatsiFrom": "",
+          "whatsappSettings.whatsiWebhookSecret": "",
         },
       },
     );
@@ -438,13 +454,23 @@ const handleWhatsappWebhook = async (req, res) => {
   }
 };
 
-// Webhook من Whatsi: موقّع بـ HMAC على الجسم الخام، والصالون يُعرف من sessionId
+// Webhook من Whatsi: لكل صالون رابط خاص، موقّع بـ HMAC على الجسم الخام بسر الصالون
 const handleWhatsiWebhook = async (req, res) => {
   try {
-    const valid = verifyWhatsiSignature({
+    const tenantId = String(req.params?.tenantId || "");
+    if (!mongoose.Types.ObjectId.isValid(tenantId)) {
+      return res.status(404).json({ received: false });
+    }
+
+    const tenant = await Tenant.findOne({ _id: tenantId, "whatsappSettings.provider": "whatsi" })
+      .select("_id salonName whatsappSettings.whatsiFrom whatsappSettings.whatsiWebhookSecret")
+      .lean();
+    const secret = decrypt(tenant?.whatsappSettings?.whatsiWebhookSecret || "");
+    const valid = Boolean(tenant) && verifyWhatsiSignature({
       rawBody: req.rawBody,
       timestamp: req.headers["x-whatsi-timestamp"],
       signature: req.headers["x-whatsi-signature"],
+      secret,
     });
     if (!valid) {
       console.warn("تم رفض Webhook Whatsi بتوقيع غير صالح.");
@@ -453,25 +479,18 @@ const handleWhatsiWebhook = async (req, res) => {
 
     const event = String(req.body?.event || "");
     const data = req.body?.data || {};
-    const sessionId = String(data.sessionId || "").trim();
-    if (!sessionId) return res.status(200).json({ received: true });
-
-    const tenant = await Tenant.findOne({
-      "whatsappSettings.provider": "whatsi",
-      "whatsappSettings.sessionId": sessionId,
-    })
-      .select("_id salonName")
-      .lean();
-    if (!tenant) {
-      // جلسة لا تخص أي صالون حالياً (مثلاً بعد فك الربط)
-      return res.status(200).json({ received: true });
-    }
 
     if (event.startsWith("session.")) {
+      // في حساب متعدد الأرقام نتابع رقم الإرسال المحدد فقط
+      const salonFrom = tenant.whatsappSettings?.whatsiFrom;
+      const eventNumber = String(data.phoneNumber || "").replace(/\D/g, "");
+      if (salonFrom && eventNumber && eventNumber !== salonFrom) {
+        return res.status(200).json({ received: true });
+      }
       const status =
         event === "session.connected"
           ? "CONNECTED"
-          : normalizeWhatsiSessionStatus(data.status || (event === "session.error" ? "ERROR" : "DISCONNECTED"));
+          : String(data.status || (event === "session.error" ? "ERROR" : "DISCONNECTED")).toUpperCase();
       await Tenant.updateOne(
         { _id: tenant._id },
         { $set: { "whatsappSettings.sessionStatus": status } },
@@ -498,6 +517,7 @@ const handleWhatsiWebhook = async (req, res) => {
 
 module.exports = {
   getWhatsappProviders,
+  saveWhatsiSettings,
   handleWhatsiWebhook,
   createWhatsappSession,
   getWhatsappSessionData,

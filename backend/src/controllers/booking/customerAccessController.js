@@ -49,7 +49,7 @@ const sendCustomerAccessCode = async (req, res) => {
       return res.status(400).json({ message: "أدخل رقم جوال صحيحاً." });
     }
     const tenant = await Tenant.findById(tenantId)
-      .select("salonName whatsappSettings.apiKey whatsappSettings.isEnabled whatsappSettings.provider whatsappSettings.sessionId")
+      .select("salonName whatsappSettings.apiKey whatsappSettings.isEnabled whatsappSettings.provider whatsappSettings.whatsiFrom")
       .lean();
     if (!isWhatsappReady(tenant)) {
       return res.status(503).json({ message: "التحقق عبر واتساب غير متاح لهذا الصالون حالياً. تواصل مع الصالون." });
