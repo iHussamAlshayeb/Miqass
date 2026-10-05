@@ -4,6 +4,7 @@
 .agents
 .cloudflared
 Miqass.env
+.local-secrets
 **/.env
 **/.env.*
 **/node_modules

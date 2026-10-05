@@ -1,46 +1,37 @@
-const crypto = require("crypto");
-
 const axios = require("axios");
 
-const Appointment = require("../models/Appointment");
-const Tenant = require("../models/Tenant");
 const { decrypt } = require("../utils/encryption");
 
-const STC_BANK_PROVIDER = "stc_bank";
-const SUPPORTED_PAYMENT_PROVIDERS = [STC_BANK_PROVIDER, "moyasar"];
+// بوابة الدفع الوحيدة المدعومة لعربون الحجز: ميسر (عبر فواتير Moyasar Invoices)
+const MOYASAR_PROVIDER = "moyasar";
+const MOYASAR_API_BASE = "https://api.moyasar.com/v1";
+const PAYMENT_LINK_TTL_MINUTES = 30;
+const MOYASAR_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
 const toMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
+const toHalalas = (value) => Math.round(toMoney(value) * 100);
 
-const getEnabledProvider = (paymentSettings = {}) => {
-  const provider = paymentSettings.provider || STC_BANK_PROVIDER;
-  return SUPPORTED_PAYMENT_PROVIDERS.includes(provider)
-    ? provider
-    : STC_BANK_PROVIDER;
+const createHttpError = (message, statusCode) => {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
 };
+
+// نُبقي التوقيع (paymentSettings) للتوافق مع الاستدعاءات الحالية
+const getEnabledProvider = () => MOYASAR_PROVIDER;
 
 const isOnlinePaymentConfigured = (paymentSettings = {}) => {
   if (!paymentSettings.isOnlinePaymentEnabled) return false;
   if (toMoney(paymentSettings.depositAmount) <= 0) return false;
-
-  const provider = getEnabledProvider(paymentSettings);
-  if (provider !== STC_BANK_PROVIDER) return false;
-
-  const stcBank = paymentSettings.stcBank || {};
-  return Boolean(
-    stcBank.merchantId &&
-      stcBank.clientId &&
-      stcBank.clientSecret &&
-      stcBank.createPaymentUrl,
-  );
+  return Boolean(paymentSettings.moyasarSecretKey);
 };
 
-const normalizeUrl = (url) => String(url || "").trim();
-
 const buildAbsoluteUrl = (req, path) => {
-  const configuredBaseUrl = process.env.PUBLIC_APP_URL || process.env.APP_URL;
+  const configuredBaseUrl =
+    process.env.PUBLIC_APP_URL || process.env.APP_URL || process.env.BACKEND_URL;
   const baseUrl =
-    configuredBaseUrl || `${req.protocol}://${req.get("host")}`.replace(/\/$/, "");
-  return `${baseUrl}${path}`;
+    configuredBaseUrl || `${req.protocol}://${req.get("host")}`;
+  return `${baseUrl.replace(/\/$/, "")}${path}`;
 };
 
 const buildPublicBookingUrl = (req, path) => {
@@ -51,249 +42,142 @@ const buildPublicBookingUrl = (req, path) => {
     process.env.PUBLIC_APP_URL ||
     process.env.APP_URL;
   const baseUrl =
-    configuredBaseUrl || `${req.protocol}://${req.get("host")}`.replace(/\/$/, "");
+    configuredBaseUrl || `${req.protocol}://${req.get("host")}`;
   return `${baseUrl.replace(/\/$/, "")}${path}`;
 };
 
-const extractPaymentUrl = (data = {}) =>
-  data.paymentUrl ||
-  data.checkoutUrl ||
-  data.redirectUrl ||
-  data.redirect_url ||
-  data.url ||
-  data?.links?.payment ||
-  data?.links?.checkout ||
-  data?.data?.paymentUrl ||
-  data?.data?.checkoutUrl ||
-  data?.data?.redirectUrl;
-
-const extractProviderPaymentId = (data = {}) =>
-  data.paymentId ||
-  data.transactionId ||
-  data.referenceId ||
-  data.id ||
-  data?.data?.paymentId ||
-  data?.data?.transactionId ||
-  data?.data?.id ||
-  "";
-
-const buildStcBankPaymentPayload = ({
-  tenant,
-  appointment,
-  amount,
-  req,
-}) => {
-  const stcBank = tenant.paymentSettings?.stcBank || {};
-  const reference = `booking_${appointment._id}`;
-  const callbackUrl = buildPublicBookingUrl(
-    req,
-    `/${tenant.slug}?payment=return&appointmentId=${appointment._id}&tenantId=${tenant._id}`,
-  );
-  const webhookUrl = buildAbsoluteUrl(req, "/api/appointments/webhook/stc-bank");
-
-  return {
-    merchantId: stcBank.merchantId,
-    terminalId: stcBank.terminalId || undefined,
-    amount: toMoney(amount),
-    currency: "SAR",
-    reference,
-    merchantReference: reference,
-    description: `عربون حجز موعد - ${tenant.salonName}`,
-    customer: {
-      name: appointment.childName || "عميل",
-      phone: appointment.customerId?.phone || "",
-    },
-    callbackUrl,
-    returnUrl: callbackUrl,
-    webhookUrl,
-    metadata: {
-      provider: STC_BANK_PROVIDER,
-      tenantId: String(tenant._id),
-      appointmentId: String(appointment._id),
-    },
-  };
+const getTenantMoyasarSecret = (tenant) => {
+  const secretKey = decrypt(tenant?.paymentSettings?.moyasarSecretKey);
+  if (!secretKey) {
+    throw createHttpError("إعدادات ميسر غير مكتملة لهذا الصالون.", 400);
+  }
+  return secretKey;
 };
 
-const createStcBankPaymentSession = async ({ tenant, appointment, amount, req }) => {
-  const stcBank = tenant.paymentSettings?.stcBank || {};
-  const createPaymentUrl = normalizeUrl(stcBank.createPaymentUrl);
-  const clientSecret = decrypt(stcBank.clientSecret);
-
-  if (!createPaymentUrl || !stcBank.clientId || !clientSecret) {
-    const error = new Error("إعدادات STC Bank غير مكتملة لهذا الصالون.");
-    error.statusCode = 400;
-    throw error;
-  }
-
-  const payload = buildStcBankPaymentPayload({
-    tenant,
-    appointment,
-    amount,
-    req,
-  });
-
-  const response = await axios.post(createPaymentUrl, payload, {
+const moyasarRequest = (method, path, secretKey, data) =>
+  axios.request({
+    method,
+    url: `${MOYASAR_API_BASE}${path}`,
+    data,
     timeout: 20000,
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      "X-Client-Id": stcBank.clientId,
-      Authorization: `Bearer ${clientSecret}`,
-    },
+    auth: { username: secretKey, password: "" },
+    headers: { Accept: "application/json" },
   });
 
-  const paymentUrl = extractPaymentUrl(response.data);
-  if (!paymentUrl) {
-    const error = new Error("لم يرجع STC Bank رابط دفع صالح.");
-    error.statusCode = 502;
-    throw error;
+// إنشاء فاتورة ميسر للعربون وإرجاع رابط صفحة الدفع
+const createBookingPaymentSession = async ({ tenant, appointment, amount, req }) => {
+  const secretKey = getTenantMoyasarSecret(tenant);
+  const reference = `booking_${appointment._id}`;
+  const returnUrl = buildPublicBookingUrl(
+    req,
+    `/${tenant.slug}?payment=return&appointmentId=${appointment._id}`,
+  );
+  const callbackUrl = buildAbsoluteUrl(
+    req,
+    `/api/appointments/webhook/moyasar?tenantId=${tenant._id}`,
+  );
+
+  let response;
+  try {
+    response = await moyasarRequest("post", "/invoices", secretKey, {
+      amount: toHalalas(amount),
+      currency: "SAR",
+      description: `عربون حجز موعد - ${tenant.salonName}`,
+      callback_url: callbackUrl,
+      success_url: returnUrl,
+      back_url: returnUrl,
+      expired_at: new Date(
+        Date.now() + PAYMENT_LINK_TTL_MINUTES * 60 * 1000,
+      ).toISOString(),
+      metadata: {
+        provider: MOYASAR_PROVIDER,
+        reference,
+        tenantId: String(tenant._id),
+        appointmentId: String(appointment._id),
+      },
+    });
+  } catch (error) {
+    console.error(
+      "Moyasar invoice error:",
+      error.response?.data || error.message,
+    );
+    throw createHttpError("تعذر إنشاء رابط الدفع عبر ميسر.", 502);
+  }
+
+  if (!response.data?.url) {
+    throw createHttpError("لم يرجع ميسر رابط دفع صالح.", 502);
   }
 
   return {
-    provider: STC_BANK_PROVIDER,
+    provider: MOYASAR_PROVIDER,
     amount: toMoney(amount),
-    paymentUrl,
-    providerPaymentId: extractProviderPaymentId(response.data),
-    reference: payload.reference,
+    paymentUrl: response.data.url,
+    providerPaymentId: response.data.id || "",
+    reference,
   };
 };
 
-const createBookingPaymentSession = async ({ tenant, appointment, amount, req }) => {
-  const provider = getEnabledProvider(tenant.paymentSettings);
+const assertMoyasarId = (id) => {
+  const value = String(id || "");
+  if (!MOYASAR_ID_PATTERN.test(value)) {
+    throw createHttpError("معرّف عملية ميسر غير صالح.", 400);
+  }
+  return value;
+};
 
-  if (provider !== STC_BANK_PROVIDER) {
-    const error = new Error("مزود الدفع الحالي غير مدعوم لهذا التدفق.");
-    error.statusCode = 400;
-    throw error;
+/**
+ * لا نثق بمحتوى الـ webhook: نأخذ منه المعرّف فقط، ثم نجلب الفاتورة أو
+ * الدفعة من API ميسر مباشرة بمفتاح الصالون السري.
+ * يدعم: إشعار الفاتورة (callback_url)، وكائن دفعة، وصيغة {type, data}.
+ */
+const getVerifiedMoyasarPayment = async ({ payload = {}, secretKey }) => {
+  const data =
+    payload.data && typeof payload.data === "object" ? payload.data : payload;
+
+  const looksLikeInvoice =
+    Array.isArray(data.payments) || /invoice/i.test(String(data.url || ""));
+  const invoiceId = data.invoice_id || (looksLikeInvoice ? data.id : null);
+
+  if (invoiceId) {
+    const { data: invoice } = await moyasarRequest(
+      "get",
+      `/invoices/${assertMoyasarId(invoiceId)}`,
+      secretKey,
+    );
+    const paidPayment = (invoice.payments || []).find(
+      (payment) => payment.status === "paid",
+    );
+    return {
+      status: invoice.status,
+      amount: Number(invoice.amount) || 0,
+      metadata: invoice.metadata || {},
+      providerPaymentId: paidPayment?.id || invoice.id,
+      method: paidPayment?.source?.type || "online",
+    };
   }
 
-  return createStcBankPaymentSession({ tenant, appointment, amount, req });
-};
+  if (!data.id) throw createHttpError("بيانات webhook ناقصة.", 400);
 
-const extractWebhookAppointmentId = (payload = {}) => {
-  const metadata = payload.metadata || payload.MetaData || payload.data?.metadata || {};
-  const reference =
-    metadata.appointmentId ||
-    payload.appointmentId ||
-    payload.appointment_id ||
-    payload.reference ||
-    payload.merchantReference ||
-    payload.orderId ||
-    payload.data?.reference ||
-    payload.data?.merchantReference;
-
-  const value = String(reference || "");
-  return value.startsWith("booking_") ? value.replace("booking_", "") : value;
-};
-
-const extractWebhookTenantId = (payload = {}) => {
-  const metadata = payload.metadata || payload.MetaData || payload.data?.metadata || {};
-  return String(metadata.tenantId || payload.tenantId || payload.data?.tenantId || "");
-};
-
-const extractWebhookStatus = (payload = {}) =>
-  String(
-    payload.status ||
-      payload.paymentStatus ||
-      payload.result ||
-      payload.data?.status ||
-      payload.data?.paymentStatus ||
-      "",
-  ).toLowerCase();
-
-const isPaidWebhookStatus = (status) =>
-  ["paid", "success", "succeeded", "captured", "approved", "completed", "00"].includes(
-    status,
+  const { data: payment } = await moyasarRequest(
+    "get",
+    `/payments/${assertMoyasarId(data.id)}`,
+    secretKey,
   );
-
-const extractWebhookAmount = (payload = {}) =>
-  toMoney(payload.amount || payload.paidAmount || payload.data?.amount || 0);
-
-const extractWebhookPaymentId = (payload = {}) =>
-  String(
-    payload.paymentId ||
-      payload.transactionId ||
-      payload.referenceId ||
-      payload.id ||
-      payload.data?.paymentId ||
-      payload.data?.transactionId ||
-      payload.data?.id ||
-      "",
-  );
-
-const timingSafeEqual = (left, right) => {
-  const leftBuffer = Buffer.from(String(left || ""));
-  const rightBuffer = Buffer.from(String(right || ""));
-  if (leftBuffer.length !== rightBuffer.length) return false;
-  return crypto.timingSafeEqual(leftBuffer, rightBuffer);
-};
-
-const verifyStcBankWebhookSignature = ({ req, secret }) => {
-  if (!secret) return false;
-
-  const signature =
-    req.get("x-stc-bank-signature") ||
-    req.get("x-stc-signature") ||
-    req.get("x-signature") ||
-    "";
-  if (!signature) return false;
-
-  const body = JSON.stringify(req.body || {});
-  const hmac = crypto.createHmac("sha256", secret).update(body).digest("hex");
-  return timingSafeEqual(signature, hmac) || timingSafeEqual(signature, `sha256=${hmac}`);
-};
-
-const getStcWebhookContext = async (req) => {
-  const appointmentId = extractWebhookAppointmentId(req.body);
-  if (!appointmentId) {
-    const error = new Error("بيانات webhook لا تحتوي على رقم الموعد.");
-    error.statusCode = 400;
-    throw error;
-  }
-
-  const tenantId = extractWebhookTenantId(req.body);
-  const appointment = await Appointment.findOne({
-    _id: appointmentId,
-    ...(tenantId ? { tenantId } : {}),
-  }).populate("customerId");
-
-  if (!appointment) {
-    const error = new Error("الموعد غير موجود.");
-    error.statusCode = 404;
-    throw error;
-  }
-
-  const tenant = await Tenant.findById(appointment.tenantId).select(
-    "salonName slug ownerPhone branding taxSettings whatsappSettings settings paymentSettings",
-  );
-  if (!tenant) {
-    const error = new Error("الصالون غير موجود.");
-    error.statusCode = 404;
-    throw error;
-  }
-
-  const webhookSecret = decrypt(tenant.paymentSettings?.stcBank?.webhookSecret);
-  if (!verifyStcBankWebhookSignature({ req, secret: webhookSecret })) {
-    const error = new Error("تعذر التحقق من توقيع STC Bank webhook.");
-    error.statusCode = 401;
-    throw error;
-  }
-
   return {
-    appointment,
-    tenant,
-    providerPaymentId: extractWebhookPaymentId(req.body),
-    amount: extractWebhookAmount(req.body),
-    status: extractWebhookStatus(req.body),
+    status: payment.status,
+    amount: Number(payment.amount) || 0,
+    metadata: payment.metadata || {},
+    providerPaymentId: payment.id,
+    method: payment.source?.type || "online",
   };
 };
 
 module.exports = {
-  STC_BANK_PROVIDER,
+  MOYASAR_PROVIDER,
   createBookingPaymentSession,
   getEnabledProvider,
-  getStcWebhookContext,
+  getTenantMoyasarSecret,
+  getVerifiedMoyasarPayment,
   isOnlinePaymentConfigured,
-  isPaidWebhookStatus,
   toMoney,
 };

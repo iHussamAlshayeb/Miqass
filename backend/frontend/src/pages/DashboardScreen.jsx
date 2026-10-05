@@ -80,6 +80,8 @@ const DashboardScreen = () => {
     const navigate = useNavigate();
 
     const [activeTab, setActiveTab] = useState('statistics');
+    const [checkoutAppointment, setCheckoutAppointment] = useState(null);
+    const clearCheckout = useCallback(() => setCheckoutAppointment(null), []);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [selectedDate, setSelectedDate] = useState(getLocalDate());
     const [isLoading, setIsLoading] = useState(true);
@@ -110,29 +112,20 @@ const DashboardScreen = () => {
     const [paymentSettings, setPaymentSettings] = useState({
         isOnlinePaymentEnabled: false,
         depositAmount: 0,
-        provider: 'stc_bank',
-        stcBank: {
-            environment: 'production',
-            merchantId: '',
-            terminalId: '',
-            clientId: '',
-            clientSecret: '',
-            createPaymentUrl: '',
-            statusInquiryUrl: '',
-            webhookSecret: '',
-            hasClientSecret: false,
-            hasWebhookSecret: false,
-        },
+        provider: 'moyasar',
+        moyasarSecretKey: '',
+        hasSecretKey: false,
     });
 
     const [whatsappSettings, setWhatsappSettings] = useState({ apiKey: '', isEnabled: false });
+    const [whatsappTemplates, setWhatsappTemplates] = useState({});
+    const [whatsappTemplateDefaults, setWhatsappTemplateDefaults] = useState({});
     const [isSavingSettings, setIsSavingSettings] = useState(false);
     const [newClosedDate, setNewClosedDate] = useState('');
 
     const [barbers, setBarbers] = useState([]);
     const [services, setServices] = useState([]);
     const [taxNumber, setTaxNumber] = useState('');
-    const [wafeqApiKey, setWafeqApiKey] = useState('');
 
     const [promoBanner, setPromoBanner] = useState(null);
 
@@ -188,6 +181,8 @@ const DashboardScreen = () => {
                     setTenantId(settingsRes.data.tenantId);
                     setCampaignCredits(settingsRes.data.campaignCredits || 0);
                     if (settingsRes.data.whatsappSettings) setWhatsappSettings(settingsRes.data.whatsappSettings);
+                    if (settingsRes.data.whatsappTemplates) setWhatsappTemplates(settingsRes.data.whatsappTemplates);
+                    if (settingsRes.data.whatsappTemplateDefaults) setWhatsappTemplateDefaults(settingsRes.data.whatsappTemplateDefaults);
                     setSalonName(settingsRes.data.salonName || '');
                     setOwnerName(settingsRes.data.ownerName || '');
                     setOwnerPhone(settingsRes.data.ownerPhone || '');
@@ -209,7 +204,6 @@ const DashboardScreen = () => {
                     setBarbers(settingsRes.data.barbers || []);
                     setServices(settingsRes.data.services || []);
                     setTaxNumber(settingsRes.data.taxNumber || '');
-                    setWafeqApiKey(settingsRes.data.wafeqApiKey || '');
 
                 }
 
@@ -250,10 +244,16 @@ const DashboardScreen = () => {
         setIsSavingSettings(true);
         try {
             await API.put('/appointments/settings', {
-                ...settings, salonName, ownerName, ownerPhone, barbers, services, taxNumber, wafeqApiKey, bio, socialLinks,
+                ...settings, salonName, ownerName, ownerPhone, barbers, services, taxNumber, bio, socialLinks,
                 branding: { logoUrl, primaryColor: themeColors.primaryColor, secondaryColor: themeColors.secondaryColor },
                 paymentSettings
             });
+            // إعادة تحميل الحلاقين والدفع: الرموز والمفاتيح السرية لا تُرجع من السيرفر (فقط hasPin / hasSecretKey)
+            try {
+                const refreshed = await API.get('/appointments/settings');
+                setBarbers(refreshed.data.barbers || []);
+                if (refreshed.data.paymentSettings) setPaymentSettings(refreshed.data.paymentSettings);
+            } catch { /* الحفظ نجح؛ التحديث المحلي اختياري */ }
             alert('تم حفظ إعدادات الصالون بنجاح');
         } catch (error) {
             alert(error.response?.data?.message || 'حدث خطأ أثناء حفظ الإعدادات');
@@ -308,8 +308,13 @@ const DashboardScreen = () => {
     const activePage = pageMeta[activeTab] || pageMeta.statistics;
     const dashboardLink = slug ? `https://www.miqass.app/${slug}` : '';
     const handleSetActiveTab = (tab) => {
+        setCheckoutAppointment(null);
         setActiveTab(tab);
         setIsSidebarOpen(false);
+    };
+    const openAppointmentCheckout = (appointment) => {
+        setCheckoutAppointment(appointment);
+        setActiveTab('sales');
     };
 
     if (isLoading && !appointments.length && !salonName) {
@@ -456,9 +461,9 @@ const DashboardScreen = () => {
                         <PushNotificationPrompt tenantId={tenantId} />
 
                         {activeTab === 'statistics' && <StatisticsTab allAppointments={allAppointments} />}
-                        {activeTab === 'appointments' && <DailyTab selectedDate={selectedDate} setSelectedDate={setSelectedDate} isLoading={isLoading} appointments={appointments} handleStatusChange={handleStatusChange} handleSingleWhatsApp={handleSingleWhatsApp} whatsappSettings={whatsappSettings} refreshAppointments={fetchAppointments} />}
+                        {activeTab === 'appointments' && <DailyTab selectedDate={selectedDate} setSelectedDate={setSelectedDate} isLoading={isLoading} appointments={appointments} handleStatusChange={handleStatusChange} handleSingleWhatsApp={handleSingleWhatsApp} whatsappSettings={whatsappSettings} reviewEnabled={Boolean(settings?.enableGoogleReviews && settings?.googleReviewLink)} refreshAppointments={fetchAppointments} onOpenCheckout={openAppointmentCheckout} />}
                         {activeTab === 'all' && <AllTab isLoading={isLoading} allAppointments={allAppointments} exportToExcel={exportToExcel} handleStatusChange={handleStatusChange} />}
-                        {activeTab === 'sales' && <SalesTab services={services} />}
+                        {activeTab === 'sales' && <SalesTab services={services} checkoutAppointment={checkoutAppointment} onClearCheckout={clearCheckout} onSaleSaved={() => fetchAppointments(true)} />}
                         {activeTab === 'products' && <ProductsTab />}
                         {activeTab === 'expenses' && <ExpensesTab />}
                         {activeTab === 'reviews' && <ReviewsTab reviews={reviews} isLoading={isLoading} />}
@@ -472,6 +477,8 @@ const DashboardScreen = () => {
                                 logoUrl={logoUrl} setLogoUrl={setLogoUrl}
                                 settings={settings} setSettings={setSettings}
                                 whatsappSettings={whatsappSettings} setWhatsappSettings={setWhatsappSettings}
+                                whatsappTemplates={whatsappTemplates} setWhatsappTemplates={setWhatsappTemplates}
+                                whatsappTemplateDefaults={whatsappTemplateDefaults}
                                 handleSaveSettings={handleSaveSettings} handleSaveWhatsappSettings={handleSaveWhatsappSettings}
                                 isSavingSettings={isSavingSettings}
                                 newClosedDate={newClosedDate} setNewClosedDate={setNewClosedDate}
@@ -479,7 +486,6 @@ const DashboardScreen = () => {
                                 subscription={subscription}
                                 services={services} setServices={setServices}
                                 taxNumber={taxNumber} setTaxNumber={setTaxNumber}
-                                wafeqApiKey={wafeqApiKey} setWafeqApiKey={setWafeqApiKey}
                                 bio={bio} setBio={setBio}
                                 socialLinks={socialLinks} setSocialLinks={setSocialLinks}
                                 themeColors={themeColors} setThemeColors={setThemeColors}

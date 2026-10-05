@@ -211,7 +211,7 @@ const ReceiptContent = ({ invoice, invoiceNumber, formatCurrency, baseAmount, va
             <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '8px', fontSize: fs.normal, border: '1px solid #000' }}>
                 <thead>
                     <tr style={{ background: '#f0f0f0', borderBottom: '1px solid #000' }}>
-                        <th style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'right', width: '55%' }}>الخدمة</th>
+                        <th style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'right', width: '55%' }}>{invoice?.itemType === 'product' ? 'المنتج' : invoice?.itemType === 'mixed' ? 'البند' : 'الخدمة'}</th>
                         {!isNarrow && (
                             <th style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'center', width: '15%' }}>ك</th>
                         )}

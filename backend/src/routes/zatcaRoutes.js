@@ -25,7 +25,18 @@ const generalZatcaLimiter = rateLimit({
 
 router.post("/onboard", protect, onboardLimiter, zatcaController.onboardZatca);
 
+router.get('/zakaty/config', protect, zatcaController.getZakatyConfig);
+
 router.use(generalZatcaLimiter);
+
+router.put('/zakaty/config', protect, zatcaController.updateZakatyConfig);
+router.delete('/zakaty/config', protect, zatcaController.disconnectZakatyConfig);
+router.post('/zakaty/setup', protect, zatcaController.startAutomaticZakatySetup);
+router.post('/zakaty/setup/otp', protect, zatcaController.completeAutomaticZakatySetup);
+router.post('/zakaty/provision', protect, zatcaController.provisionZakatySalon);
+router.post('/zakaty/issue-key', protect, zatcaController.issueZakatyKey);
+router.get('/zakaty/device', protect, zatcaController.getZakatyDevice);
+router.post('/zakaty/device/:step', protect, zatcaController.stepZakatyDevice);
 
 router.get("/status", protect, zatcaController.checkZatcaStatus);
 router.patch("/sync", protect, zatcaController.syncTenantZatcaInfo);

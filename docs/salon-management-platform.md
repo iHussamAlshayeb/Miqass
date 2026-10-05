@@ -321,6 +321,6 @@ backend/src/services/accountingService.js
 
 - لا نحذف `Invoice` الحالي الآن.
 - لا نغير webhook Moyasar في المرحلة الأولى.
-- لا نغير ZATCA/Wafeq حتى يصبح `Sale` مستقرا.
+- لا نغير ZATCA حتى يصبح `Sale` مستقرا.
 - أي `Sale` جديد يجب أن يحمل `tenantId` وفهارس مناسبة.
 - أي endpoint مالي يجب أن يكون محميا بـ auth middleware.

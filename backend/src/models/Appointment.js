@@ -79,6 +79,7 @@ const appointmentSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    reviewRequestLockUntil: { type: Date, default: null },
     invoiceNumber: {
       type: String,
     },
@@ -101,10 +102,21 @@ const appointmentSchema = new mongoose.Schema(
 
 appointmentSchema.index(
   { tenantId: 1, date: 1, timeSlot: 1, barberId: 1 },
-  { unique: true, partialFilterExpression: { status: { $ne: "Cancelled" } } },
+  {
+    unique: true,
+    partialFilterExpression: {
+      status: { $in: ["Pending_Payment", "Booked", "Completed", "Blocked"] },
+      barberId: { $type: "objectId" },
+    },
+  },
 );
 
 appointmentSchema.index({ tenantId: 1, customerId: 1 }, { background: true });
+
+appointmentSchema.index(
+  { tenantId: 1, date: -1, timeSlot: -1, _id: -1 },
+  { background: true },
+);
 
 appointmentSchema.index({ tenantId: 1, saleId: 1 }, { background: true });
 

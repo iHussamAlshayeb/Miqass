@@ -20,6 +20,7 @@ const ReviewPage = () => {
             try {
                 const res = await API.get(`reviews/data/${appointmentId}`);
                 setData(res.data);
+                if (res.data.isWalkIn) setAttendanceConfirmed(true);
             } catch (err) {
                 console.error("خطأ في جلب البيانات", err);
             } finally {
@@ -34,7 +35,7 @@ const ReviewPage = () => {
         try {
             await API.post(`reviews/submit/${appointmentId}`, { didNotAttend: true });
             setAttendanceConfirmed(false);
-        } catch (err) {
+        } catch {
             alert("حدث خطأ، يرجى المحاولة لاحقاً");
         } finally {
             setIsUpdatingAttendance(false);

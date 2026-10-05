@@ -35,6 +35,12 @@ const customerSchema = new mongoose.Schema(
       enum: ["New", "Regular", "VIP", "Blacklisted"],
       default: "New",
     },
+    bookingAccess: {
+      codeHash: { type: String, select: false },
+      expiresAt: { type: Date, select: false },
+      sentAt: { type: Date, select: false },
+      attempts: { type: Number, select: false, default: 0 },
+    },
   },
   { timestamps: true },
 );

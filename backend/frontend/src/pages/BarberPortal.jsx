@@ -23,7 +23,9 @@ const BarberPortal = () => {
 
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [barberName, setBarberName] = useState(localStorage.getItem(`barber_name_${slug}`) || '');
-    const [pin, setPin] = useState(localStorage.getItem(`barber_pin_${slug}`) || '');
+    // الرمز يُستخدم لتسجيل الدخول فقط ولا يُحفظ في المتصفح؛ نحفظ توكن جلسة قصير العمر بدلاً منه
+    const [pin, setPin] = useState('');
+    const tokenKey = `barber_token_${slug}`;
     const [loginError, setLoginError] = useState('');
 
     const [selectedDate, setSelectedDate] = useState(getLocalYYYYMMDD());
@@ -33,23 +35,40 @@ const BarberPortal = () => {
     const [isAutoLoggingIn, setIsAutoLoggingIn] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
 
-    const fetchQueue = useCallback(async (bName, bPin, dateStr, silent = false) => {
+    const clearSession = useCallback(() => {
+        localStorage.removeItem(`barber_token_${slug}`);
+        localStorage.removeItem(`barber_pin_${slug}`);
+        setIsLoggedIn(false);
+    }, [slug]);
+
+    // login = { name, pin } لتسجيل الدخول، وبدونه يُستخدم توكن الجلسة المحفوظ
+    const fetchQueue = useCallback(async (dateStr, silent = false, login = null) => {
+        const token = localStorage.getItem(`barber_token_${slug}`);
+        if (!login && !token) return false;
+
         if (!silent) setIsRefreshing(true);
         try {
-            const res = await API.post('/appointments/barber-portal/queue', {
-                slug,
-                barberName: bName,
-                pin: bPin,
-                date: dateStr
-            });
+            const res = login
+                ? await API.post('/appointments/barber-portal/queue', {
+                    slug,
+                    barberName: login.name,
+                    pin: login.pin,
+                    date: dateStr
+                })
+                : await API.post('/appointments/barber-portal/queue',
+                    { date: dateStr },
+                    { headers: { 'X-Barber-Token': token } }
+                );
+            if (res.data.token) localStorage.setItem(`barber_token_${slug}`, res.data.token);
             setAppointments(res.data.appointments);
             return true;
         } catch (error) {
+            if (!login && error.response?.status === 401) clearSession();
             return false;
         } finally {
             if (!silent) setIsRefreshing(false);
         }
-    }, [slug]);
+    }, [slug, clearSession]);
 
     useEffect(() => {
         const fetchTenantAndBarbers = async () => {
@@ -74,13 +93,18 @@ const BarberPortal = () => {
     useEffect(() => {
         const autoLogin = async () => {
             const savedName = localStorage.getItem(`barber_name_${slug}`);
-            const savedPin = localStorage.getItem(`barber_pin_${slug}`);
+            const savedToken = localStorage.getItem(`barber_token_${slug}`);
+            // ترحيل الأجهزة القديمة التي كانت تحفظ الـ PIN: ندخل به مرة واحدة ثم نحذفه
+            const legacyPin = localStorage.getItem(`barber_pin_${slug}`);
+            localStorage.removeItem(`barber_pin_${slug}`);
 
-            if (savedName && savedPin) {
-                const success = await fetchQueue(savedName, savedPin, selectedDate, true);
-                if (success) setIsLoggedIn(true);
-                else handleLogout();
+            let success = false;
+            if (savedToken) {
+                success = await fetchQueue(selectedDate, true);
+            } else if (savedName && legacyPin) {
+                success = await fetchQueue(selectedDate, true, { name: savedName, pin: legacyPin });
             }
+            if (success) setIsLoggedIn(true);
             setIsAutoLoggingIn(false);
         };
         autoLogin();
@@ -89,30 +113,30 @@ const BarberPortal = () => {
     // التحديث التلقائي (Polling)
     useEffect(() => {
         let interval;
-        if (isLoggedIn && barberName && pin) {
+        if (isLoggedIn) {
             interval = setInterval(() => {
-                fetchQueue(barberName, pin, selectedDate, true);
+                fetchQueue(selectedDate, true);
             }, 30000);
         }
         return () => clearInterval(interval);
-    }, [isLoggedIn, barberName, pin, selectedDate, fetchQueue]);
+    }, [isLoggedIn, selectedDate, fetchQueue]);
 
     const handleLogin = async (e) => {
         e.preventDefault();
 
         const selectedBarber = barbersList.find(b => b.name === barberName);
-        if (selectedBarber?.hasPin && pin.length < 3) {
-            return setLoginError('الرمز السري قصير جداً');
+        if (selectedBarber?.hasPin && !pin) {
+            return setLoginError('أدخل الرمز السري');
         }
 
         setIsLoading(true);
         setLoginError('');
 
-        const success = await fetchQueue(barberName, pin, selectedDate);
+        const success = await fetchQueue(selectedDate, false, { name: barberName, pin });
 
         if (success) {
             localStorage.setItem(`barber_name_${slug}`, barberName);
-            localStorage.setItem(`barber_pin_${slug}`, pin);
+            setPin('');
             setIsLoggedIn(true);
         } else {
             setLoginError('تأكد من الرمز السري وحاول مجدداً');
@@ -123,8 +147,7 @@ const BarberPortal = () => {
     const handleLogout = () => {
         if (!window.confirm('هل تريد تسجيل الخروج من البوابة؟')) return;
         localStorage.removeItem(`barber_name_${slug}`);
-        localStorage.removeItem(`barber_pin_${slug}`);
-        setIsLoggedIn(false);
+        clearSession();
         setPin('');
         setAppointments([]);
     };
@@ -134,15 +157,22 @@ const BarberPortal = () => {
 
         setIsUpdating(true);
         try {
-            const payload = { status: newStatus, slug, barberName, pin };
+            const payload = { status: newStatus };
             if (newStatus === 'Cancelled') {
                 payload.cancelReason = "العميل لم يحضر (سُجلت بواسطة الحلاق)";
             }
 
-            await API.put(`/appointments/barber-portal/status/${appointmentId}`, payload);
+            await API.put(`/appointments/barber-portal/status/${appointmentId}`, payload, {
+                headers: { 'X-Barber-Token': localStorage.getItem(tokenKey) || '' }
+            });
             setAppointments(prev => prev.map(app => app._id === appointmentId ? { ...app, status: newStatus } : app));
         } catch (error) {
-            alert('حدث خطأ أثناء التحديث');
+            if (error.response?.status === 401) {
+                clearSession();
+                alert('انتهت جلسة البوابة، سجّل الدخول مجدداً.');
+            } else {
+                alert('حدث خطأ أثناء التحديث');
+            }
         } finally {
             setIsUpdating(false);
         }
@@ -153,7 +183,7 @@ const BarberPortal = () => {
         d.setDate(d.getDate() + days);
         const newDate = getLocalYYYYMMDD(d);
         setSelectedDate(newDate);
-        fetchQueue(barberName, pin, newDate);
+        fetchQueue(newDate);
     };
 
     const handleDateChangeObj = (date) => {
@@ -161,7 +191,7 @@ const BarberPortal = () => {
         const offset = date.getTimezoneOffset() * 60000;
         const formattedDate = new Date(date.getTime() - offset).toISOString().split('T')[0];
         setSelectedDate(formattedDate);
-        fetchQueue(barberName, pin, formattedDate);
+        fetchQueue(formattedDate);
     };
 
     if ((isLoading && !tenantData) || isAutoLoggingIn) {
@@ -308,7 +338,7 @@ const BarberPortal = () => {
                             <div className="flex justify-between items-center mb-5 px-1">
                                 <h2 className="text-lg font-black text-slate-800">قائمة المواعيد 📅</h2>
                                 <div className="flex items-center gap-2">
-                                    <button onClick={() => fetchQueue(barberName, pin, selectedDate)} disabled={isRefreshing} className={`w-9 h-9 flex items-center justify-center bg-white border border-slate-200 text-slate-500 rounded-xl hover:bg-slate-50 transition-all shadow-sm active:scale-95 ${isRefreshing ? 'animate-spin border-transparent' : ''}`} style={isRefreshing ? { backgroundColor: `${activeThemeColor}20`, color: activeThemeColor } : {}} title="تحديث القائمة">
+                                    <button onClick={() => fetchQueue(selectedDate)} disabled={isRefreshing} className={`w-9 h-9 flex items-center justify-center bg-white border border-slate-200 text-slate-500 rounded-xl hover:bg-slate-50 transition-all shadow-sm active:scale-95 ${isRefreshing ? 'animate-spin border-transparent' : ''}`} style={isRefreshing ? { backgroundColor: `${activeThemeColor}20`, color: activeThemeColor } : {}} title="تحديث القائمة">
                                         🔄
                                     </button>
                                     <button onClick={handleLogout} className="text-xs font-black text-red-500 hover:bg-red-500 hover:text-white bg-red-50 px-4 py-2 rounded-xl transition-all shadow-sm border border-red-100 active:scale-95">

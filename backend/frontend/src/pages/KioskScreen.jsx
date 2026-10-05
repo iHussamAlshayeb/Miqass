@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import API from '../services/api';
 // eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from 'framer-motion';
-import { getLocalDate, formatTime12Hour, getTimePeriod } from '../utils/helpers';
+import { getLocalDate, formatTime12Hour, getTimePeriod, isBarberOnLeaveOnDate } from '../utils/helpers';
 import { FaPhone } from "react-icons/fa";
 
 // ==========================================
@@ -109,7 +109,10 @@ const KioskScreen = () => {
                 const res = await API.get(`/tenants/${slug}`);
                 const { tenant, barbers, services } = res.data;
 
-                const activeBarbers = barbers ? barbers.filter(b => b.isActive !== false) : [];
+                const today = getLocalDate();
+                const activeBarbers = barbers
+                    ? barbers.filter((barber) => barber.isActive !== false && !isBarberOnLeaveOnDate(barber, today))
+                    : [];
                 const fullTenantData = { ...tenant, barbers: activeBarbers, services };
 
                 setTenantData(fullTenantData);
@@ -531,7 +534,7 @@ const KioskScreen = () => {
                         </h2>
                         {successMode === 'walkIn' ? (
                             <p className="text-lg md:text-xl lg:text-2xl font-bold text-slate-500 mb-6 md:mb-8 relative z-10">
-                                يمكنك البدء بالحلاقة مباشرة. تم احتساب زيارتك في سجل الولاء.
+                                يمكنك البدء بالحلاقة مباشرة. تُحتسب زيارتك بعد تأكيد إتمام الخدمة في الصالون.
                             </p>
                         ) : (
                             <p className="text-lg md:text-xl lg:text-2xl font-bold text-slate-500 mb-6 md:mb-8 relative z-10">موعدك مع <span className="text-slate-800 font-black">{selectedChair}</span> الساعة <span dir="ltr" className="text-slate-800 font-black">{formatTime12Hour(selectedTime)}</span> {getTimePeriod(selectedTime)}</p>

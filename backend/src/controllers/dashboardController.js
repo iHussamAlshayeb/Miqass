@@ -4,13 +4,18 @@ const Campaign = require("../models/Campaign");
 const Customer = require("../models/Customer");
 const Barber = require("../models/Barber");
 const Service = require("../models/Service");
+const mongoose = require("mongoose");
 
 const { encrypt } = require("../utils/encryption");
+const { hashPin, isValidPin, normalizePinInput } = require("../utils/barberPin");
 const { sendReminderMessage } = require("../utils/whatsapp");
+const { DEFAULT_TEMPLATES, getTemplates, validateTemplates } = require("../utils/whatsappTemplates");
 const {
   getRiyadhDayKey,
   parseCampaignDailyLimit,
 } = require("../utils/campaignSchedule");
+const { normalizeBarberLeaves } = require("../utils/barberLeave");
+const { buildAppointmentHistoryParams } = require("../utils/appointmentHistory");
 
 const normalizeSaudiMobile = (value) => {
   let phone = String(value ?? "")
@@ -51,36 +56,28 @@ const getBarberSettings = async (req, res) => {
       tenantId: tenant._id,
       isActive: true,
     }).lean();
-    const barbers = await Barber.find({ tenantId: tenant._id }).lean();
+    const barbers = await Barber.find({ tenantId: tenant._id })
+      .select("+pin")
+      .lean();
 
+    // لا نُرجع الرمز نفسه (مشفّر)، فقط هل يوجد رمز أم لا
     const barbersData = barbers.map((b) => ({
       _id: b._id,
       name: b.name,
-      pin: b.pin || "",
+      iconColor: b.iconColor || "",
+      hasPin: !!b.pin,
       isActive: b.isActive !== false,
+      leaves: normalizeBarberLeaves(b.leaves),
     }));
 
     const safePaymentSettings = {
       isOnlinePaymentEnabled:
         tenant.paymentSettings?.isOnlinePaymentEnabled || false,
       depositAmount: tenant.paymentSettings?.depositAmount || 0,
-      provider: tenant.paymentSettings?.provider || "stc_bank",
+      provider: "moyasar",
       moyasarPublishableKey:
         tenant.paymentSettings?.moyasarPublishableKey || "",
       hasSecretKey: !!tenant.paymentSettings?.moyasarSecretKey,
-      stcBank: {
-        environment:
-          tenant.paymentSettings?.stcBank?.environment || "production",
-        merchantId: tenant.paymentSettings?.stcBank?.merchantId || "",
-        terminalId: tenant.paymentSettings?.stcBank?.terminalId || "",
-        clientId: tenant.paymentSettings?.stcBank?.clientId || "",
-        createPaymentUrl:
-          tenant.paymentSettings?.stcBank?.createPaymentUrl || "",
-        statusInquiryUrl:
-          tenant.paymentSettings?.stcBank?.statusInquiryUrl || "",
-        hasClientSecret: !!tenant.paymentSettings?.stcBank?.clientSecret,
-        hasWebhookSecret: !!tenant.paymentSettings?.stcBank?.webhookSecret,
-      },
     };
 
     res.status(200).json({
@@ -97,6 +94,8 @@ const getBarberSettings = async (req, res) => {
         isEnabled: false,
         apiKey: "",
       },
+      whatsappTemplates: getTemplates(tenant),
+      whatsappTemplateDefaults: DEFAULT_TEMPLATES,
       paymentSettings: safePaymentSettings,
       ownerPhone: tenant.ownerPhone || "",
       branding: tenant.branding || {},
@@ -110,7 +109,6 @@ const getBarberSettings = async (req, res) => {
       barbers: barbersData,
       services: services,
       taxNumber: tenant.taxSettings?.taxNumber || "",
-      wafeqApiKey: tenant.taxSettings?.wafeqAccountId || "",
     });
   } catch (error) {
     res.status(500).json({ message: "خطأ في جلب الإعدادات" });
@@ -142,7 +140,6 @@ const updateBarberSettings = async (req, res) => {
       isRetentionEnabled,
       retentionDays,
       taxNumber,
-      wafeqApiKey,
       bio,
       socialLinks,
       branding,
@@ -197,8 +194,6 @@ const updateBarberSettings = async (req, res) => {
 
     if (!tenant.taxSettings) tenant.taxSettings = {};
     if (taxNumber !== undefined) tenant.taxSettings.taxNumber = taxNumber;
-    if (wafeqApiKey !== undefined)
-      tenant.taxSettings.wafeqAccountId = wafeqApiKey;
 
     if (paymentSettings) {
       if (!tenant.paymentSettings) tenant.paymentSettings = {};
@@ -209,12 +204,7 @@ const updateBarberSettings = async (req, res) => {
         tenant.paymentSettings.depositAmount = Number(
           paymentSettings.depositAmount,
         );
-      if (paymentSettings.provider !== undefined)
-        tenant.paymentSettings.provider = ["stc_bank", "moyasar"].includes(
-          paymentSettings.provider,
-        )
-          ? paymentSettings.provider
-          : "stc_bank";
+      tenant.paymentSettings.provider = "moyasar";
       if (paymentSettings.moyasarPublishableKey !== undefined)
         tenant.paymentSettings.moyasarPublishableKey =
           paymentSettings.moyasarPublishableKey.trim();
@@ -229,43 +219,44 @@ const updateBarberSettings = async (req, res) => {
         );
       }
 
-      if (paymentSettings.stcBank) {
-        if (!tenant.paymentSettings.stcBank) tenant.paymentSettings.stcBank = {};
-        const stcBank = paymentSettings.stcBank;
-        const currentStcBank = tenant.paymentSettings.stcBank;
+      if (
+        tenant.paymentSettings.isOnlinePaymentEnabled &&
+        !tenant.paymentSettings.moyasarSecretKey
+      ) {
+        return res.status(400).json({
+          message: "أدخل المفتاح السري لميسر قبل تفعيل الدفع الإلكتروني.",
+        });
+      }
+    }
 
-        if (stcBank.environment !== undefined)
-          currentStcBank.environment = ["sandbox", "production"].includes(
-            stcBank.environment,
-          )
-            ? stcBank.environment
-            : "production";
-        if (stcBank.merchantId !== undefined)
-          currentStcBank.merchantId = stcBank.merchantId.trim();
-        if (stcBank.terminalId !== undefined)
-          currentStcBank.terminalId = stcBank.terminalId.trim();
-        if (stcBank.clientId !== undefined)
-          currentStcBank.clientId = stcBank.clientId.trim();
-        if (stcBank.createPaymentUrl !== undefined)
-          currentStcBank.createPaymentUrl = stcBank.createPaymentUrl.trim();
-        if (stcBank.statusInquiryUrl !== undefined)
-          currentStcBank.statusInquiryUrl = stcBank.statusInquiryUrl.trim();
-
-        if (
-          stcBank.clientSecret &&
-          stcBank.clientSecret.trim() !== "" &&
-          !stcBank.clientSecret.includes("****")
-        ) {
-          currentStcBank.clientSecret = encrypt(stcBank.clientSecret.trim());
-        }
-
-        if (
-          stcBank.webhookSecret &&
-          stcBank.webhookSecret.trim() !== "" &&
-          !stcBank.webhookSecret.includes("****")
-        ) {
-          currentStcBank.webhookSecret = encrypt(stcBank.webhookSecret.trim());
-        }
+    if (Array.isArray(barbers)) {
+      const normalizedNames = barbers.map((barber) =>
+        String(typeof barber === "string" ? barber : barber?.name || "")
+          .trim()
+          .toLowerCase(),
+      );
+      if (
+        normalizedNames.some((name) => !name) ||
+        new Set(normalizedNames).size !== normalizedNames.length
+      ) {
+        return res.status(400).json({
+          message: "أسماء الحلاقين مطلوبة ويجب ألا تتكرر.",
+        });
+      }
+      if (barbers.some((barber) => {
+        const color = typeof barber === "string" ? "" : String(barber?.iconColor || "").trim();
+        return color && !/^#[0-9a-fA-F]{6}$/.test(color);
+      })) {
+        return res.status(400).json({ message: "لون أيقونة الحلاق غير صالح." });
+      }
+      if (barbers.some((barber) => {
+        if (typeof barber === "string") return false;
+        const pin = normalizePinInput(barber?.pin);
+        return pin && !isValidPin(pin);
+      })) {
+        return res.status(400).json({
+          message: "رمز PIN للحلاق يجب أن يكون من 4 إلى 8 أرقام.",
+        });
       }
     }
 
@@ -275,20 +266,66 @@ const updateBarberSettings = async (req, res) => {
 
     if (barbers && Array.isArray(barbers)) {
       tasks.push(
-        Barber.deleteMany({ tenantId: tenant._id }).then(() => {
-          const barbersToInsert = barbers.map((b) => {
-            if (typeof b === "string")
-              return { tenantId: tenant._id, name: b, pin: "", isActive: true };
+        (async () => {
+          const existingBarbers = await Barber.find({ tenantId: tenant._id })
+            .select("_id")
+            .lean();
+          const existingIds = new Set(
+            existingBarbers.map((barber) => String(barber._id)),
+          );
+
+          const normalizedBarbers = barbers.map((barber) => {
+            const data =
+              typeof barber === "string" ? { name: barber } : barber || {};
+            const requestedId = String(data._id || "");
             return {
-              tenantId: tenant._id,
-              name: b.name,
-              pin: b.pin || "",
-              isActive: b.isActive !== false,
+              _id:
+                mongoose.Types.ObjectId.isValid(requestedId) &&
+                existingIds.has(requestedId)
+                  ? requestedId
+                  : null,
+              name: String(data.name || "").trim(),
+              iconColor: String(data.iconColor || "").trim(),
+              pin: normalizePinInput(data.pin),
+              clearPin: data.clearPin === true,
+              isActive: data.isActive !== false,
+              leaves: normalizeBarberLeaves(data.leaves),
             };
           });
-          if (barbersToInsert.length > 0)
-            return Barber.insertMany(barbersToInsert);
-        }),
+
+          const retainedIds = normalizedBarbers
+            .filter((barber) => barber._id)
+            .map((barber) => barber._id);
+
+          await Barber.deleteMany({
+            tenantId: tenant._id,
+            ...(retainedIds.length > 0
+              ? { _id: { $nin: retainedIds } }
+              : {}),
+          });
+
+          for (const barber of normalizedBarbers) {
+            const payload = {
+              name: barber.name,
+              iconColor: barber.iconColor,
+              isActive: barber.isActive,
+              leaves: barber.leaves,
+            };
+
+            // رمز جديد → يُشفَّر. فارغ لحلاق موجود → يبقى الرمز الحالي كما هو.
+            if (barber.pin) payload.pin = await hashPin(barber.pin);
+            else if (barber.clearPin || !barber._id) payload.pin = "";
+
+            if (barber._id) {
+              await Barber.updateOne(
+                { _id: barber._id, tenantId: tenant._id },
+                { $set: payload },
+              );
+            } else {
+              await Barber.create({ tenantId: tenant._id, ...payload });
+            }
+          }
+        })(),
       );
     }
 
@@ -499,6 +536,68 @@ const getTenantCustomers = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: "حدث خطأ أثناء جلب قائمة العملاء" });
+  }
+};
+
+const getAppointmentHistory = async (req, res) => {
+  let options;
+  try {
+    options = buildAppointmentHistoryParams(req.query, req.tenantId);
+  } catch (error) {
+    return res.status(400).json({ message: error.message });
+  }
+
+  try {
+    const { query, customer, sort, page, limit } = options;
+    if (customer) {
+      const matchingCustomers = await Customer.find({ tenantId: req.tenantId, phone: customer })
+        .select("_id")
+        .lean();
+      query.$or = [
+        { childName: customer },
+        { customerId: { $in: matchingCustomers.map((item) => item._id) } },
+      ];
+    }
+
+    const [total, appointments] = await Promise.all([
+      Appointment.countDocuments(query),
+      Appointment.find(query)
+        .populate("customerId", "phone parentName children")
+        .sort(sort)
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+    ]);
+
+    res.status(200).json({
+      appointments: appointments.map(mapAppointmentForFrontend),
+      total,
+      page,
+      limit,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "حدث خطأ أثناء جلب سجل الحجوزات" });
+  }
+};
+
+const updateWhatsappTemplates = async (req, res) => {
+  try {
+    const error = validateTemplates(req.body?.templates);
+    if (error) return res.status(400).json({ message: error });
+
+    const changes = {};
+    for (const [key, value] of Object.entries(req.body.templates)) {
+      changes[`whatsappSettings.templates.${key}`] = value;
+    }
+    const tenant = await Tenant.findByIdAndUpdate(
+      req.tenantId,
+      { $set: changes },
+      { returnDocument: "after", select: "whatsappSettings.templates" },
+    ).lean();
+    if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
+    return res.json({ templates: getTemplates(tenant) });
+  } catch (error) {
+    return res.status(500).json({ message: "حدث خطأ أثناء حفظ قوالب واتساب" });
   }
 };
 
@@ -1239,7 +1338,9 @@ module.exports = {
   getBarberSettings,
   updateBarberSettings,
   getAllUpcomingAppointments,
+  getAppointmentHistory,
   resendSingleWhatsApp,
+  updateWhatsappTemplates,
   updateWhatsappSettings,
   getCustomerLoyalty,
   getTenantCustomers,

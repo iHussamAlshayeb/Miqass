@@ -2,6 +2,7 @@ const Tenant = require("../models/Tenant");
 const Barber = require("../models/Barber");
 const Service = require("../models/Service");
 const Review = require("../models/Review");
+const { normalizeBarberLeaves } = require("../utils/barberLeave");
 
 const getTenantBySlug = async (req, res) => {
   try {
@@ -12,7 +13,7 @@ const getTenantBySlug = async (req, res) => {
       "subscription.status": "Active",
     })
       .select(
-        "-password -email -resetPasswordToken -resetPasswordExpires -taxSettings.zatcaCredentials -invoiceCounter -whatsappSettings.webhookSecret -paymentSettings.moyasarSecretKey -paymentSettings.stcBank.clientSecret -paymentSettings.stcBank.webhookSecret",
+        "-password -email -resetPasswordToken -resetPasswordExpires -taxSettings.zatcaCredentials -taxSettings.zakaty -invoiceCounter -whatsappSettings.webhookSecret -paymentSettings.moyasarSecretKey",
       )
       .lean();
 
@@ -25,12 +26,12 @@ const getTenantBySlug = async (req, res) => {
       isOnlinePaymentEnabled:
         tenant.paymentSettings?.isOnlinePaymentEnabled || false,
       depositAmount: tenant.paymentSettings?.depositAmount || 0,
-      provider: tenant.paymentSettings?.provider || "stc_bank",
+      provider: "moyasar",
     };
 
     const [barbers, services, reviews] = await Promise.all([
       Barber.find({ tenantId: tenant._id, isActive: { $ne: false } })
-        .select("name pin isActive")
+        .select("name +pin isActive leaves iconColor")
         .lean(),
       Service.find({ tenantId: tenant._id, isActive: true })
         .select("name description price duration category")
@@ -48,7 +49,9 @@ const getTenantBySlug = async (req, res) => {
     const safeBarbers = barbers.map((b) => ({
       _id: b._id,
       name: b.name,
+      iconColor: b.iconColor || "",
       hasPin: !!b.pin,
+      leaves: normalizeBarberLeaves(b.leaves),
     }));
 
     res.status(200).json({ tenant, barbers: safeBarbers, services, reviews });

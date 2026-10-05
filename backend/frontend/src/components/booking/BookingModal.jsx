@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { formatTime12Hour, getTimePeriod } from '../../utils/helpers';
 import LoyaltyCard from './LoyaltyCard';
@@ -20,8 +20,12 @@ const BookingModal = ({
     loyaltyVisits,
     savedChildren, // 💡 استلام مصفوفة الأسماء
     handleBookingSubmit,
-    isLoading
+    isLoading,
+    bookingError,
+    bookingErrorField,
+    clearBookingError
 }) => {
+    const [quickSelectError, setQuickSelectError] = useState('');
 
     // 💡 منطق التلوين الديناميكي (يتطابق مع الشاشة الرئيسية)
     const brandPrimary = tenantData?.branding?.primaryColor || '#3b82f6';
@@ -29,9 +33,15 @@ const BookingModal = ({
     const activeBarberIndex = Math.max(0, tenantData?.barbers?.findIndex(b => b.name === selectedChair) || 0);
     const activeThemeColor = activeBarberIndex % 2 === 0 ? brandPrimary : brandSecondary;
 
+    const handleClose = () => {
+        setQuickSelectError('');
+        onClose();
+    };
+
     // 💡 دالة التعامل مع الأزرار السريعة
     const handleQuickSelect = (childName) => {
         if (childrenNames.includes(childName)) return;
+        setQuickSelectError('');
 
         const emptyIndex = childrenNames.findIndex(n => n.trim() === '');
 
@@ -39,10 +49,12 @@ const BookingModal = ({
             const newNames = [...childrenNames];
             newNames[emptyIndex] = childName;
             setChildrenNames(newNames);
+            clearBookingError();
         } else if (childrenNames.length < maxConsecutiveSlots) {
             setChildrenNames([...childrenNames, childName]);
+            clearBookingError();
         } else {
-            alert('عذراً، الوقت المتاح لا يتسع لإضافة المزيد من الأشخاص المتتاليين.');
+            setQuickSelectError('الوقت المتاح لا يتسع لإضافة شخص آخر.');
         }
     };
 
@@ -57,7 +69,7 @@ const BookingModal = ({
                         exit={{ opacity: 0 }}
                         transition={{ duration: 0.2 }}
                         className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40"
-                        onClick={onClose}
+                        onClick={handleClose}
                     />
 
                     {/* النافذة المنبثقة */}
@@ -80,20 +92,27 @@ const BookingModal = ({
                                         <span dir="ltr" className="text-slate-500">{formatTime12Hour(selectedTime)}</span> <span className="text-slate-500">{getTimePeriod(selectedTime)}</span> • {selectedChair} ✂️
                                     </p>
                                 </div>
-                                <button onClick={onClose} className="bg-slate-100 text-slate-400 hover:text-slate-600 hover:bg-slate-200 w-8 h-8 rounded-full flex items-center justify-center font-bold transition-colors">✕</button>
+                                <button onClick={handleClose} aria-label="إغلاق نافذة الحجز" className="bg-slate-100 text-slate-400 hover:text-slate-600 hover:bg-slate-200 w-8 h-8 rounded-full flex items-center justify-center font-bold transition-colors">✕</button>
                             </div>
 
                             {/* نموذج الحجز */}
-                            <form onSubmit={handleBookingSubmit} className="space-y-4">
+                            <form onSubmit={handleBookingSubmit} noValidate className="space-y-4">
+
+                                {bookingError && !bookingErrorField && (
+                                    <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm font-bold text-rose-700">{bookingError}</p>
+                                )}
 
                                 {/* رقم الجوال */}
                                 <div>
+                                    <label htmlFor="booking-phone" className="block text-sm font-bold text-slate-700 mb-2">رقم الجوال</label>
                                     <input
+                                        id="booking-phone" aria-invalid={bookingErrorField === 'phone'} aria-describedby={bookingErrorField === 'phone' ? 'booking-phone-error' : undefined}
                                         type="tel" required pattern="^05[0-9]{8}$" maxLength="10" placeholder="رقم الجوال (05XXXXXXXX)"
-                                        value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
+                                        value={phone} onChange={(e) => { setPhone(e.target.value.replace(/\D/g, '')); clearBookingError(); }}
                                         className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:bg-white outline-none text-right font-black text-slate-800 placeholder-slate-400 transition-all duration-300 text-lg tracking-wider focus:ring-4" dir="ltr"
                                         style={{ '--tw-ring-color': `${activeThemeColor}30`, borderColor: phone.length === 10 ? activeThemeColor : undefined }}
                                     />
+                                    {bookingErrorField === 'phone' && <p id="booking-phone-error" role="alert" className="text-sm font-bold text-rose-700 mt-2">{bookingError}</p>}
                                 </div>
 
                                 {/* بطاقة الولاء */}
@@ -131,8 +150,9 @@ const BookingModal = ({
                                             <Motion.div key={index} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, scale: 0.9 }} className="flex gap-2 relative">
                                                 <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 font-black">{index + 1}</div>
                                                 <input
+                                                    aria-label={`اسم الشخص ${index + 1}`} aria-invalid={bookingErrorField === 'names'} aria-describedby={bookingErrorField === 'names' ? 'booking-names-error' : undefined}
                                                     type="text" required placeholder={index === 0 ? "الاسم الكريم (مثال: محمد)" : "اسم المرافق (مثال: علي)"} value={name}
-                                                    onChange={(e) => { const newNames = [...childrenNames]; newNames[index] = e.target.value; setChildrenNames(newNames); }}
+                                                    onChange={(e) => { const newNames = [...childrenNames]; newNames[index] = e.target.value; setChildrenNames(newNames); clearBookingError(); }}
                                                     className="w-full p-4 pr-10 bg-white border border-slate-200 rounded-2xl focus:bg-slate-50 outline-none font-black text-slate-800 placeholder-slate-400 transition-all duration-300 text-sm focus:ring-2 focus:border-transparent shadow-sm"
                                                     style={{ '--tw-ring-color': `${activeThemeColor}40` }}
                                                 />
@@ -140,6 +160,7 @@ const BookingModal = ({
                                             </Motion.div>
                                         ))}
                                     </AnimatePresence>
+                                    {bookingErrorField === 'names' && <p id="booking-names-error" role="alert" className="text-sm font-bold text-rose-700">{bookingError}</p>}
 
                                     {/* 💡 أزرار الاستكمال السريع (تظهر فقط إذا كان هناك أسماء محفوظة) */}
                                     <AnimatePresence>
@@ -176,6 +197,7 @@ const BookingModal = ({
                                             </Motion.div>
                                         )}
                                     </AnimatePresence>
+                                    {quickSelectError && <p role="alert" className="text-sm font-bold text-rose-700">{quickSelectError}</p>}
 
                                     {/* ملخص الفاتورة */}
                                     {selectedServicesIds.length > 0 && (

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 const MotionDiv = motion.div;
 import {
     Camera,
+    CalendarDays,
     CheckCircle2,
     CircleDollarSign,
     Clock3,
@@ -12,10 +13,13 @@ import {
     MessageCircle,
     Palette,
     Plug,
+    Plus,
+    RotateCcw,
     Save,
     Scissors,
-    Settings,
+    Sparkles,
     Smartphone,
+    Trash2,
     Unplug,
     X,
 } from 'lucide-react';
@@ -23,7 +27,112 @@ import API from '../../services/api';
 import UpgradeModal from './UpgradeModal';
 
 import ZatcaSection from './settings/ZatcaSection';
+import ZakatySection from './settings/ZakatySection';
 import MarketingSection from './settings/MarketingSection';
+
+const LEAVE_TYPE_OPTIONS = [
+    { value: 'daily', label: 'يوم أسبوعي متكرر' },
+    { value: 'weekly', label: 'أسبوع', durationDays: 7 },
+    { value: 'monthly', label: 'شهر', durationDays: 30 },
+];
+
+const WEEKDAY_OPTIONS = [
+    { value: 0, label: 'الأحد' },
+    { value: 1, label: 'الإثنين' },
+    { value: 2, label: 'الثلاثاء' },
+    { value: 3, label: 'الأربعاء' },
+    { value: 4, label: 'الخميس' },
+    { value: 5, label: 'الجمعة' },
+    { value: 6, label: 'السبت' },
+];
+
+const SETTINGS_TABS = [
+    {
+        id: 'identity',
+        label: 'الهوية',
+        description: 'بيانات المنشأة ومظهر صفحة الحجز',
+        icon: Palette,
+        activeClass: 'border-blue-500 bg-blue-50 text-blue-700',
+        iconClass: 'bg-blue-100 text-blue-700',
+    },
+    {
+        id: 'booking',
+        label: 'الحجز',
+        description: 'ساعات العمل والاستراحات وأيام الإغلاق',
+        icon: Clock3,
+        activeClass: 'border-amber-500 bg-amber-50 text-amber-700',
+        iconClass: 'bg-amber-100 text-amber-700',
+    },
+    {
+        id: 'team',
+        label: 'الفريق والخدمات',
+        description: 'الحلاقون والإجازات والخدمات والأسعار',
+        icon: Scissors,
+        activeClass: 'border-emerald-500 bg-emerald-50 text-emerald-700',
+        iconClass: 'bg-emerald-100 text-emerald-700',
+    },
+    {
+        id: 'finance',
+        label: 'الدفع والفوترة',
+        description: 'العربون والدفع الإلكتروني والفوترة الضريبية',
+        icon: CircleDollarSign,
+        activeClass: 'border-indigo-500 bg-indigo-50 text-indigo-700',
+        iconClass: 'bg-indigo-100 text-indigo-700',
+    },
+    {
+        id: 'marketing',
+        label: 'التسويق',
+        description: 'التقييمات والولاء وإعادة الاستهداف',
+        icon: Sparkles,
+        activeClass: 'border-rose-500 bg-rose-50 text-rose-700',
+        iconClass: 'bg-rose-100 text-rose-700',
+    },
+    {
+        id: 'integrations',
+        label: 'الربط',
+        description: 'ربط واتساب ومتابعة حالة الاتصال',
+        icon: Plug,
+        activeClass: 'border-teal-500 bg-teal-50 text-teal-700',
+        iconClass: 'bg-teal-100 text-teal-700',
+    },
+];
+
+const WHATSAPP_MESSAGE_TYPES = [
+    { key: 'confirmation', label: 'تأكيد الحجز', variables: ['اسم_الصالون', 'اسم_العميل', 'التاريخ', 'الوقت', 'الحلاق', 'الموقع', 'رقم_التواصل'] },
+    { key: 'reminder', label: 'تذكير الموعد', variables: ['اسم_الصالون', 'اسم_العميل', 'الوقت', 'الحلاق', 'الموقع', 'رقم_التواصل'] },
+    { key: 'cancellation', label: 'إلغاء الحجز', variables: ['اسم_الصالون', 'اسم_العميل', 'الحلاق', 'سبب_الإلغاء', 'رابط_الحجز'] },
+    { key: 'review', label: 'طلب التقييم', variables: ['اسم_الصالون', 'اسم_العميل', 'رابط_التقييم'] },
+    { key: 'loyalty', label: 'مكافأة الولاء', variables: ['اسم_الصالون', 'اسم_العميل', 'رابط_الحجز'] },
+    { key: 'retention', label: 'استعادة العملاء', variables: ['اسم_الصالون', 'اسم_العميل', 'رابط_الحجز'] },
+];
+
+const buildLeavePeriod = (type, startDate, endDate, weekday) => {
+    const option = LEAVE_TYPE_OPTIONS.find((item) => item.value === type);
+    if (!option || !startDate) return null;
+
+    if (type === 'daily') {
+        const parsedWeekday = Number(weekday);
+        if (!endDate || endDate < startDate || !Number.isInteger(parsedWeekday)) return null;
+
+        return { type, startDate, endDate, weekday: parsedWeekday };
+    }
+
+    const calculatedEndDate = new Date(`${startDate}T12:00:00`);
+    if (Number.isNaN(calculatedEndDate.getTime())) return null;
+    calculatedEndDate.setDate(calculatedEndDate.getDate() + option.durationDays - 1);
+
+    return {
+        type,
+        startDate,
+        endDate: `${calculatedEndDate.getFullYear()}-${String(calculatedEndDate.getMonth() + 1).padStart(2, '0')}-${String(calculatedEndDate.getDate()).padStart(2, '0')}`,
+    };
+};
+
+const formatLeaveDate = (date) => new Date(`${date}T12:00:00`).toLocaleDateString('ar-SA-u-nu-latn', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+});
 
 const SettingsTab = ({
     salonName, setSalonName,
@@ -38,22 +147,29 @@ const SettingsTab = ({
     subscription,
     services, setServices,
     taxNumber, setTaxNumber,
-    wafeqApiKey, setWafeqApiKey,
     bio, setBio,
     socialLinks, setSocialLinks,
     themeColors, setThemeColors,
     paymentSettings, setPaymentSettings
+    ,whatsappTemplates, setWhatsappTemplates, whatsappTemplateDefaults
 }) => {
 
     const [newBarberName, setNewBarberName] = useState('');
     const [newBarberPin, setNewBarberPin] = useState('');
+    const [leaveDrafts, setLeaveDrafts] = useState({});
+    const [activeSettingsTab, setActiveSettingsTab] = useState('identity');
     const [qrCode, setQrCode] = useState('');
     const [waStatus, setWaStatus] = useState('DISCONNECTED');
     const [isWaLoading, setIsWaLoading] = useState(false);
+    const [activeMessageType, setActiveMessageType] = useState('confirmation');
+    const [isSavingTemplates, setIsSavingTemplates] = useState(false);
+    const [templateError, setTemplateError] = useState('');
+    const [templateSaved, setTemplateSaved] = useState(false);
 
     const [upsellConfig, setUpsellConfig] = useState({ isOpen: false, featureName: '', requiredPlan: '' });
     const currentPlan = subscription?.plan || 'Free';
     const fileInputRef = useRef(null);
+    const activeTab = SETTINGS_TABS.find((tab) => tab.id === activeSettingsTab) || SETTINGS_TABS[0];
 
     const [zatcaOtp, setZatcaOtp] = useState('');
     const [isOnboardingZatca, setIsOnboardingZatca] = useState(false);
@@ -183,36 +299,138 @@ const SettingsTab = ({
         if (currentPlan === 'Free' && currentBarbers.length >= 2) return setUpsellConfig({ isOpen: true, featureName: 'أكثر من كرسين', requiredPlan: 'Pro' });
         if (!val) return alert('يرجى كتابة اسم الحلاق!');
         if (pinVal && currentPlan !== 'Premium') return setUpsellConfig({ isOpen: true, featureName: 'بوابة الحلاقين الخاصة (PIN)', requiredPlan: 'Premium' });
+        if (pinVal && !/^\d{4,8}$/.test(pinVal)) return alert('رمز PIN يجب أن يكون من 4 إلى 8 أرقام.');
 
         const exists = currentBarbers.some(b => (typeof b === 'string' ? b : b.name) === val);
 
         if (!exists) {
-            setBarbers([...currentBarbers, { name: val, pin: currentPlan === 'Premium' ? pinVal : "", isActive: true }]);
+            setBarbers([...currentBarbers, { name: val, pin: currentPlan === 'Premium' ? pinVal : "", isActive: true, leaves: [] }]);
             setNewBarberName('');
             setNewBarberPin('');
         }
     };
 
-    return (
-        <MotionDiv initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 pb-28 relative">
+    const handleSaveTemplates = async () => {
+        setTemplateError('');
+        setTemplateSaved(false);
+        setIsSavingTemplates(true);
+        try {
+            const res = await API.put('/appointments/settings/whatsapp/templates', { templates: whatsappTemplates });
+            setWhatsappTemplates(res.data.templates);
+            setTemplateSaved(true);
+        } catch (error) {
+            setTemplateError(error.response?.data?.message || 'تعذر حفظ الرسائل. حاول مرة أخرى.');
+        } finally {
+            setIsSavingTemplates(false);
+        }
+    };
 
-            {/* رأس الصفحة */}
-            <div className="flex items-center gap-3 mb-2">
-                <div className="w-12 h-12 bg-slate-800 text-white rounded-lg flex items-center justify-center shadow-lg">
-                    <Settings size={22} />
+    const updateLeaveDraft = (index, field, value) => {
+        setLeaveDrafts((current) => ({
+            ...current,
+            [index]: {
+                type: 'daily',
+                startDate: '',
+                endDate: '',
+                weekday: 0,
+                ...current[index],
+                [field]: value,
+            },
+        }));
+    };
+
+    const handleAddBarberLeave = (index) => {
+        const draft = leaveDrafts[index] || { type: 'daily', startDate: '', endDate: '', weekday: 0 };
+        const leave = buildLeavePeriod(draft.type, draft.startDate, draft.endDate, draft.weekday);
+        if (!leave) {
+            return alert(draft.type === 'daily'
+                ? 'اختر يوم الأسبوع وفترة صحيحة للإجازة المتكررة.'
+                : 'اختر تاريخ بداية الإجازة.');
+        }
+
+        setBarbers((current) => current.map((barber, barberIndex) => {
+            if (barberIndex !== index) return barber;
+
+            const normalizedBarber = typeof barber === 'string'
+                ? { name: barber, pin: '', isActive: true, leaves: [] }
+                : barber;
+            const currentLeaves = normalizedBarber.leaves || [];
+            const exists = currentLeaves.some((item) =>
+                item.type === leave.type &&
+                item.startDate === leave.startDate &&
+                item.endDate === leave.endDate &&
+                Number(item.weekday ?? -1) === Number(leave.weekday ?? -1));
+            if (exists) return normalizedBarber;
+
+            return {
+                ...normalizedBarber,
+                leaves: [...currentLeaves, leave].sort((a, b) => a.startDate.localeCompare(b.startDate)),
+            };
+        }));
+        setLeaveDrafts((current) => ({
+            ...current,
+            [index]: { type: draft.type, startDate: '', endDate: '', weekday: draft.weekday ?? 0 },
+        }));
+    };
+
+    const handleRemoveBarberLeave = (barberIndex, leaveIndex) => {
+        setBarbers((current) => current.map((barber, index) => {
+            if (index !== barberIndex || typeof barber === 'string') return barber;
+            return {
+                ...barber,
+                leaves: (barber.leaves || []).filter((_, indexToRemove) => indexToRemove !== leaveIndex),
+            };
+        }));
+    };
+
+    return (
+        <MotionDiv initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-5 pb-28 relative">
+
+            <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm">
+                <div className="flex items-center justify-between gap-4 p-4 sm:p-5 border-b border-slate-100">
+                    <div className="flex items-center gap-3 min-w-0">
+                        <div className={`w-11 h-11 shrink-0 rounded-lg flex items-center justify-center ${activeTab.iconClass}`}>
+                            {React.createElement(activeTab.icon, { size: 20 })}
+                        </div>
+                        <div className="min-w-0">
+                            <h2 className="text-xl sm:text-2xl font-black text-slate-800">إعدادات المنشأة</h2>
+                            <p className="text-xs sm:text-sm font-bold text-slate-500 mt-1 truncate">{activeTab.description}</p>
+                        </div>
+                    </div>
+                    <span className="hidden sm:inline-flex shrink-0 items-center rounded-md bg-slate-100 px-3 py-1.5 text-[11px] font-black text-slate-600">
+                        {activeTab.label}
+                    </span>
                 </div>
-                <div>
-                    <h2 className="text-2xl font-black text-slate-800">إعدادات المنشأة</h2>
-                    <p className="text-sm font-bold text-slate-500 mt-1">تخصيص الهوية، الخدمات، والتسويق الآلي.</p>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6" role="tablist" aria-label="أقسام الإعدادات">
+                    {SETTINGS_TABS.map((tab) => {
+                        const TabIcon = tab.icon;
+                        const isActive = activeSettingsTab === tab.id;
+                        return (
+                            <button
+                                key={tab.id}
+                                type="button"
+                                role="tab"
+                                aria-selected={isActive}
+                                onClick={() => setActiveSettingsTab(tab.id)}
+                                className={`min-h-20 px-3 py-3 border-b-2 flex flex-col items-center justify-center gap-2 text-center transition-colors ${isActive
+                                    ? tab.activeClass
+                                    : 'border-transparent bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}
+                            >
+                                <TabIcon size={18} />
+                                <span className="text-xs font-black leading-tight">{tab.label}</span>
+                            </button>
+                        );
+                    })}
                 </div>
             </div>
 
-            <form id="settings-form" onSubmit={handleSaveSettings} className="space-y-8">
+            <form id="settings-form" onSubmit={handleSaveSettings} className="space-y-4">
 
                 {/* 1. قسم الهوية والتواصل وتخصيص الواجهة */}
-                <section className="bg-white p-6 md:p-8 rounded-lg shadow-sm border border-slate-100">
+                <section role="tabpanel" className={`${activeSettingsTab === 'identity' ? 'block' : 'hidden'} bg-white p-5 md:p-7 rounded-lg shadow-sm border border-slate-100`}>
                     <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-2 border-b border-slate-50 pb-4">
-                        <span className="text-blue-500">1.</span> الهوية، التواصل، وتخصيص الواجهة
+                        الهوية، التواصل، وتخصيص الواجهة
                     </h3>
 
                     {/* الحقول الأساسية */}
@@ -330,9 +548,9 @@ const SettingsTab = ({
                 </section>
 
                 {/* 2. قسم أوقات العمل */}
-                <section className="bg-white p-6 md:p-8 rounded-lg shadow-sm border border-slate-100">
+                <section role="tabpanel" className={`${activeSettingsTab === 'booking' ? 'block' : 'hidden'} bg-white p-5 md:p-7 rounded-lg shadow-sm border border-slate-100`}>
                     <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-2 border-b border-slate-50 pb-4">
-                        <span className="text-orange-500">2.</span> أوقات العمل والجدولة
+                        أوقات العمل والجدولة
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                         <div>
@@ -395,26 +613,26 @@ const SettingsTab = ({
                     </div>
                 </section>
 
-                {/* 3. قسم ZATCA */}
-                <ZatcaSection
-                    settings={settings}
-                    taxNumber={taxNumber}
-                    setTaxNumber={setTaxNumber}
-                    wafeqApiKey={wafeqApiKey}
-                    setWafeqApiKey={setWafeqApiKey}
-                    zatcaOtp={zatcaOtp}
-                    setZatcaOtp={setZatcaOtp}
-                    isOnboardingZatca={isOnboardingZatca}
-                    handleZatcaOnboard={handleZatcaOnboard}
-                    currentPlan={currentPlan}
-                    setUpsellConfig={setUpsellConfig}
-                    handleZatcaDisconnect={handleZatcaDisconnect}
-                />
+                <div role="tabpanel" className={activeSettingsTab === 'finance' ? 'block' : 'hidden'}>
+                    {settings?.isZatcaOnboarded && <ZatcaSection
+                        settings={settings}
+                        taxNumber={taxNumber}
+                        setTaxNumber={setTaxNumber}
+                        zatcaOtp={zatcaOtp}
+                        setZatcaOtp={setZatcaOtp}
+                        isOnboardingZatca={isOnboardingZatca}
+                        handleZatcaOnboard={handleZatcaOnboard}
+                        currentPlan={currentPlan}
+                        setUpsellConfig={setUpsellConfig}
+                        handleZatcaDisconnect={handleZatcaDisconnect}
+                    />}
+                    <ZakatySection onTaxNumberSaved={setTaxNumber} />
+                </div>
 
                 {/* 4. قسم قائمة الخدمات والطاقم */}
-                <section className="bg-white p-6 md:p-8 rounded-lg shadow-sm border border-slate-100">
+                <section role="tabpanel" className={`${activeSettingsTab === 'team' ? 'block' : 'hidden'} bg-white p-5 md:p-7 rounded-lg shadow-sm border border-slate-100`}>
                     <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-2 border-b border-slate-50 pb-4">
-                        <span className="text-emerald-500">4.</span> قائمة الخدمات والطاقم
+                        الفريق والخدمات
                     </h3>
 
                     {/* إدارة الطاقم */}
@@ -436,7 +654,7 @@ const SettingsTab = ({
                                     type="text"
                                     inputMode="numeric"
                                     pattern="\d*"
-                                    maxLength="4"
+                                    maxLength="8"
                                     disabled={currentPlan !== 'Premium'}
                                     value={newBarberPin}
                                     onChange={(e) => setNewBarberPin(e.target.value.replace(/\D/g, ''))}
@@ -454,87 +672,234 @@ const SettingsTab = ({
                                     ? settings?.barberPins?.find(b => b.name === bName)?.pin || ''
                                     : barber.pin || '';
                                 const isActive = typeof barber === 'string' ? true : (barber.isActive !== false);
+                                const iconColor = typeof barber === 'string' ? '' : (barber.iconColor || '');
+                                const leaves = typeof barber === 'string' ? [] : (barber.leaves || []);
+                                const leaveDraft = leaveDrafts[index] || {
+                                    type: 'daily',
+                                    startDate: '',
+                                    endDate: '',
+                                    weekday: 0,
+                                };
 
                                 return (
-                                    <div key={index} className={`flex flex-col md:flex-row gap-4 items-center p-5 rounded-lg border transition-all ${isActive ? 'bg-white border-emerald-100 shadow-sm' : 'bg-slate-50 border-slate-200 opacity-75'}`}>
-
-                                        <div className="flex-1 w-full">
-                                            <label className="text-[10px] font-black text-slate-400 block mb-1">اسم الحلاق</label>
-                                            <input
-                                                type="text"
-                                                value={bName}
-                                                onChange={(e) => {
-                                                    const updated = [...barbers];
-                                                    if (typeof updated[index] === 'string') {
-                                                        updated[index] = { name: e.target.value, pin: bPin, isActive: isActive };
-                                                    } else {
-                                                        updated[index].name = e.target.value;
-                                                    }
-                                                    setBarbers(updated);
-                                                }}
-                                                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg font-bold text-slate-800 outline-none focus:border-emerald-400 text-sm"
-                                            />
-                                        </div>
-
-                                        {currentPlan === 'Premium' && (
-                                            <div className="w-full md:w-32">
-                                                <label className="text-[10px] font-black text-slate-400 block mb-1">رمز الدخول (PIN)</label>
+                                    <div key={barber?._id || index} className={`rounded-lg border transition-all ${isActive ? 'bg-white border-emerald-100 shadow-sm' : 'bg-slate-50 border-slate-200'}`}>
+                                        <div className={`flex flex-col md:flex-row gap-4 items-center p-5 ${isActive ? '' : 'opacity-75'}`}>
+                                            <div className="flex-1 w-full">
+                                                <label className="text-[10px] font-black text-slate-400 block mb-1">اسم الحلاق</label>
                                                 <input
                                                     type="text"
-                                                    maxLength="4"
-                                                    value={bPin}
+                                                    value={bName}
                                                     onChange={(e) => {
                                                         const updated = [...barbers];
                                                         if (typeof updated[index] === 'string') {
-                                                            updated[index] = { name: bName, pin: e.target.value.replace(/\D/g, ''), isActive: isActive };
+                                                            updated[index] = { name: e.target.value, pin: bPin, isActive, leaves };
                                                         } else {
-                                                            updated[index].pin = e.target.value.replace(/\D/g, '');
+                                                            updated[index] = { ...updated[index], name: e.target.value };
                                                         }
                                                         setBarbers(updated);
                                                     }}
-                                                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg font-black text-slate-800 outline-none focus:border-emerald-400 text-sm text-center tracking-widest"
-                                                    dir="ltr"
+                                                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg font-bold text-slate-800 outline-none focus:border-emerald-400 text-sm"
                                                 />
                                             </div>
-                                        )}
 
-                                        <div className="flex items-center justify-between w-full md:w-auto md:min-w-[120px] bg-slate-100/50 p-2.5 rounded-lg border border-slate-100 mt-1 md:mt-0">
-                                            <span className={`text-[10px] font-black transition-colors ${isActive ? 'text-emerald-600' : 'text-slate-400'}`}>
-                                                {isActive ? 'متاح' : 'إجازة'}
-                                            </span>
-                                            <label className="relative inline-flex items-center cursor-pointer">
-                                                <input
-                                                    type="checkbox"
-                                                    className="sr-only peer"
-                                                    checked={isActive}
-                                                    onChange={(e) => {
-                                                        const updated = [...barbers];
-                                                        if (typeof updated[index] === 'string') {
-                                                            updated[index] = { name: bName, pin: bPin, isActive: e.target.checked };
-                                                        } else {
-                                                            updated[index].isActive = e.target.checked;
+                                            {currentPlan === 'Premium' && (
+                                                <div className="w-full md:w-36">
+                                                    <label className="text-[10px] font-black text-slate-400 block mb-1">رمز الدخول (PIN)</label>
+                                                    <input
+                                                        type="text"
+                                                        inputMode="numeric"
+                                                        autoComplete="off"
+                                                        maxLength="8"
+                                                        placeholder={barber?.hasPin ? '•••• محفوظ' : 'بدون رمز'}
+                                                        value={bPin}
+                                                        onChange={(e) => {
+                                                            const updated = [...barbers];
+                                                            if (typeof updated[index] === 'string') {
+                                                                updated[index] = { name: bName, pin: e.target.value.replace(/\D/g, ''), isActive, leaves };
+                                                            } else {
+                                                                updated[index] = { ...updated[index], pin: e.target.value.replace(/\D/g, '') };
+                                                            }
+                                                            setBarbers(updated);
+                                                        }}
+                                                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg font-black text-slate-800 outline-none focus:border-emerald-400 text-sm text-center tracking-widest"
+                                                        dir="ltr"
+                                                    />
+                                                    {barber?.hasPin && !bPin && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const updated = [...barbers];
+                                                                updated[index] = { ...updated[index], hasPin: false, clearPin: true };
+                                                                setBarbers(updated);
+                                                            }}
+                                                            className="text-[10px] font-black text-rose-500 hover:text-rose-600 mt-1"
+                                                        >
+                                                            إزالة الرمز
+                                                        </button>
+                                                    )}
+                                                    {barber?.clearPin && !bPin && (
+                                                        <p className="text-[10px] font-bold text-rose-500 mt-1">سيُزال الرمز عند الحفظ</p>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            <div className="flex items-center justify-between w-full md:w-auto md:min-w-[120px] bg-slate-100/50 p-2.5 rounded-lg border border-slate-100 mt-1 md:mt-0">
+                                                <span className={`text-[10px] font-black transition-colors ${isActive ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                                    {isActive ? 'متاح' : 'متوقف'}
+                                                </span>
+                                                <label className="relative inline-flex items-center cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="sr-only peer"
+                                                        checked={isActive}
+                                                        onChange={(e) => {
+                                                            const updated = [...barbers];
+                                                            if (typeof updated[index] === 'string') {
+                                                                updated[index] = { name: bName, pin: bPin, isActive: e.target.checked, leaves };
+                                                            } else {
+                                                                updated[index] = { ...updated[index], isActive: e.target.checked };
+                                                            }
+                                                            setBarbers(updated);
+                                                        }}
+                                                    />
+                                                    <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+                                                </label>
+                                            </div>
+
+                                            {barbers.length > 1 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        if (window.confirm(`هل أنت متأكد من حذف الحلاق "${bName}" نهائياً؟`)) {
+                                                            setBarbers(barbers.filter((_, i) => i !== index));
                                                         }
-                                                        setBarbers(updated);
                                                     }}
-                                                />
-                                                <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
-                                            </label>
+                                                    className="text-red-500 hover:bg-red-50 p-3 rounded-lg transition-colors w-full md:w-auto inline-flex justify-center"
+                                                    title="حذف الحلاق"
+                                                >
+                                                    <Trash2 size={18} />
+                                                </button>
+                                            )}
                                         </div>
 
-                                        {barbers.length > 1 && (
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    if (window.confirm(`هل أنت متأكد من حذف الحلاق "${bName}" نهائياً؟`)) {
-                                                        setBarbers(barbers.filter((_, i) => i !== index));
-                                                    }
-                                                }}
-                                                className="text-red-400 hover:text-red-600 hover:bg-red-50 p-3 rounded-lg transition-colors mt-2 md:mt-0 w-full md:w-auto flex justify-center"
-                                                title="حذف الحلاق"
-                                            >
-                                                حذف
-                                            </button>
-                                        )}
+                                        <div className="border-t border-slate-100 px-5 py-3 flex items-center justify-between gap-3">
+                                            <div>
+                                                <label htmlFor={`barber-icon-color-${index}`} className="text-xs font-black text-slate-700">لون أيقونة الحلاق</label>
+                                                <p className="text-[10px] font-bold text-slate-400">يظهر في صفحة الحجز</p>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                {iconColor && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setBarbers((current) => current.map((item, itemIndex) => itemIndex === index
+                                                            ? { ...(typeof item === 'string' ? { name: item, pin: bPin, isActive, leaves } : item), iconColor: '' }
+                                                            : item))}
+                                                        className="w-9 h-9 inline-flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
+                                                        title="إعادة اللون الافتراضي"
+                                                        aria-label={`إعادة لون أيقونة ${bName} الافتراضي`}
+                                                    >
+                                                        <RotateCcw size={16} />
+                                                    </button>
+                                                )}
+                                                <input
+                                                    id={`barber-icon-color-${index}`}
+                                                    type="color"
+                                                    value={iconColor || (index % 2 === 0 ? themeColors?.primaryColor : themeColors?.secondaryColor) || '#3b82f6'}
+                                                    onChange={(event) => setBarbers((current) => current.map((item, itemIndex) => itemIndex === index
+                                                        ? { ...(typeof item === 'string' ? { name: item, pin: bPin, isActive, leaves } : item), iconColor: event.target.value }
+                                                        : item))}
+                                                    className="w-10 h-10 rounded-lg cursor-pointer border-none bg-transparent p-0"
+                                                    aria-label={`لون أيقونة ${bName}`}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="border-t border-slate-100 p-5">
+                                            <div className="flex items-center gap-2 mb-3 text-slate-700">
+                                                <CalendarDays size={17} />
+                                                <h5 className="text-sm font-black">إجازات الحلاق</h5>
+                                            </div>
+
+                                            <div className={`grid grid-cols-1 gap-2 ${leaveDraft.type === 'daily'
+                                                ? 'sm:grid-cols-2 xl:grid-cols-[190px_130px_minmax(150px,1fr)_minmax(150px,1fr)_auto]'
+                                                : 'sm:grid-cols-[190px_minmax(0,1fr)_auto]'}`}>
+                                                <select
+                                                    value={leaveDraft.type}
+                                                    onChange={(event) => updateLeaveDraft(index, 'type', event.target.value)}
+                                                    className="h-11 px-3 bg-slate-50 border border-slate-200 rounded-lg text-sm font-black text-slate-700 outline-none focus:border-emerald-400"
+                                                >
+                                                    {LEAVE_TYPE_OPTIONS.map((option) => (
+                                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                                    ))}
+                                                </select>
+                                                {leaveDraft.type === 'daily' && (
+                                                    <select
+                                                        value={leaveDraft.weekday}
+                                                        onChange={(event) => updateLeaveDraft(index, 'weekday', Number(event.target.value))}
+                                                        className="h-11 px-3 bg-slate-50 border border-slate-200 rounded-lg text-sm font-black text-slate-700 outline-none focus:border-emerald-400"
+                                                        aria-label="يوم الأسبوع"
+                                                    >
+                                                        {WEEKDAY_OPTIONS.map((option) => (
+                                                            <option key={option.value} value={option.value}>{option.label}</option>
+                                                        ))}
+                                                    </select>
+                                                )}
+                                                <input
+                                                    type="date"
+                                                    value={leaveDraft.startDate}
+                                                    onChange={(event) => updateLeaveDraft(index, 'startDate', event.target.value)}
+                                                    className="h-11 px-3 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-emerald-400"
+                                                    aria-label={leaveDraft.type === 'daily' ? 'بداية فترة التكرار' : 'تاريخ بداية الإجازة'}
+                                                />
+                                                {leaveDraft.type === 'daily' && (
+                                                    <input
+                                                        type="date"
+                                                        min={leaveDraft.startDate || undefined}
+                                                        value={leaveDraft.endDate}
+                                                        onChange={(event) => updateLeaveDraft(index, 'endDate', event.target.value)}
+                                                        className="h-11 px-3 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-emerald-400"
+                                                        aria-label="نهاية فترة التكرار"
+                                                    />
+                                                )}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleAddBarberLeave(index)}
+                                                    className="h-11 px-4 rounded-lg bg-slate-900 text-white text-sm font-black hover:bg-slate-700 inline-flex items-center justify-center gap-2"
+                                                >
+                                                    <Plus size={17} />
+                                                    إضافة
+                                                </button>
+                                            </div>
+
+                                            {leaves.length > 0 && (
+                                                <div className="mt-3 divide-y divide-slate-100 border border-slate-100 rounded-lg overflow-hidden">
+                                                    {leaves.map((leave, leaveIndex) => {
+                                                        const typeLabel = LEAVE_TYPE_OPTIONS.find((option) => option.value === leave.type)?.label || 'إجازة';
+                                                        const weekdayLabel = WEEKDAY_OPTIONS.find((option) => option.value === Number(leave.weekday))?.label;
+                                                        return (
+                                                            <div key={`${leave.type}-${leave.startDate}-${leaveIndex}`} className="flex items-center justify-between gap-3 px-3 py-2.5 bg-white">
+                                                                <div className="min-w-0">
+                                                                    <span className="text-xs font-black text-slate-700">
+                                                                        {weekdayLabel ? `${weekdayLabel} أسبوعيًا` : typeLabel}
+                                                                    </span>
+                                                                    <p className="text-[11px] font-bold text-slate-500 mt-0.5">
+                                                                        {formatLeaveDate(leave.startDate)} إلى {formatLeaveDate(leave.endDate)}
+                                                                    </p>
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleRemoveBarberLeave(index, leaveIndex)}
+                                                                    className="w-9 h-9 shrink-0 rounded-lg text-red-500 hover:bg-red-50 inline-flex items-center justify-center"
+                                                                    title="حذف الإجازة"
+                                                                >
+                                                                    <Trash2 size={16} />
+                                                                </button>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 );
                             })}
@@ -591,10 +956,10 @@ const SettingsTab = ({
                     </div>
                 </section>
 
-                <section className="bg-white p-6 md:p-8 rounded-lg shadow-sm border border-slate-100">
+                <section role="tabpanel" className={`${activeSettingsTab === 'finance' ? 'block' : 'hidden'} bg-white p-5 md:p-7 rounded-lg shadow-sm border border-slate-100`}>
                     <div className="flex justify-between items-center mb-6 border-b border-slate-50 pb-4">
                         <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
-                            <span className="text-indigo-500">5.</span> إعدادات الدفع المسبق (العربون)
+                            إعدادات الدفع المسبق (العربون)
                         </h3>
                     </div>
 
@@ -603,7 +968,7 @@ const SettingsTab = ({
                             <div>
                                 <label className="block text-sm font-black text-indigo-900">تفعيل الدفع الإلكتروني</label>
                                 <p className="text-xs font-bold text-indigo-700/70 mt-1 max-w-sm">
-                                    اطلب من عملائك دفع عربون لتأكيد الحجز. الربط يتم بحساب STC Bank الخاص بالصالون.
+                                    اطلب من عملائك دفع عربون لتأكيد الحجز. الربط يتم بحساب ميسر الخاص بالصالون.
                                 </p>
                             </div>
                             <label className="relative inline-flex items-center cursor-pointer">
@@ -652,139 +1017,25 @@ const SettingsTab = ({
 
                                             <div>
                                                 <label className="block text-xs font-bold text-slate-500 mb-2">مزود الدفع</label>
-                                                <select
-                                                    value={paymentSettings?.provider || 'stc_bank'}
-                                                    onChange={(e) => setPaymentSettings({ ...paymentSettings, provider: e.target.value })}
-                                                    className="w-full p-3 bg-white border border-slate-200 rounded-lg font-black text-slate-800 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 text-sm"
-                                                >
-                                                    <option value="stc_bank">STC Bank eCommerce</option>
-                                                </select>
-                                            </div>
-
-                                            <div>
-                                                <label className="block text-xs font-bold text-slate-500 mb-2">بيئة التشغيل</label>
-                                                <select
-                                                    value={paymentSettings?.stcBank?.environment || 'production'}
-                                                    onChange={(e) => setPaymentSettings({
-                                                        ...paymentSettings,
-                                                        stcBank: { ...(paymentSettings?.stcBank || {}), environment: e.target.value }
-                                                    })}
-                                                    className="w-full p-3 bg-white border border-slate-200 rounded-lg font-black text-slate-800 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 text-sm"
-                                                >
-                                                    <option value="production">إنتاجي</option>
-                                                    <option value="sandbox">تجريبي</option>
-                                                </select>
-                                            </div>
-                                        </div>
-
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                                            <div>
-                                                <label className="block text-xs font-bold text-slate-500 mb-2">Merchant ID</label>
-                                                <input
-                                                    type="text"
-                                                    value={paymentSettings?.stcBank?.merchantId || ''}
-                                                    onChange={(e) => setPaymentSettings({
-                                                        ...paymentSettings,
-                                                        stcBank: { ...(paymentSettings?.stcBank || {}), merchantId: e.target.value }
-                                                    })}
-                                                    className="w-full p-3 bg-white border border-slate-200 rounded-lg font-mono font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 text-xs"
-                                                    placeholder="Merchant ID"
-                                                    dir="ltr"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="block text-xs font-bold text-slate-500 mb-2">Terminal ID</label>
-                                                <input
-                                                    type="text"
-                                                    value={paymentSettings?.stcBank?.terminalId || ''}
-                                                    onChange={(e) => setPaymentSettings({
-                                                        ...paymentSettings,
-                                                        stcBank: { ...(paymentSettings?.stcBank || {}), terminalId: e.target.value }
-                                                    })}
-                                                    className="w-full p-3 bg-white border border-slate-200 rounded-lg font-mono font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 text-xs"
-                                                    placeholder="اختياري حسب متطلبات STC Bank"
-                                                    dir="ltr"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="block text-xs font-bold text-slate-500 mb-2">Client ID</label>
-                                                <input
-                                                    type="text"
-                                                    value={paymentSettings?.stcBank?.clientId || ''}
-                                                    onChange={(e) => setPaymentSettings({
-                                                        ...paymentSettings,
-                                                        stcBank: { ...(paymentSettings?.stcBank || {}), clientId: e.target.value }
-                                                    })}
-                                                    className="w-full p-3 bg-white border border-slate-200 rounded-lg font-mono font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 text-xs"
-                                                    placeholder="Client ID"
-                                                    dir="ltr"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="block text-xs font-bold text-slate-500 mb-2">Client Secret</label>
-                                                <input
-                                                    type="password"
-                                                    value={paymentSettings?.stcBank?.clientSecret || ''}
-                                                    onChange={(e) => setPaymentSettings({
-                                                        ...paymentSettings,
-                                                        stcBank: { ...(paymentSettings?.stcBank || {}), clientSecret: e.target.value }
-                                                    })}
-                                                    className="w-full p-3 bg-white border border-slate-200 rounded-lg font-mono font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 text-xs"
-                                                    placeholder={paymentSettings?.stcBank?.hasClientSecret ? "محفوظ بأمان (اكتب لتغييره)" : "Client Secret"}
-                                                    dir="ltr"
-                                                />
-                                                <p className="text-[10px] text-slate-400 mt-1 font-bold">
-                                                    {paymentSettings?.stcBank?.hasClientSecret ? "تم حفظ السر مسبقاً." : "سيتم تشفير السر تلقائياً بمجرد الحفظ."}
-                                                </p>
-                                            </div>
-                                        </div>
-
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                                            <div>
-                                                <label className="block text-xs font-bold text-slate-500 mb-2">رابط API لإنشاء الدفع</label>
-                                                <input
-                                                    type="url"
-                                                    value={paymentSettings?.stcBank?.createPaymentUrl || ''}
-                                                    onChange={(e) => setPaymentSettings({
-                                                        ...paymentSettings,
-                                                        stcBank: { ...(paymentSettings?.stcBank || {}), createPaymentUrl: e.target.value }
-                                                    })}
-                                                    className="w-full p-3 bg-white border border-slate-200 rounded-lg font-mono font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 text-xs"
-                                                    placeholder="https://..."
-                                                    dir="ltr"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="block text-xs font-bold text-slate-500 mb-2">رابط الاستعلام عن حالة الدفع</label>
-                                                <input
-                                                    type="url"
-                                                    value={paymentSettings?.stcBank?.statusInquiryUrl || ''}
-                                                    onChange={(e) => setPaymentSettings({
-                                                        ...paymentSettings,
-                                                        stcBank: { ...(paymentSettings?.stcBank || {}), statusInquiryUrl: e.target.value }
-                                                    })}
-                                                    className="w-full p-3 bg-white border border-slate-200 rounded-lg font-mono font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 text-xs"
-                                                    placeholder="اختياري حسب وثيقة STC Bank"
-                                                    dir="ltr"
-                                                />
+                                                <div className="w-full p-3 bg-white border border-slate-200 rounded-lg font-black text-slate-800 text-sm">
+                                                    ميسر (Moyasar)
+                                                </div>
                                             </div>
                                         </div>
 
                                         <div>
-                                            <label className="block text-xs font-bold text-slate-500 mb-2">Webhook Secret</label>
+                                            <label className="block text-xs font-bold text-slate-500 mb-2">المفتاح السري لميسر (Secret Key)</label>
                                             <input
                                                 type="password"
-                                                value={paymentSettings?.stcBank?.webhookSecret || ''}
-                                                onChange={(e) => setPaymentSettings({
-                                                    ...paymentSettings,
-                                                    stcBank: { ...(paymentSettings?.stcBank || {}), webhookSecret: e.target.value }
-                                                })}
+                                                autoComplete="off"
+                                                value={paymentSettings?.moyasarSecretKey || ''}
+                                                onChange={(e) => setPaymentSettings({ ...paymentSettings, moyasarSecretKey: e.target.value })}
                                                 className="w-full p-3 bg-white border border-slate-200 rounded-lg font-mono font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 text-xs"
-                                                placeholder={paymentSettings?.stcBank?.hasWebhookSecret ? "محفوظ بأمان (اكتب لتغييره)" : "Webhook Secret"}
+                                                placeholder={paymentSettings?.hasSecretKey ? "محفوظ بأمان (اكتب لتغييره)" : "sk_live_..."}
                                                 dir="ltr"
                                             />
                                             <p className="text-[10px] text-slate-400 mt-1 font-bold">
-                                                رابط استقبال الإشعارات في النظام: /appointments/webhook/stc-bank
+                                                {paymentSettings?.hasSecretKey ? "تم حفظ المفتاح مسبقاً." : "سيتم تشفير المفتاح تلقائياً بمجرد الحفظ."} لا حاجة لإعداد Webhook يدوياً، النظام يرسله مع كل رابط دفع.
                                             </p>
                                         </div>
 
@@ -792,12 +1043,12 @@ const SettingsTab = ({
                                             <div className="flex items-center gap-3">
                                                 <CircleDollarSign size={20} className="text-indigo-600" />
                                                 <div>
-                                                    <p className="text-xs font-black text-slate-800">متطلبات الربط من STC Bank</p>
-                                                    <p className="text-[10px] font-bold text-slate-500 mt-0.5">كل صالون يستخدم بيانات حساب الأعمال الخاص به، ولا يتم استخدام حساب المنصة.</p>
+                                                    <p className="text-xs font-black text-slate-800">الربط مع حساب ميسر</p>
+                                                    <p className="text-[10px] font-bold text-slate-500 mt-0.5">كل صالون يستخدم حساب ميسر الخاص به، والمبالغ تذهب لحسابه مباشرة.</p>
                                                 </div>
                                             </div>
-                                            <a href="https://merchant.stcbank.com.sa/login" target="_blank" rel="noopener noreferrer" className="bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white px-4 py-2 rounded-lg text-xs font-black transition-colors">
-                                                بوابة الأعمال
+                                            <a href="https://dashboard.moyasar.com" target="_blank" rel="noopener noreferrer" className="bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white px-4 py-2 rounded-lg text-xs font-black transition-colors">
+                                                لوحة ميسر
                                             </a>
                                         </div>
 
@@ -808,19 +1059,20 @@ const SettingsTab = ({
                     </div>
                 </section>
 
-                {/* 6. قسم التسويق الآلي المجزأ */}
-                <MarketingSection
-                    settings={settings}
-                    setSettings={setSettings}
-                    currentPlan={currentPlan}
-                    setUpsellConfig={setUpsellConfig}
-                />
+                <div role="tabpanel" className={activeSettingsTab === 'marketing' ? 'block' : 'hidden'}>
+                    <MarketingSection
+                        settings={settings}
+                        setSettings={setSettings}
+                        currentPlan={currentPlan}
+                        setUpsellConfig={setUpsellConfig}
+                    />
+                </div>
 
-                <div className="fixed bottom-6 left-0 right-0 z-40 px-4 md:pl-8 lg:pl-[20%] pointer-events-none">
+                {activeSettingsTab !== 'integrations' && <div className="fixed bottom-4 sm:bottom-6 left-0 right-0 z-40 px-3 sm:px-4 md:pl-8 lg:pl-[20%] pointer-events-none">
                     <div className="max-w-4xl mx-auto bg-white/80 backdrop-blur-xl border border-slate-200/50 p-4 rounded-lg shadow-2xl flex items-center justify-between pointer-events-auto">
                         <div className="hidden sm:block text-right pr-4">
-                            <p className="text-sm font-black text-slate-800">حفظ التغييرات</p>
-                            <p className="text-[10px] font-bold text-slate-500">تأكد من مراجعة الإعدادات قبل الحفظ.</p>
+                            <p className="text-sm font-black text-slate-800">حفظ إعدادات {activeTab.label}</p>
+                            <p className="text-[10px] font-bold text-slate-500">تُحفظ جميع التغييرات التي أجريتها في التبويبات.</p>
                         </div>
                         <button type="submit" disabled={isSavingSettings} className="w-full sm:w-auto bg-slate-900 text-white font-black px-10 py-4 rounded-lg hover:bg-blue-600 active:scale-95 transition-all disabled:opacity-50 shadow-lg text-sm flex items-center justify-center gap-2">
                             {isSavingSettings ? (
@@ -833,13 +1085,13 @@ const SettingsTab = ({
                             )}
                         </button>
                     </div>
-                </div>
+                </div>}
             </form>
 
-            <section className="bg-white p-6 md:p-8 rounded-lg shadow-sm border border-slate-100">
+            <section role="tabpanel" className={`${activeSettingsTab === 'integrations' ? 'block' : 'hidden'} bg-white p-5 md:p-7 rounded-lg shadow-sm border border-slate-100`}>
                 <div className="flex justify-between items-center mb-6">
                     <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
-                        <span className="text-emerald-500">7.</span> ربط الواتساب الآلي
+                        ربط الواتساب الآلي
                     </h3>
                 </div>
 
@@ -905,6 +1157,33 @@ const SettingsTab = ({
                             </div>
                         );
                     })()
+                )}
+                {currentPlan !== 'Free' && Object.keys(whatsappTemplateDefaults || {}).length > 0 && (
+                    <div className="mt-8 border-t border-slate-200 pt-6">
+                        <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+                            <h4 className="text-base font-black text-slate-800">رسائل واتساب الآلية</h4>
+                            <button type="button" onClick={handleSaveTemplates} disabled={isSavingTemplates} className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-4 py-2.5 rounded-md text-sm font-bold">
+                                <Save size={16} />{isSavingTemplates ? 'جاري الحفظ...' : 'حفظ الرسائل'}
+                            </button>
+                        </div>
+                        <div className="flex gap-2 overflow-x-auto pb-2 mb-4" role="tablist" aria-label="أنواع رسائل واتساب">
+                            {WHATSAPP_MESSAGE_TYPES.map(({ key, label }) => (
+                                <button key={key} type="button" role="tab" aria-selected={activeMessageType === key} onClick={() => { setActiveMessageType(key); setTemplateError(''); setTemplateSaved(false); }} className={`shrink-0 px-3 py-2 rounded-md text-sm font-bold border ${activeMessageType === key ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-white text-slate-600 border-slate-200'}`}>{label}</button>
+                            ))}
+                        </div>
+                        {WHATSAPP_MESSAGE_TYPES.filter(({ key }) => key === activeMessageType).map(({ key, label, variables }) => (
+                            <div key={key} role="tabpanel" className="space-y-3">
+                                <label htmlFor={`wa-template-${key}`} className="block text-sm font-bold text-slate-700">{label}</label>
+                                <textarea id={`wa-template-${key}`} dir="rtl" rows={10} maxLength={4000} value={whatsappTemplates?.[key] ?? whatsappTemplateDefaults[key] ?? ''} onChange={(event) => { setWhatsappTemplates((current) => ({ ...current, [key]: event.target.value })); setTemplateSaved(false); }} className="w-full border border-slate-300 rounded-md p-3 text-sm leading-7 resize-y focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                                <div className="flex flex-wrap gap-2" aria-label="متغيرات الرسالة">
+                                    {variables.map((variable) => <button key={variable} type="button" title={`إضافة ${variable}`} onClick={() => { setWhatsappTemplates((current) => ({ ...current, [key]: `${current[key] ?? whatsappTemplateDefaults[key] ?? ''}{${variable}}` })); setTemplateSaved(false); }} className="border border-slate-200 rounded-md px-2 py-1 text-xs text-slate-600 hover:border-emerald-400 hover:text-emerald-700">{`{${variable}}`}</button>)}
+                                </div>
+                                <button type="button" onClick={() => { setWhatsappTemplates((current) => ({ ...current, [key]: whatsappTemplateDefaults[key] })); setTemplateSaved(false); }} className="text-xs font-bold text-slate-500 hover:text-emerald-700">استعادة النص الافتراضي</button>
+                            </div>
+                        ))}
+                        {templateError && <p role="alert" className="mt-3 text-sm font-bold text-red-600">{templateError}</p>}
+                        {templateSaved && <p role="status" className="mt-3 text-sm font-bold text-emerald-700">تم حفظ الرسائل.</p>}
+                    </div>
                 )}
             </section>
 

@@ -2,6 +2,7 @@ backend/.env
 frontend/.env
 backend/frontend/.env
 Miqass.env
+.local-secrets/
 .cloudflared/*
 !.cloudflared/config.yml
 

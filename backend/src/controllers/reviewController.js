@@ -3,7 +3,6 @@ const Appointment = require("../models/Appointment");
 const Tenant = require("../models/Tenant");
 const Customer = require("../models/Customer");
 const { sendReviewNotification } = require("../utils/onesignal");
-const { createSaleFromAppointment } = require("../services/salesService");
 
 const getReviewPageData = async (req, res) => {
   try {
@@ -17,17 +16,22 @@ const getReviewPageData = async (req, res) => {
     }
 
     const appointment = await Appointment.findById(appointmentId)
-      .select("tenantId childName barberName status")
+      .select("tenantId childName barberName status bookingSource")
       .populate("tenantId", "salonName")
       .lean();
 
     if (!appointment)
       return res.status(404).json({ message: "الحجز غير موجود." });
 
+    if (appointment.bookingSource === "kiosk_walk_in" && appointment.status !== "Completed") {
+      return res.status(400).json({ message: "التقييم متاح بعد اكتمال الخدمة." });
+    }
+
     res.status(200).json({
       salonName: appointment.tenantId.salonName,
       childName: appointment.childName,
       barberName: appointment.barberName,
+      isWalkIn: appointment.bookingSource === "kiosk_walk_in",
     });
   } catch (error) {
     res.status(500).json({ message: "خطأ في جلب البيانات" });
@@ -52,9 +56,16 @@ const submitReview = async (req, res) => {
         .json({ message: "عذراً، هذا الموعد ملغي ولا يمكن تقييمه." });
     }
 
+    if (appointment.bookingSource === "kiosk_walk_in" && appointment.status !== "Completed") {
+      return res.status(400).json({ message: "التقييم متاح بعد اكتمال الخدمة." });
+    }
+
     const tenant = appointment.tenantId;
 
     if (didNotAttend) {
+      if (appointment.bookingSource === "kiosk_walk_in") {
+        return res.status(400).json({ message: "لا يمكن إلغاء حلاقة مباشرة مكتملة من رابط التقييم." });
+      }
       appointment.status = "Cancelled";
       appointment.cancelReason = "أفاد العميل بعدم الحضور من خلال رابط التقييم";
       await appointment.save();
@@ -76,7 +87,6 @@ const submitReview = async (req, res) => {
       }
     }
 
-    await createSaleFromAppointment(appointment);
 
     const review = await Review.create({
       tenantId: tenant._id,

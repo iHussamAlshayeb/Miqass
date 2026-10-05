@@ -2,12 +2,15 @@ require("dotenv").config();
 const app = require("./src/app");
 const connectDB = require("./src/config/db");
 const { startCronJobs } = require("./src/utils/cronJobs");
+const { runStartupMigrations } = require("./src/utils/startupMigrations");
 
 const startServer = async () => {
   try {
     console.log("⏳ جاري الاتصال بقاعدة البيانات...");
     await connectDB();
     console.log("✅ تم الاتصال بـ MongoDB بنجاح.");
+
+    await runStartupMigrations();
 
     if (process.env.DISABLE_CRON_JOBS === "true") {
       console.log("⏸️ تم تعطيل المهام المجدولة عبر DISABLE_CRON_JOBS.");

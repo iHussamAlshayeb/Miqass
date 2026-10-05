@@ -34,3 +34,25 @@ export const formatBookingTime = (timestamp) => {
     hour12: true,
   });
 };
+
+export const isBarberOnLeaveOnDate = (barber, date) => {
+  if (!date) return false;
+
+  const requestedDate = new Date(`${date}T00:00:00Z`);
+  if (Number.isNaN(requestedDate.getTime())) return false;
+
+  return Boolean(
+    barber?.leaves?.some((leave) => {
+      if (date < leave.startDate || date > leave.endDate) return false;
+
+      const weekday = Number(leave.weekday);
+      const isRecurringDay =
+        leave.type === "daily" &&
+        Number.isInteger(weekday) &&
+        weekday >= 0 &&
+        weekday <= 6;
+
+      return !isRecurringDay || requestedDate.getUTCDay() === weekday;
+    }),
+  );
+};

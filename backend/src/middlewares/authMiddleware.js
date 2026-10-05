@@ -17,6 +17,14 @@ const protect = (req, res, next) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
+    // توكنات العملاء وبوابة الحلاق تُوقَّع بنفس السر وتحمل tenantId،
+    // لذا نرفض أي توكن له audience أو scope حتى لا يصل للوحة التحكم.
+    if (decoded.aud || decoded.scope) {
+      return res
+        .status(401)
+        .json({ message: "غير مصرح لك، التوكن غير صالح لهذه العملية." });
+    }
+
     req.tenantId = decoded.tenantId;
 
     next();

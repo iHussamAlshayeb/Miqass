@@ -15,7 +15,7 @@ const getAllTenants = async (req, res) => {
   try {
     const tenants = await Tenant.find()
       .select(
-        "-password -taxSettings.zatcaCredentials -resetPasswordToken -resetPasswordExpires",
+        "-password -taxSettings.zatcaCredentials -taxSettings.zakaty.apiKey -resetPasswordToken -resetPasswordExpires",
       )
       .sort({ createdAt: -1 })
       .lean();
@@ -138,7 +138,9 @@ const updateTenantStatus = async (req, res) => {
       await redisClient.del(`tenant_public_profile:${tenant.slug}`);
     } catch (e) {}
 
-    res.status(200).json({ message: "تم تحديث بيانات الصالون بنجاح", tenant });
+    const safeTenant = tenant.toObject();
+    if (safeTenant.taxSettings?.zakaty) delete safeTenant.taxSettings.zakaty.apiKey;
+    res.status(200).json({ message: "تم تحديث بيانات الصالون بنجاح", tenant: safeTenant });
   } catch (error) {
     res.status(500).json({ message: "حدث خطأ أثناء التحديث" });
   }

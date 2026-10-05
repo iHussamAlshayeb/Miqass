@@ -3,13 +3,12 @@ const crypto = require("crypto");
 const os = require("os");
 const Appointment = require("../models/Appointment");
 const Tenant = require("../models/Tenant");
+const { processPendingZakatySetups } = require('../services/zakatySetupService');
 const Campaign = require("../models/Campaign");
 const Customer = require("../models/Customer");
-const { createSaleFromAppointment } = require("../services/salesService");
 
 const {
   sendReminderMessage,
-  sendReviewRequestMessage,
   sendRetentionMessage,
   sendCampaignMessage,
   getCampaignMessageInfo,
@@ -125,84 +124,6 @@ const processSubscriptionReminders = async () => {
     }
   } catch (error) {
     console.error("❌ خطأ في نظام فحص الاشتراكات:", error.message);
-  }
-};
-
-const processReviewRequests = async () => {
-  try {
-    const now = new Date(
-      new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh" }),
-    );
-    const todayStr = formatDate(now);
-
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = formatDate(yesterday);
-
-    const finishedAppointments = await Appointment.find({
-      status: { $in: ["Booked", "Completed"] },
-      isReviewRequested: false,
-      date: { $in: [todayStr, yesterdayStr] },
-    })
-      .select("_id status date timeSlot childName customerId tenantId")
-      .populate("tenantId", "settings salonName whatsappSettings")
-      .populate("customerId", "phone")
-      .lean();
-
-    for (let app of finishedAppointments) {
-      if (
-        !app.tenantId?.settings?.enableGoogleReviews ||
-        !app.tenantId?.whatsappSettings?.isEnabled
-      )
-        continue;
-
-      const customerPhone = app.customerId?.phone;
-      if (!customerPhone) continue;
-
-      const [appHour, appMinute] = app.timeSlot.split(":").map(Number);
-      let appTime = new Date(now);
-      const [year, month, day] = app.date.split("-").map(Number);
-      appTime.setFullYear(year, month - 1, day);
-      appTime.setHours(appHour, appMinute, 0, 0);
-
-      const startHour = parseInt(
-        app.tenantId?.settings?.startTime?.split(":")[0] || "12",
-      );
-      if (appHour < startHour) appTime.setDate(appTime.getDate() + 1);
-
-      const diffMs = now - appTime;
-      const diffHours = diffMs / (1000 * 60 * 60);
-
-      if (diffHours >= 1.5 && diffHours <= 12) {
-        console.log(
-          `⭐ [مدير التقييمات]: جاري إرسال طلب تقييم لـ ${app.childName} من ${app.tenantId?.salonName}...`,
-        );
-
-        const isSent = await sendReviewRequestMessage(
-          customerPhone,
-          app.childName,
-          app.tenantId,
-          app._id,
-        );
-
-        if (isSent) {
-          const updateData = { $set: { isReviewRequested: true } };
-          if (app.status === "Booked") updateData.$set.status = "Completed";
-
-          await Appointment.updateOne({ _id: app._id }, updateData);
-
-          if (app.status === "Booked") {
-            const completedAppointment = await Appointment.findById(app._id)
-              .populate("customerId", "phone parentName children")
-              .exec();
-            await createSaleFromAppointment(completedAppointment);
-          }
-        }
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-      }
-    }
-  } catch (error) {
-    console.error("❌ خطأ في نظام التقييم الآلي:", error.message);
   }
 };
 
@@ -877,8 +798,6 @@ const startCronJobs = () => {
 
   cron.schedule("0 8 * * *", processSubscriptionReminders);
 
-  cron.schedule("*/30 * * * *", processReviewRequests);
-
   cron.schedule("0 10 * * *", processRetentionCampaign);
 
   cron.schedule("* * * * *", processBroadcastCampaigns);
@@ -888,6 +807,9 @@ const startCronJobs = () => {
   cron.schedule("*/15 * * * * *", processNotificationQueue);
 
   cron.schedule("* * * * *", reconcileNotificationDeliveries);
+
+  cron.schedule("* * * * *", () => processPendingZakatySetups().catch((error) =>
+    console.error('Zakaty setup recovery failed:', error.message)));
 };
 
 module.exports = {

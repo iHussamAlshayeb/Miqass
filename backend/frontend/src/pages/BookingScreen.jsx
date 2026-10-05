@@ -4,11 +4,13 @@ import API from '../services/api';
 import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
 import { motion as Motion, AnimatePresence } from 'framer-motion';
-import { getLocalDate, formatTime12Hour, getTimePeriod } from '../utils/helpers';
+import { getLocalDate, formatTime12Hour, getTimePeriod, isBarberOnLeaveOnDate } from '../utils/helpers';
 import { FaInstagram, FaTiktok, FaSnapchatGhost, FaPhone, FaStar, FaMapMarkerAlt } from "react-icons/fa";
 import TimeSlotsSkeleton from '../components/booking/TimeSlotsSkeleton';
 import BookingSkeleton from '../components/booking/BookingSkeleton';
 import BookingModal from '../components/booking/BookingModal';
+import CustomerAppointments from '../components/booking/CustomerAppointments';
+import { CalendarDays } from 'lucide-react';
 
 const getNextTimeSlot = (time, durationMinutes) => {
     if (!time) return null;
@@ -53,9 +55,14 @@ const BookingScreen = () => {
     const [availableSlots, setAvailableSlots] = useState([]);
     const [selectedTime, setSelectedTime] = useState(null);
     const [isFetchingSlots, setIsFetchingSlots] = useState(false);
+    const [availabilityError, setAvailabilityError] = useState('');
+    const [availabilityRetry, setAvailabilityRetry] = useState(0);
     const [isLoading, setIsLoading] = useState(false);
+    const [bookingError, setBookingError] = useState('');
+    const [bookingErrorField, setBookingErrorField] = useState('');
 
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [showMyAppointments, setShowMyAppointments] = useState(false);
     const [childrenNames, setChildrenNames] = useState(['']);
     const [phone, setPhone] = useState('');
     const [selectedChair, setSelectedChair] = useState('');
@@ -74,6 +81,11 @@ const BookingScreen = () => {
     const [paymentDetails, setPaymentDetails] = useState(null);
     const [showPaymentForm, setShowPaymentForm] = useState(false);
     const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
+
+    const availableBarbers = useMemo(
+        () => (tenantData?.barbers || []).filter((barber) => !isBarberOnLeaveOnDate(barber, selectedDate)),
+        [tenantData?.barbers, selectedDate],
+    );
 
     useEffect(() => {
         const fetchTenant = async () => {
@@ -119,10 +131,17 @@ const BookingScreen = () => {
     );
 
     useEffect(() => {
+        let cancelled = false;
         const fetchAvailableSlots = async () => {
-            if (!tenantData || !selectedChair) return;
+            if (!tenantData || !selectedChair) {
+                setIsFetchingSlots(false);
+                setAvailableSlots([]);
+                setAvailabilityError('');
+                return;
+            }
             setIsFetchingSlots(true);
             setIsClosed(false);
+            setAvailabilityError('');
             try {
                 const reqDuration = totals.duration * filledChildrenCount || totals.duration;
                 const response = await API.get('/appointments/available', {
@@ -131,13 +150,28 @@ const BookingScreen = () => {
                         requestedDuration: reqDuration, t: new Date().getTime()
                     }
                 });
-                setAvailableSlots(response.data.availableSlots);
-                if (response.data.isClosed) setIsClosed(true);
-            } catch (error) { console.error('Error fetching slots:', error); }
-            finally { setIsFetchingSlots(false); }
+                if (!cancelled) {
+                    setAvailableSlots(response.data.availableSlots || []);
+                    setIsClosed(Boolean(response.data.isClosed));
+                }
+            } catch (error) {
+                console.error('Error fetching slots:', error);
+                if (!cancelled) {
+                    setAvailableSlots([]);
+                    setAvailabilityError('تعذر جلب المواعيد المتاحة. حاول مرة أخرى.');
+                }
+            } finally { if (!cancelled) setIsFetchingSlots(false); }
         };
         fetchAvailableSlots();
-    }, [selectedDate, selectedChair, tenantData, selectedServicesIds, filledChildrenCount, totals.duration]);
+        return () => { cancelled = true; };
+    }, [selectedDate, selectedChair, tenantData, selectedServicesIds, filledChildrenCount, totals.duration, availabilityRetry]);
+
+    useEffect(() => {
+        if (availableBarbers.some((barber) => barber.name === selectedChair)) return;
+        setSelectedChair(availableBarbers[0]?.name || '');
+        setSelectedTime(null);
+        setAvailableSlots([]);
+    }, [availableBarbers, selectedChair]);
 
     useEffect(() => {
         const checkLoyaltyAndFetchData = async () => {
@@ -160,8 +194,19 @@ const BookingScreen = () => {
 
     const handleBookingSubmit = async (e) => {
         e.preventDefault();
+        setBookingError('');
+        setBookingErrorField('');
+        if (!/^05\d{8}$/.test(phone)) {
+            setBookingError('أدخل رقم جوال صحيحًا يبدأ بـ 05 ويتكون من 10 أرقام.');
+            setBookingErrorField('phone');
+            return;
+        }
         const validNames = childrenNames.filter(name => name.trim() !== '');
-        if (validNames.length === 0) return alert("الرجاء كتابة اسم واحد على الأقل.");
+        if (validNames.length !== childrenNames.length) {
+            setBookingError('اكتب اسمًا لكل شخص أضفته إلى الحجز.');
+            setBookingErrorField('names');
+            return;
+        }
         setIsLoading(true);
         try {
             const fullSelectedServices = selectedServicesIds.map(id => tenantData.services.find(s => s._id === id || s.id === id)).filter(Boolean);
@@ -180,14 +225,14 @@ const BookingScreen = () => {
                 window.location.reload();
             }
         } catch (error) {
-            alert(error.response?.data?.message || 'حدث خطأ أثناء الحجز');
+            setBookingError(error.response?.data?.message || 'تعذر إكمال الحجز الآن. حاول مرة أخرى.');
         } finally { setIsLoading(false); }
     };
 
     const handleCloseModal = () => {
         setIsModalOpen(false);
-        setChildrenNames(['']);
-        setSelectedServicesIds([]);
+        setBookingError('');
+        setBookingErrorField('');
     };
 
     let maxConsecutiveSlots = 1;
@@ -228,7 +273,7 @@ const BookingScreen = () => {
     const brandSecondary = tenantData?.branding?.secondaryColor || '#64748b';
 
     // 💡 منطق التلوين الديناميكي (Dynamic Theming)
-    const activeBarberIndex = Math.max(0, tenantData?.barbers?.findIndex(b => b.name === selectedChair) || 0);
+    const activeBarberIndex = Math.max(0, availableBarbers.findIndex(b => b.name === selectedChair));
     const activeThemeColor = activeBarberIndex % 2 === 0 ? brandPrimary : brandSecondary;
 
     if (isTenantLoading) return <BookingSkeleton />;
@@ -257,7 +302,7 @@ const BookingScreen = () => {
             >
                 <div className="max-w-md mx-auto px-4 py-3 flex items-center gap-3">
                     {tenantData.branding?.logoUrl ? (
-                        <img src={tenantData.branding.logoUrl} alt="Logo" className="h-12 w-12 rounded-2xl object-cover border border-slate-100" />
+                        <img src={tenantData.branding.logoUrl} alt={`شعار ${tenantData.salonName}`} className="h-12 w-12 rounded-lg object-contain border border-slate-100 bg-white" />
                     ) : (
                         <div className="h-12 w-12 bg-slate-900 rounded-2xl flex items-center justify-center text-2xl">✂️</div>
                     )}
@@ -266,6 +311,7 @@ const BookingScreen = () => {
                         <p className="text-[11px] font-bold text-slate-400 truncate">بإدارة: {tenantData.ownerName}</p>
                     </div>
                     <div className="flex items-center gap-1.5">
+                        <button type="button" onClick={() => setShowMyAppointments(true)} className="flex h-9 items-center gap-1.5 rounded-lg bg-slate-900 px-2.5 text-xs font-black text-white hover:bg-slate-800" title="عرض مواعيدي"><CalendarDays size={15} />مواعيدي</button>
                         {tenantData.settings?.locationUrl && (
                             <a href={tenantData.settings.locationUrl} target="_blank" rel="noopener noreferrer"
                                 className="w-9 h-9 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center hover:bg-slate-200 active:scale-95 transition">
@@ -284,59 +330,44 @@ const BookingScreen = () => {
 
             <main className="max-w-md mx-auto px-4 pt-5">
 
-                {/* ─── بطاقة النبذة + روابط التواصل ─── */}
-                <Motion.section
-                    initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-                    className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm mb-6"
-                >
-                    <p className="text-slate-600 text-sm font-medium leading-relaxed text-center mb-4">
-                        {tenantData.bio || 'أهلاً بكم في صالوننا! نسعى لتقديم أفضل تجربة حلاقة وعناية بلمسة احترافية.'}
-                    </p>
-                    {(tenantData.socialLinks?.instagram || tenantData.socialLinks?.tiktok || tenantData.socialLinks?.snapchat) && (
-                        <div className="flex justify-center gap-2 pt-3 border-t border-slate-100">
-                            {tenantData.socialLinks?.instagram && (
-                                <a href={tenantData.socialLinks.instagram} target="_blank" rel="noopener noreferrer"
-                                    className="w-10 h-10 rounded-xl bg-pink-50 text-pink-500 flex items-center justify-center hover:bg-pink-100 active:scale-95 transition"><FaInstagram /></a>
-                            )}
-                            {tenantData.socialLinks?.tiktok && (
-                                <a href={tenantData.socialLinks.tiktok} target="_blank" rel="noopener noreferrer"
-                                    className="w-10 h-10 rounded-xl bg-slate-100 text-slate-800 flex items-center justify-center hover:bg-slate-200 active:scale-95 transition"><FaTiktok /></a>
-                            )}
-                            {tenantData.socialLinks?.snapchat && (
-                                <a href={tenantData.socialLinks.snapchat} target="_blank" rel="noopener noreferrer"
-                                    className="w-10 h-10 rounded-xl bg-yellow-50 text-yellow-500 flex items-center justify-center hover:bg-yellow-100 active:scale-95 transition"><FaSnapchatGhost /></a>
+                {/* ─── الخدمات ─── */}
+                {tenantData?.services && tenantData.services.length > 0 && (
+                    <Motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="mb-6">
+                        <div className="flex justify-between items-center mb-3 px-1">
+                            <h2 className="text-slate-900 font-black text-base">الخدمات المطلوبة</h2>
+                            {servicesCount > 0 && (
+                                <span className="text-xs font-black px-2.5 py-1 rounded-lg transition-colors duration-300"
+                                    style={{ backgroundColor: `${activeThemeColor}15`, color: activeThemeColor }}>
+                                    {servicesCount} مختارة
+                                </span>
                             )}
                         </div>
-                    )}
-                </Motion.section>
-
-                {/* ─── التقييمات ─── */}
-                {topReviews.length > 0 && (
-                    <Motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="mb-6">
-                        <div className="flex items-center justify-between mb-2.5 px-1">
-                            <h2 className="text-slate-900 font-black text-base">تجارب العملاء</h2>
-                            <span className="text-xs font-bold text-slate-400">⭐️ {topReviews.length}+</span>
-                        </div>
-                        <div className="flex overflow-x-auto hide-scrollbar gap-2.5 pb-1 -mx-1 px-1 snap-x snap-mandatory items-stretch">
-                            {topReviews.map((review, idx) => {
-                                const isExpanded = expandedReviewIdx === idx;
-                                const isLongText = review.comment?.length > 70;
+                        <div className="bg-white rounded-3xl border border-slate-100 divide-y divide-slate-100 overflow-hidden">
+                            {tenantData.services.map(srv => {
+                                const srvId = srv._id || srv.id;
+                                const isSelected = selectedServicesIds.includes(srvId);
                                 return (
-                                    <div key={idx} className="min-w-[230px] max-w-[230px] bg-white p-4 rounded-2xl border border-slate-100 snap-center flex flex-col">
-                                        <div className="flex justify-between items-center mb-2">
-                                            <span className="font-bold text-slate-800 text-sm truncate pr-1">{review.customerName || 'عميل سعيد'}</span>
-                                            <div className="flex text-amber-400 text-[10px] shrink-0 gap-0.5">
-                                                {[...Array(review.rating)].map((_, i) => <FaStar key={i} />)}
+                                    <button key={srvId} type="button"
+                                        onClick={() => {
+                                            if (isSelected) setSelectedServicesIds(selectedServicesIds.filter(id => id !== srvId));
+                                            else setSelectedServicesIds([...selectedServicesIds, srvId]);
+                                        }}
+                                        className={`w-full flex justify-between items-center p-4 transition-all duration-300 text-right ${isSelected ? 'bg-slate-50/50' : 'hover:bg-slate-50'}`}>
+                                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                                            <div className={`w-6 h-6 rounded-lg flex items-center justify-center border-2 transition-all duration-300 shrink-0 ${isSelected ? 'text-white' : 'border-slate-200 bg-white'}`}
+                                                style={isSelected ? { backgroundColor: activeThemeColor, borderColor: activeThemeColor } : {}}>
+                                                {isSelected && <span className="text-xs">✓</span>}
+                                            </div>
+                                            <div className="text-right min-w-0">
+                                                <h3 className="font-black text-slate-900 text-sm truncate">{srv.name}</h3>
+                                                <p className="text-[11px] font-bold text-slate-400">⏱️ {srv.duration} دقيقة</p>
                                             </div>
                                         </div>
-                                        <p className={`text-slate-500 text-xs leading-relaxed ${!isExpanded ? 'line-clamp-3' : ''}`}>"{review.comment}"</p>
-                                        {isLongText && (
-                                            <button onClick={() => setExpandedReviewIdx(isExpanded ? null : idx)}
-                                                className="text-[11px] text-blue-500 font-bold mt-2 self-start active:scale-95 transition">
-                                                {isExpanded ? 'عرض أقل' : 'المزيد'}
-                                            </button>
-                                        )}
-                                    </div>
+                                        <div className="text-left bg-slate-50 px-3 py-1.5 rounded-xl shrink-0">
+                                            <span className="font-black text-slate-900 text-sm">{srv.price}</span>
+                                            <span className="text-[10px] font-bold text-slate-400 mr-1">ر.س</span>
+                                        </div>
+                                    </button>
                                 );
                             })}
                         </div>
@@ -344,7 +375,7 @@ const BookingScreen = () => {
                 )}
 
                 {/* ─── الحلاقين (طاقم العمل) ─── */}
-                {tenantData.barbers && tenantData.barbers.length === 0 ? (
+                {availableBarbers.length === 0 ? (
                     <Motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
                         className="bg-red-50 text-red-500 p-6 rounded-3xl text-center border border-red-100 mb-6">
                         <span className="text-4xl mb-2 block">🏖️</span>
@@ -355,15 +386,19 @@ const BookingScreen = () => {
                     <Motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="mb-8">
                         <div className="flex items-center justify-between mb-4 px-1">
                             <h2 className="text-slate-900 font-black text-base">اختر الحلاق</h2>
-                            <span className="text-xs font-bold text-slate-400">{tenantData.barbers.length} متاحين</span>
+                            <span className="text-xs font-bold text-slate-400">{availableBarbers.length} متاحين</span>
                         </div>
-                        <div className={`flex overflow-x-auto hide-scrollbar gap-4 pb-2 px-1 snap-x ${tenantData.barbers.length <= 3 ? 'justify-center' : 'justify-start -mx-1'}`}>
-                            {tenantData.barbers.map((barberObj, index) => {
+                        <div className={`flex overflow-x-auto hide-scrollbar gap-4 pb-2 px-1 snap-x ${availableBarbers.length <= 3 ? 'justify-center' : 'justify-start -mx-1'}`}>
+                            {availableBarbers.map((barberObj, index) => {
                                 const bName = barberObj.name;
                                 const isSelected = selectedChair === bName;
-                                const count = tenantData.barbers.length;
+                                const count = availableBarbers.length;
 
-                                const chairColor = index % 2 === 0 ? brandPrimary : brandSecondary;
+                                const chairColor = barberObj.iconColor || (index % 2 === 0 ? brandPrimary : brandSecondary);
+                                const red = parseInt(chairColor.slice(1, 3), 16);
+                                const green = parseInt(chairColor.slice(3, 5), 16);
+                                const blue = parseInt(chairColor.slice(5, 7), 16);
+                                const iconBackground = (red * 299 + green * 587 + blue * 114) / 1000 > 180 ? '#0f172a' : '#ffffff';
 
                                 let avatarClass = "w-16 h-16 text-2xl rounded-2xl";
                                 let textClass = "text-xs";
@@ -384,17 +419,17 @@ const BookingScreen = () => {
                                 }
 
                                 return (
-                                    <button key={barberObj._id || bName} onClick={() => setSelectedChair(bName)}
+                                    <button key={barberObj._id || bName} type="button" aria-pressed={isSelected} onClick={() => setSelectedChair(bName)}
                                         className="relative flex-shrink-0 flex flex-col items-center gap-2 group snap-center outline-none">
 
                                         <div className={`relative flex items-center justify-center border-2 transition-all duration-300
                                             ${avatarClass}
-                                            ${isSelected ? 'border-transparent shadow-[0_8px_20px_rgba(0,0,0,0.12)] scale-105' : 'border-slate-100 bg-white hover:border-slate-200 hover:shadow-sm'}`}
-                                            style={isSelected ? { backgroundColor: chairColor } : {}}>
+                                            ${isSelected ? 'shadow-[0_8px_20px_rgba(0,0,0,0.12)] scale-105' : 'border-slate-100 hover:border-slate-200 hover:shadow-sm'}`}
+                                            style={{ backgroundColor: iconBackground, ...(isSelected ? { borderColor: chairColor } : {}) }}>
 
                                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
-                                                className={`transition-all duration-300 ${isSelected ? 'text-white scale-110' : 'opacity-80 scale-100 group-hover:opacity-100 group-hover:scale-105'}`}
-                                                style={!isSelected ? { color: chairColor } : {}}
+                                                className={`transition-all duration-300 ${isSelected ? 'scale-110' : 'opacity-80 scale-100 group-hover:opacity-100 group-hover:scale-105'}`}
+                                                style={{ color: chairColor }}
                                                 width="1em" height="1em">
                                                 <path d="M8 21h8" />
                                                 <path d="M12 21v-3" />
@@ -464,50 +499,6 @@ const BookingScreen = () => {
                     </div>
                 </Motion.section>
 
-                {/* ─── الخدمات ─── */}
-                {tenantData?.services && tenantData.services.length > 0 && (
-                    <Motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="mb-6">
-                        <div className="flex justify-between items-center mb-3 px-1">
-                            <h2 className="text-slate-900 font-black text-base">الخدمات المطلوبة</h2>
-                            {servicesCount > 0 && (
-                                <span className="text-xs font-black px-2.5 py-1 rounded-lg transition-colors duration-300"
-                                    style={{ backgroundColor: `${activeThemeColor}15`, color: activeThemeColor }}>
-                                    {servicesCount} مختارة
-                                </span>
-                            )}
-                        </div>
-                        <div className="bg-white rounded-3xl border border-slate-100 divide-y divide-slate-100 overflow-hidden">
-                            {tenantData.services.map(srv => {
-                                const srvId = srv._id || srv.id;
-                                const isSelected = selectedServicesIds.includes(srvId);
-                                return (
-                                    <button key={srvId} type="button"
-                                        onClick={() => {
-                                            if (isSelected) setSelectedServicesIds(selectedServicesIds.filter(id => id !== srvId));
-                                            else setSelectedServicesIds([...selectedServicesIds, srvId]);
-                                        }}
-                                        className={`w-full flex justify-between items-center p-4 transition-all duration-300 text-right ${isSelected ? 'bg-slate-50/50' : 'hover:bg-slate-50'}`}>
-                                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                                            <div className={`w-6 h-6 rounded-lg flex items-center justify-center border-2 transition-all duration-300 shrink-0 ${isSelected ? 'text-white' : 'border-slate-200 bg-white'}`}
-                                                style={isSelected ? { backgroundColor: activeThemeColor, borderColor: activeThemeColor } : {}}>
-                                                {isSelected && <span className="text-xs">✓</span>}
-                                            </div>
-                                            <div className="text-right min-w-0">
-                                                <h3 className="font-black text-slate-900 text-sm truncate">{srv.name}</h3>
-                                                <p className="text-[11px] font-bold text-slate-400">⏱️ {srv.duration} دقيقة</p>
-                                            </div>
-                                        </div>
-                                        <div className="text-left bg-slate-50 px-3 py-1.5 rounded-xl shrink-0">
-                                            <span className="font-black text-slate-900 text-sm">{srv.price}</span>
-                                            <span className="text-[10px] font-bold text-slate-400 mr-1">ر.س</span>
-                                        </div>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    </Motion.section>
-                )}
-
                 {/* ─── الأوقات المتاحة ─── */}
                 <Motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="mb-8">
                     <h2 className="text-slate-900 font-black text-base mb-3 px-1">الوقت المناسب</h2>
@@ -521,6 +512,11 @@ const BookingScreen = () => {
                             <h3 className="font-black text-lg mb-1 transition-colors duration-300" style={{ color: activeThemeColor }}>الصالون في إجازة</h3>
                             <p className="font-bold text-sm transition-colors duration-300" style={{ color: activeThemeColor, opacity: 0.8 }}>نراكم في يوم آخر!</p>
                         </Motion.div>
+                    ) : availabilityError ? (
+                        <div className="bg-white p-6 rounded-lg text-center border border-rose-200" role="alert">
+                            <p className="text-sm font-bold text-rose-700 mb-3">{availabilityError}</p>
+                            <button type="button" onClick={() => setAvailabilityRetry(value => value + 1)} className="text-sm font-bold text-slate-900 underline underline-offset-4">إعادة المحاولة</button>
+                        </div>
                     ) : availableSlots.length === 0 ? (
                         <Motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
                             className="bg-white p-8 rounded-3xl text-center border border-slate-100 flex flex-col items-center">
@@ -544,7 +540,7 @@ const BookingScreen = () => {
                                                     <Motion.button key={time}
                                                         initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.85 }}
                                                         transition={{ duration: 0.18, delay: index * 0.03 }} whileTap={{ scale: 0.94 }}
-                                                        onClick={() => { setSelectedTime(time); setIsModalOpen(true); }}
+                                                        onClick={() => { setSelectedTime(time); setBookingError(''); setBookingErrorField(''); setIsModalOpen(true); }}
                                                         className="py-3 bg-white rounded-2xl border border-slate-100 active:border-slate-300 transition-colors flex flex-col items-center justify-center gap-0.5 hover:border-slate-200">
                                                         <span className="font-black text-base text-slate-900 leading-tight" dir="ltr">{formatTime12Hour(time)}</span>
                                                         <span className="text-[10px] font-bold text-slate-400">{getTimePeriod(time)}</span>
@@ -558,6 +554,61 @@ const BookingScreen = () => {
                         </div>
                     )}
                 </Motion.section>
+
+                <section className="border-t border-slate-200 pt-6 mb-6">
+                    <h2 className="text-slate-900 font-black text-base mb-2">عن الصالون</h2>
+                    <p className="text-slate-600 text-sm leading-relaxed">
+                        {tenantData.bio || 'أهلاً بكم في صالوننا! نسعى لتقديم أفضل تجربة حلاقة وعناية بلمسة احترافية.'}
+                    </p>
+                    {(tenantData.socialLinks?.instagram || tenantData.socialLinks?.tiktok || tenantData.socialLinks?.snapchat) && (
+                        <div className="flex gap-2 mt-4">
+                            {tenantData.socialLinks?.instagram && (
+                                <a href={tenantData.socialLinks.instagram} target="_blank" rel="noopener noreferrer" aria-label="إنستغرام الصالون"
+                                    className="w-10 h-10 rounded-lg bg-pink-50 text-pink-500 flex items-center justify-center hover:bg-pink-100"><FaInstagram /></a>
+                            )}
+                            {tenantData.socialLinks?.tiktok && (
+                                <a href={tenantData.socialLinks.tiktok} target="_blank" rel="noopener noreferrer" aria-label="تيك توك الصالون"
+                                    className="w-10 h-10 rounded-lg bg-slate-100 text-slate-800 flex items-center justify-center hover:bg-slate-200"><FaTiktok /></a>
+                            )}
+                            {tenantData.socialLinks?.snapchat && (
+                                <a href={tenantData.socialLinks.snapchat} target="_blank" rel="noopener noreferrer" aria-label="سناب شات الصالون"
+                                    className="w-10 h-10 rounded-lg bg-yellow-50 text-yellow-500 flex items-center justify-center hover:bg-yellow-100"><FaSnapchatGhost /></a>
+                            )}
+                        </div>
+                    )}
+                </section>
+
+                {topReviews.length > 0 && (
+                    <section className="mb-8">
+                        <div className="flex items-center justify-between mb-2.5 px-1">
+                            <h2 className="text-slate-900 font-black text-base">تجارب العملاء</h2>
+                            <span className="text-xs font-bold text-slate-400">⭐️ {topReviews.length}+</span>
+                        </div>
+                        <div className="flex overflow-x-auto hide-scrollbar gap-2.5 pb-1 -mx-1 px-1 snap-x snap-mandatory items-stretch">
+                            {topReviews.map((review, idx) => {
+                                const isExpanded = expandedReviewIdx === idx;
+                                const isLongText = review.comment?.length > 70;
+                                return (
+                                    <div key={idx} className="min-w-[230px] max-w-[230px] bg-white p-4 rounded-lg border border-slate-100 snap-center flex flex-col">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <span className="font-bold text-slate-800 text-sm truncate pr-1">{review.customerName || 'عميل سعيد'}</span>
+                                            <div className="flex text-amber-400 text-[10px] shrink-0 gap-0.5">
+                                                {[...Array(review.rating)].map((_, i) => <FaStar key={i} />)}
+                                            </div>
+                                        </div>
+                                        <p className={`text-slate-500 text-xs leading-relaxed ${!isExpanded ? 'line-clamp-3' : ''}`}>"{review.comment}"</p>
+                                        {isLongText && (
+                                            <button onClick={() => setExpandedReviewIdx(isExpanded ? null : idx)}
+                                                className="text-[11px] text-blue-500 font-bold mt-2 self-start active:scale-95 transition">
+                                                {isExpanded ? 'عرض أقل' : 'المزيد'}
+                                            </button>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </section>
+                )}
 
                 <footer className="text-center opacity-60 pb-4">
                     <p className="text-slate-400 font-bold text-xs transition-colors duration-300" dir="ltr">
@@ -597,7 +648,11 @@ const BookingScreen = () => {
                 maxConsecutiveSlots={maxConsecutiveSlots} selectedServicesIds={selectedServicesIds}
                 totals={totals} isCheckingLoyalty={isCheckingLoyalty} loyaltyVisits={loyaltyVisits}
                 savedChildren={savedChildren} handleBookingSubmit={handleBookingSubmit} isLoading={isLoading}
+                bookingError={bookingError} bookingErrorField={bookingErrorField}
+                clearBookingError={() => { setBookingError(''); setBookingErrorField(''); }}
             />
+
+            {showMyAppointments && <CustomerAppointments tenant={tenantData} onClose={() => setShowMyAppointments(false)} />}
 
             {/* ─── نافذة الدفع ─── */}
             <AnimatePresence>
@@ -634,7 +689,7 @@ const BookingScreen = () => {
                                             <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 text-right">
                                                 <p className="text-xs font-bold text-slate-500 mb-1">مزود الدفع</p>
                                                 <p className="text-sm font-black text-slate-900">
-                                                    {paymentDetails.provider === 'stc_bank' ? 'STC Bank eCommerce' : 'بوابة الدفع'}
+                                                    {paymentDetails.provider === 'moyasar' ? 'ميسر (Moyasar)' : 'بوابة الدفع'}
                                                 </p>
                                             </div>
                                             <button

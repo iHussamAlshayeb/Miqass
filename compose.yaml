@@ -12,11 +12,13 @@ services:
         VITE_ONESIGNAL_ALLOWED_ORIGINS: https://www.miqass.app
     env_file:
       - Miqass.env
+      - .local-secrets/miqass-zakaty.env
     environment:
       NODE_ENV: production
       PORT: 5000
       BACKEND_URL: https://www.miqass.app
       FRONTEND_URL: https://www.miqass.app
+      ZAKATY_BASE_URL: https://zakat.ihussam.dev
       DISABLE_CRON_JOBS: ${MIQASS_DISABLE_CRON_JOBS:-false}
     ports:
       - "127.0.0.1:15000:5000"
@@ -40,6 +42,8 @@ services:
     command:
       - tunnel
       - --no-autoupdate
+      - --protocol
+      - http2
       - run
       - --url
       - http://app:5000

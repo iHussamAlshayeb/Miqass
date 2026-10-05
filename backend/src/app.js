@@ -3,8 +3,11 @@ const cors = require("cors");
 const helmet = require("helmet");
 const compression = require("compression");
 const path = require("path");
+const fs = require("fs/promises");
 const Tenant = require("./models/Tenant");
 const checkMaintenanceMode = require("./middlewares/maintenanceMiddleware");
+const { renderSalonSocialMeta } = require("./utils/salonSocialMeta");
+const { renderSalonShareImage } = require("./utils/salonShareImage");
 
 const app = express();
 const frontendDistPath = path.join(__dirname, "..", "frontend", "dist");
@@ -111,6 +114,25 @@ app.get("/logo/:slug", async (req, res) => {
   }
 });
 
+app.get("/share-image/:slug", async (req, res) => {
+  try {
+    const tenant = await Tenant.findOne({
+      slug: req.params.slug.toLowerCase(),
+      "subscription.status": "Active",
+    })
+      .select("branding.logoUrl")
+      .lean();
+    if (!tenant) return res.sendStatus(404);
+
+    const image = await renderSalonShareImage(tenant.branding?.logoUrl);
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.type("png").send(image);
+  } catch (error) {
+    console.error("Failed to generate salon share image:", error);
+    res.sendStatus(500);
+  }
+});
+
 app.use(
   express.static(frontendDistPath, {
     etag: true,
@@ -126,6 +148,29 @@ app.use(
     },
   }),
 );
+
+app.get("/:slug", async (req, res, next) => {
+  try {
+    const tenant = await Tenant.findOne({
+      slug: req.params.slug.toLowerCase(),
+      "subscription.status": "Active",
+    })
+      .select("salonName slug bio branding.logoUrl")
+      .lean();
+
+    if (!tenant) return next();
+
+    const html = await fs.readFile(frontendIndexPath, "utf8");
+    const origin =
+      process.env.NODE_ENV === "production"
+        ? "https://www.miqass.app"
+        : `${req.protocol}://${req.get("host")}`;
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.type("html").send(renderSalonSocialMeta(html, tenant, origin));
+  } catch (error) {
+    next(error);
+  }
+});
 
 app.use((req, res, next) => {
   if (

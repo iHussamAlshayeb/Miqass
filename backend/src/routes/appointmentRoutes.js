@@ -11,11 +11,15 @@ const {
   cancelAppointment,
   getLiveQueue,
   blockTimeSlot,
+  sendCustomerAccessCode,
+  verifyCustomerAccessCode,
+  getCustomerAppointments,
+  cancelCustomerAppointment,
+  rescheduleCustomerAppointment,
 } = require("../controllers/bookingController");
 
 const {
   moyasarWebhook,
-  stcBankWebhook,
   getInvoiceData,
 } = require("../controllers/paymentController");
 
@@ -25,7 +29,9 @@ const {
   updateBarberSettings,
   updateWhatsappSettings,
   getAllUpcomingAppointments,
+  getAppointmentHistory,
   resendSingleWhatsApp,
+  updateWhatsappTemplates,
   getTenantCustomers,
   exportTenantCustomers,
   getBroadcastAudienceCounts,
@@ -75,15 +81,33 @@ const broadcastTestLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+const customerAccessLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 8,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const customerActionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 12,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 router.get("/available", getAvailableSlots);
 router.post("/book", bookingLimiter, createAppointment);
+router.post("/customer/send-code", customerAccessLimiter, sendCustomerAccessCode);
+router.post("/customer/verify-code", customerAccessLimiter, verifyCustomerAccessCode);
+router.get("/customer/appointments", customerActionLimiter, getCustomerAppointments);
+router.post("/customer/appointments/:appointmentId/cancel", customerActionLimiter, cancelCustomerAppointment);
+router.post("/customer/appointments/:appointmentId/reschedule", customerActionLimiter, rescheduleCustomerAppointment);
 router.get("/loyalty/:tenantId/:phone", getCustomerLoyalty);
 
 router.get("/live-queue/:slug", queueLimiter, getLiveQueue);
 router.post("/barber-portal/queue", barberLimiter, getBarberQueue);
 router.put("/barber-portal/status/:appointmentId", barberUpdateStatus);
 router.post("/webhook/moyasar", moyasarWebhook);
-router.post("/webhook/stc-bank", stcBankWebhook);
 
 // 🔒 Middleware الحماية (الراوتس التي تلي هذا السطر تتطلب Token)
 router.use(protect);
@@ -91,6 +115,7 @@ router.use(protect);
 router.get("/settings", getBarberSettings);
 router.put("/settings", updateBarberSettings);
 router.put("/settings/whatsapp", updateWhatsappSettings);
+router.put("/settings/whatsapp/templates", updateWhatsappTemplates);
 
 router.get("/whatsapp-status", (req, res) => {
   res.json(getWhatsAppStatus());
@@ -98,6 +123,7 @@ router.get("/whatsapp-status", (req, res) => {
 
 router.get("/barber", getBarberAppointments);
 router.get("/all-upcoming", getAllUpcomingAppointments);
+router.get("/history", getAppointmentHistory);
 router.put("/status/:appointmentId", updateAppointmentStatus);
 router.put("/cancel/:appointmentId", cancelAppointment);
 router.post("/block", blockTimeSlot);

@@ -5,6 +5,7 @@ import {
     Clock,
     MessageCircle,
     Printer,
+    ShoppingCart,
     RefreshCw,
     Scissors,
     XCircle,
@@ -28,11 +29,23 @@ const DailyTab = ({
     handleStatusChange,
     handleSingleWhatsApp,
     whatsappSettings,
+    reviewEnabled,
     refreshAppointments,
+    onOpenCheckout,
 }) => {
     const [invoiceData, setInvoiceData] = useState(null);
     const [cancelModalConfig, setCancelModalConfig] = useState({ isOpen: false, appointmentId: null });
     const [isCanceling, setIsCanceling] = useState(false);
+    const [reviewSendingId, setReviewSendingId] = useState(null);
+
+    const retryWalkInReview = async (appointmentId) => {
+        setReviewSendingId(appointmentId);
+        try {
+            await handleStatusChange(appointmentId, 'Completed');
+        } finally {
+            setReviewSendingId(null);
+        }
+    };
     const [isSilentRefreshing, setIsSilentRefreshing] = useState(false);
 
     useEffect(() => {
@@ -54,9 +67,8 @@ const DailyTab = ({
 
     const fetchAndShowInvoice = async (appointment) => {
         try {
-            const saleId = appointment.saleId?._id || appointment.saleId;
-            const endpoint = saleId
-                ? `/sales/${saleId}/invoice`
+            const endpoint = appointment.saleId
+                ? `/sales/${appointment.saleId?._id || appointment.saleId}/invoice`
                 : `/appointments/invoice/${appointment._id}`;
             const res = await API.get(endpoint);
             setInvoiceData(res.data.invoice);
@@ -180,7 +192,7 @@ const DailyTab = ({
                                 </div>
                             )}
 
-                            <div className="mt-4 flex items-center gap-2 border-t border-slate-200 pt-3">
+                            <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-3">
                                 {app.status === 'Booked' && (
                                     <>
                                         <button
@@ -220,6 +232,25 @@ const DailyTab = ({
                                             <CheckCircle2 size={16} />
                                             مكتمل
                                         </span>
+                                        {app.bookingSource === 'kiosk_walk_in' && !app.isReviewRequested && reviewEnabled && whatsappSettings?.isEnabled && (
+                                            <button
+                                                type="button"
+                                                onClick={() => retryWalkInReview(app._id)}
+                                                disabled={reviewSendingId === app._id}
+                                                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 text-sm font-black text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+                                            >
+                                                <MessageCircle size={16} />
+                                                {reviewSendingId === app._id ? 'جار الإرسال...' : 'إرسال التقييم'}
+                                            </button>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={() => onOpenCheckout(app)}
+                                            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-sm font-black text-white hover:bg-emerald-700"
+                                        >
+                                            <ShoppingCart size={16} />
+                                            نقطة البيع
+                                        </button>
                                         <button
                                             type="button"
                                             onClick={() => fetchAndShowInvoice(app)}

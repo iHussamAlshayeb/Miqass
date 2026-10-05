@@ -1,14 +1,101 @@
+const mongoose = require("mongoose");
 const Appointment = require("../models/Appointment");
 const Tenant = require("../models/Tenant");
 const Customer = require("../models/Customer");
 const Barber = require("../models/Barber");
-const { createSaleFromAppointment } = require("../services/salesService");
 
 const {
   sendCancellationMessage,
   sendLoyaltyRewardMessage,
-  sendReviewRequestMessage,
 } = require("../utils/whatsapp");
+const { sendReviewAfterCompletion } = require("../services/reviewRequestService");
+const {
+  hashPin,
+  signBarberToken,
+  verifyBarberToken,
+  verifyPin,
+} = require("../utils/barberPin");
+
+const PORTAL_TENANT_FIELDS =
+  "_id settings salonName whatsappSettings slug ownerPhone";
+
+const portalError = (message, statusCode) => {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+};
+
+/**
+ * مصادقة بوابة الحلاق:
+ * 1) توكن البوابة في الهيدر X-Barber-Token (بعد أول دخول)، أو
+ * 2) slug + اسم الحلاق + PIN (تسجيل الدخول) ويُرجَع توكن جديد.
+ * كل المدخلات تُحوَّل لنصوص لمنع حقن عوامل MongoDB مثل {"$ne": null}.
+ */
+const authenticateBarberPortal = async (req) => {
+  const portalToken = req.get("x-barber-token");
+
+  if (portalToken) {
+    let payload;
+    try {
+      payload = verifyBarberToken(portalToken);
+    } catch (error) {
+      throw portalError("انتهت جلسة البوابة، سجّل الدخول مجدداً.", 401);
+    }
+
+    const [tenant, barber] = await Promise.all([
+      Tenant.findById(payload.tenantId).select(PORTAL_TENANT_FIELDS).lean(),
+      Barber.findOne({
+        _id: payload.barberId,
+        tenantId: payload.tenantId,
+        isActive: { $ne: false },
+      })
+        .select("_id name")
+        .lean(),
+    ]);
+
+    if (!tenant || !barber) {
+      throw portalError("انتهت جلسة البوابة، سجّل الدخول مجدداً.", 401);
+    }
+    return { tenant, barber, token: null };
+  }
+
+  const slug = typeof req.body?.slug === "string" ? req.body.slug.trim() : "";
+  const barberName =
+    typeof req.body?.barberName === "string" ? req.body.barberName.trim() : "";
+  if (!slug || !barberName) throw portalError("بيانات الدخول ناقصة", 400);
+
+  const tenant = await Tenant.findOne({ slug })
+    .select(PORTAL_TENANT_FIELDS)
+    .lean();
+  if (!tenant) throw portalError("الصالون غير موجود", 404);
+
+  const barber = await Barber.findOne({
+    tenantId: tenant._id,
+    name: barberName,
+    isActive: { $ne: false },
+  })
+    .select("_id name +pin")
+    .lean();
+
+  const result = barber
+    ? await verifyPin(barber.pin, req.body?.pin)
+    : { ok: false };
+  if (!result.ok) throw portalError("رمز الدخول (PIN) غير صحيح ❌", 401);
+
+  if (result.needsUpgrade) {
+    // ترحيل تلقائي: الرمز القديم المخزن كنص صريح يُشفَّر عند أول دخول ناجح
+    await Barber.updateOne(
+      { _id: barber._id, pin: barber.pin },
+      { $set: { pin: await hashPin(barber.pin) } },
+    );
+  }
+
+  return {
+    tenant,
+    barber: { _id: barber._id, name: barber.name },
+    token: signBarberToken({ tenantId: tenant._id, barberId: barber._id }),
+  };
+};
 
 // دالة مساعدة لتجهيز الموعد لشاشات العرض
 const mapAppointmentForFrontend = (app) => {
@@ -70,15 +157,20 @@ const updateAppointmentStatus = async (req, res) => {
       return res.status(404).json({ message: "لم يتم العثور على الموعد" });
     }
 
+    if (updatedAppointment.saleId && status !== "Completed") {
+      return res.status(409).json({ message: "لا يمكن تغيير حالة حجز مرتبط بعملية بيع." });
+    }
+
     const previousStatus = updatedAppointment.status;
     updatedAppointment.set(updateData);
     await updatedAppointment.save();
 
+    let tenant;
     if (
       (status === "Cancelled" || status === "Completed") &&
       previousStatus !== status
     ) {
-      const tenant = await Tenant.findById(req.tenantId);
+      tenant = await Tenant.findById(req.tenantId);
 
       if (status === "Cancelled") {
         sendCancellationMessage(
@@ -113,21 +205,18 @@ const updateAppointmentStatus = async (req, res) => {
             ).catch(() => {});
           }
 
-          if (
-            tenant.settings?.enableGoogleReviews &&
-            tenant.settings?.googleReviewLink
-          ) {
-            sendReviewRequestMessage(
-              customer.phone,
-              updatedAppointment.childName,
-              tenant,
-              updatedAppointment._id,
-            ).catch(() => {});
-          }
         }
 
-        await createSaleFromAppointment(updatedAppointment);
       }
+    }
+
+    if (
+      status === "Completed" &&
+      updatedAppointment.bookingSource === "kiosk_walk_in" &&
+      !updatedAppointment.isReviewRequested
+    ) {
+      tenant ||= await Tenant.findById(req.tenantId);
+      if (tenant) await sendReviewAfterCompletion(updatedAppointment, tenant);
     }
 
     res.status(200).json({
@@ -142,26 +231,13 @@ const updateAppointmentStatus = async (req, res) => {
 // 3. شاشة الحلاق العامة - جلب طابور الحلاق بناءً على الـ PIN والـ Slug
 const getBarberQueue = async (req, res) => {
   try {
-    const { slug, barberName, pin, date } = req.body;
+    const { tenant, barber, token } = await authenticateBarberPortal(req);
 
-    const tenant = await Tenant.findOne({ slug })
-      .select("_id salonName")
-      .lean();
-    if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
-
-    const barber = await Barber.findOne({
-      tenantId: tenant._id,
-      name: barberName,
-      pin,
-    })
-      .select("_id name")
-      .lean();
-
-    if (!barber) {
-      return res.status(401).json({ message: "رمز الدخول (PIN) غير صحيح ❌" });
-    }
-
-    let targetDate = date;
+    const requestedDate =
+      typeof req.body?.date === "string" ? req.body.date : "";
+    let targetDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedDate)
+      ? requestedDate
+      : "";
     if (!targetDate) {
       const ksaDate = new Date(
         new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh" }),
@@ -196,9 +272,14 @@ const getBarberQueue = async (req, res) => {
       appointments: sortedAppointments,
       tenantId: tenant._id,
       salonName: tenant.salonName,
+      barberName: barber.name,
       requestedDate: targetDate,
+      ...(token ? { token } : {}),
     });
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
     console.error("Queue Error:", error);
     res.status(500).json({ message: "حدث خطأ داخلي" });
   }
@@ -208,31 +289,22 @@ const getBarberQueue = async (req, res) => {
 const barberUpdateStatus = async (req, res) => {
   try {
     const { appointmentId } = req.params;
-    const { status, pin, slug, barberName, cancelReason } = req.body;
+    const { status, cancelReason } = req.body;
 
     const validStatuses = ["Booked", "Completed", "Cancelled"];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ message: "حالة الموعد غير صالحة" });
     }
 
-    const tenant = await Tenant.findOne({ slug })
-      .select("_id settings salonName whatsappSettings slug ownerPhone")
-      .lean();
-    if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
+    if (!mongoose.isValidObjectId(appointmentId)) {
+      return res.status(400).json({ message: "رقم الموعد غير صالح" });
+    }
 
-    const barber = await Barber.findOne({
-      tenantId: tenant._id,
-      name: barberName,
-      pin,
-    })
-      .select("_id name")
-      .lean();
-
-    if (!barber) return res.status(401).json({ message: "غير مصرح" });
+    const { tenant, barber } = await authenticateBarberPortal(req);
 
     const updateData = { status };
-    if (status === "Cancelled" && cancelReason) {
-      updateData.cancelReason = cancelReason;
+    if (status === "Cancelled" && typeof cancelReason === "string" && cancelReason) {
+      updateData.cancelReason = cancelReason.slice(0, 200);
     }
 
     const updatedAppointment = await Appointment.findOne({
@@ -243,6 +315,10 @@ const barberUpdateStatus = async (req, res) => {
 
     if (!updatedAppointment) {
       return res.status(404).json({ message: "الموعد غير موجود" });
+    }
+
+    if (updatedAppointment.saleId && status !== "Completed") {
+      return res.status(409).json({ message: "لا يمكن إلغاء حجز مرتبط بعملية بيع." });
     }
 
     const previousStatus = updatedAppointment.status;
@@ -273,19 +349,7 @@ const barberUpdateStatus = async (req, res) => {
         }
       }
 
-      if (
-        tenant.settings?.enableGoogleReviews &&
-        tenant.settings?.googleReviewLink
-      ) {
-        sendReviewRequestMessage(
-          updatedAppointment.customerId.phone,
-          updatedAppointment.childName,
-          tenant,
-          updatedAppointment._id,
-        ).catch(() => {});
-      }
-
-      await createSaleFromAppointment(updatedAppointment);
+      await sendReviewAfterCompletion(updatedAppointment, tenant);
     }
 
     res.status(200).json({
@@ -293,6 +357,9 @@ const barberUpdateStatus = async (req, res) => {
       appointment: mapAppointmentForFrontend(updatedAppointment),
     });
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
     res.status(500).json({ message: "حدث خطأ أثناء التحديث" });
   }
 };

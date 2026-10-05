@@ -50,8 +50,32 @@ const tenantSchema = new mongoose.Schema(
 
     taxSettings: {
       taxNumber: { type: String, default: "" },
-      wafeqAccountId: { type: String, default: "" },
       isZatcaOnboarded: { type: Boolean, default: false },
+      zakaty: {
+        apiKey: { type: String, default: "" },
+        tenantId: { type: String, default: "" },
+        registeredVatNumber: { type: String, default: "" },
+        registeredCrNumber: { type: String, default: "" },
+        apiKeyId: { type: String, default: "" },
+        keyIssuingAt: { type: Date, default: null },
+        egsUnitId: { type: String, default: "" },
+        setup: {
+          status: { type: String, default: '' },
+          error: { type: String, default: '' },
+          lockOwner: { type: String, default: '' },
+          lockUntil: { type: Date, default: null },
+          nextAttemptAt: { type: Date, default: null },
+          complianceCheckedAt: { type: Date, default: null },
+        },
+        seller: {
+          legalName: { type: String, default: "" },
+          crNumber: { type: String, default: "" },
+          street: { type: String, default: "" },
+          buildingNumber: { type: String, default: "" },
+          city: { type: String, default: "" },
+          postalCode: { type: String, default: "" },
+        },
+      },
 
       zatcaCredentials: {
         binarySecurityToken: { type: String, default: null },
@@ -66,6 +90,14 @@ const tenantSchema = new mongoose.Schema(
       sessionId: { type: String, default: null },
       sessionStatus: { type: String, default: "DISCONNECTED" },
       webhookSecret: { type: String },
+      templates: {
+        confirmation: { type: String },
+        cancellation: { type: String },
+        reminder: { type: String },
+        review: { type: String },
+        loyalty: { type: String },
+        retention: { type: String },
+      },
     },
 
     subscription: {
@@ -95,25 +127,11 @@ const tenantSchema = new mongoose.Schema(
       depositAmount: { type: Number, default: 0 },
       provider: {
         type: String,
-        enum: ["stc_bank", "moyasar"],
-        default: "stc_bank",
+        enum: ["moyasar"],
+        default: "moyasar",
       },
       moyasarPublishableKey: { type: String, default: "" },
       moyasarSecretKey: { type: String, default: "" },
-      stcBank: {
-        environment: {
-          type: String,
-          enum: ["sandbox", "production"],
-          default: "production",
-        },
-        merchantId: { type: String, default: "" },
-        terminalId: { type: String, default: "" },
-        clientId: { type: String, default: "" },
-        clientSecret: { type: String, default: "" },
-        createPaymentUrl: { type: String, default: "" },
-        statusInquiryUrl: { type: String, default: "" },
-        webhookSecret: { type: String, default: "" },
-      },
     },
 
     campaignCredits: { type: Number, default: 0 },
@@ -121,6 +139,7 @@ const tenantSchema = new mongoose.Schema(
       type: Number,
       default: 100,
     },
+    posInvoiceCounter: { type: Number, default: 0 },
 
     bio: {
       type: String,
@@ -147,6 +166,11 @@ tenantSchema.index(
 
 tenantSchema.index(
   { "whatsappSettings.sessionStatus": 1 },
+  { background: true },
+);
+
+tenantSchema.index(
+  { 'taxSettings.zakaty.setup.status': 1, 'taxSettings.zakaty.setup.nextAttemptAt': 1 },
   { background: true },
 );
 

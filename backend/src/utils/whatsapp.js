@@ -1,5 +1,6 @@
 const axios = require("axios");
 const { normalizeWasenderMessageStatus } = require("./wasender");
+const { renderTemplate } = require("./whatsappTemplates");
 
 const WASENDER_API_BASE_URL = "https://www.wasenderapi.com";
 const API_URL = `${WASENDER_API_BASE_URL}/api/send-message`;
@@ -85,19 +86,11 @@ const sendWhatsAppMessage = async (
       : "";
     const seatName = barberName ? `\n💈 الكرسي/الحلاق: ${barberName}` : "";
 
-    const message = `يا هلا والله فيك بـ ${salonName} 👋
-تم تأكيد حجز *${childName}* بنجاح! ✂️
-
-📅 التاريخ: ${date}
-⏰ الوقت: ${friendlyTime}${seatName}
-
-📍 موقعنا على الخريطة:
-${locationUrl}${contactPhone}
-
-يا ليت تشرفنا قبل الموعد بـ 15 دقيقة، 
-وإذا صار لك ظرف وما بتقدر تحضر، ياليت تبلغنا بوقت كافي.
-
-ننتظرك، ويومك سعيد! ✨`;
+    const message = renderTemplate(tenant, 'confirmation', {
+      اسم_الصالون: salonName, اسم_العميل: childName, التاريخ: date,
+      الوقت: friendlyTime, الحلاق: seatName, الموقع: locationUrl,
+      رقم_التواصل: contactPhone,
+    });
 
     await axios.post(
       API_URL,
@@ -141,13 +134,10 @@ const sendCancellationMessage = async (
     const reasonText = reason ? `\n*سبب الإلغاء:* ${reason}\n` : "";
     const seatName = barberName ? `(عند ${barberName}) ` : "";
 
-    const message = `يا هلا فيك من ${salonName} 👋
-حبينا نبلغك إنه تم إلغاء حجز *${childName}* ${seatName}بناءً على طلبكم أو لظرف طارئ.
-${reasonText}
-نتمنى نشوفك بوقت ثاني! تقدر تحجز موعد جديد متى ما ناسبك بكل سهولة من هنا:
-${bookingLink}
-
-في أمان الله! ✨`;
+    const message = renderTemplate(tenant, 'cancellation', {
+      اسم_الصالون: salonName, اسم_العميل: childName, الحلاق: seatName,
+      سبب_الإلغاء: reasonText, رابط_الحجز: bookingLink,
+    });
 
     await axios.post(
       API_URL,
@@ -193,18 +183,10 @@ const sendReminderMessage = async (
       : "";
     const seatName = barberName ? `\n💈 الكرسي/الحلاق: ${barberName}` : "";
 
-    const message = `يا هلا بك مرة ثانية من ${salonName} 👋
-
-مجرد تذكير بسيط بموعد حلاقة *${childName}* ✂️✨
-
-⏰ موعدنا: اليوم الساعة ${friendlyTime}${seatName}
-
-📍 موقعنا:
-${locationUrl}${contactPhone}
-
-يا ليت تشرفنا قبل الموعد بـ 15 دقيقة عشان نخدمك بأفضل شكل.. بانتظارك!
-
-*(وإذا صار لك أي طارئ حاب تلغي، ياليت تتواصل معنا).*`;
+    const message = renderTemplate(tenant, 'reminder', {
+      اسم_الصالون: salonName, اسم_العميل: childName, الوقت: friendlyTime,
+      الحلاق: seatName, الموقع: locationUrl, رقم_التواصل: contactPhone,
+    });
 
     await axios.post(
       API_URL,
@@ -247,14 +229,9 @@ const sendReviewRequestMessage = async (
     const salonName = tenant?.salonName || "الصالون";
     const reviewUrl = `https://www.miqass.app/rate/${appointmentId}`;
 
-    const message = `يا هلا والله من ${salonName} 👋
-نتمنى إن تجربة الحلاقة لـ *${childName}* كانت ممتازة ونالت إعجابكم! ✂️✨
-
-رأيك يهمنا مرة ويساعدنا نتطور ونقدم الأفضل دايماً.
-ياليت تتكرم وتقيم تجربتك عبر الرابط السريع هذا:
-⭐ ${reviewUrl}
-
-شكراً لثقتك فينا، ونتمنى نشوفك قريب! 🌟`;
+    const message = renderTemplate(tenant, 'review', {
+      اسم_الصالون: salonName, اسم_العميل: childName, رابط_التقييم: reviewUrl,
+    });
 
     await axios.post(
       API_URL,
@@ -292,14 +269,9 @@ const sendLoyaltyRewardMessage = async (phone, customerName, tenant) => {
     const slug = tenant?.slug || "";
     const bookingLink = slug ? `https://www.miqass.app/${slug}` : "رابط الصالون";
 
-    const message = `يا هلا والله بـ ${customerName}، عميلنا المميز في ${salonName} 👑
-
-حبينا نبلغك إنك كملت معنا 5 زيارات، وهذا يعني إن **حلاقتك الجاية علينا (مـجـانـاً)!** 🎁✂️
-
-تقديراً لولائك وثقتك فينا، احجز موعدك الجاي متى ما حبيت من هنا، وبلغ الكاشير إن عندك مكافأة ولاء:
-${bookingLink}
-
-ننتظرك تنورنا! ✨`;
+    const message = renderTemplate(tenant, 'loyalty', {
+      اسم_الصالون: salonName, اسم_العميل: customerName, رابط_الحجز: bookingLink,
+    });
 
     await axios.post(
       API_URL,
@@ -333,16 +305,11 @@ const sendRetentionMessage = async (phone, customerName, tenant) => {
 
     const salonName = tenant?.salonName || "الصالون";
     const slug = tenant?.slug || "";
-    const bookingLink = `https://www.miqass.app/balloon`;
+    const bookingLink = slug ? `https://www.miqass.app/${slug}` : 'رابط الصالون';
 
-    const message = `يا هلا والله بـ ${customerName} 👋
-طالت الغيبة! اشتقنا لزيارتك لنا في ${salonName} ✂️✨
-
-تقدر تحجز موعدك وتختار حلاقك المفضل بكل سهولة وفي ثواني عبر الرابط:
-👇👇
-${bookingLink}
-
-ننتظرك تنورنا! 🤍`;
+    const message = renderTemplate(tenant, 'retention', {
+      اسم_الصالون: salonName, اسم_العميل: customerName, رابط_الحجز: bookingLink,
+    });
 
     await axios.post(
       API_URL,
@@ -452,6 +419,50 @@ const sendCampaignMessage = async (phone, messageText, tenant) => {
   }
 };
 
+const sendBookingAccessCode = async (phone, code, tenant) => {
+  const apiKey = tenant?.whatsappSettings?.apiKey;
+  const formattedPhone = formatPhoneNumber(phone);
+  if (!tenant?.whatsappSettings?.isEnabled || !apiKey || !formattedPhone) return false;
+
+  try {
+    await axios.post(
+      API_URL,
+      {
+        to: formattedPhone,
+        text: `رمز عرض وإدارة مواعيدك لدى ${tenant.salonName}: ${code}\nصالح لمدة 5 دقائق. لا تشاركه مع أحد.`,
+      },
+      {
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        timeout: 8000,
+      },
+    );
+    return true;
+  } catch (error) {
+    handleWhatsAppError("رمز إدارة المواعيد", error);
+    return false;
+  }
+};
+
+const sendRescheduleMessage = async (phone, childName, date, time, barberName, tenant) => {
+  const apiKey = tenant?.whatsappSettings?.apiKey;
+  const formattedPhone = formatPhoneNumber(phone);
+  if (!tenant?.whatsappSettings?.isEnabled || !apiKey || !formattedPhone) return false;
+  try {
+    await axios.post(
+      API_URL,
+      {
+        to: formattedPhone,
+        text: `تم تعديل موعد ${childName} لدى ${tenant.salonName}.\nالموعد الجديد: ${date} الساعة ${formatTimeForMessage(time)}\nالموظف: ${barberName}`,
+      },
+      { headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, timeout: 8000 },
+    );
+    return true;
+  } catch (error) {
+    handleWhatsAppError("تعديل الموعد", error);
+    return false;
+  }
+};
+
 const getCampaignMessageInfo = async (providerMessageId, tenant) => {
   const customApiKey = tenant?.whatsappSettings?.apiKey;
   const normalizedMessageId = String(providerMessageId ?? "").trim();
@@ -488,6 +499,8 @@ const getWhatsAppStatus = () => ({ status: "API_ACTIVE", qr: "" });
 
 module.exports = {
   sendWhatsAppMessage,
+  sendBookingAccessCode,
+  sendRescheduleMessage,
   sendCancellationMessage,
   sendReminderMessage,
   getWhatsAppStatus,

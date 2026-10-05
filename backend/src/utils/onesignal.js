@@ -71,13 +71,19 @@ const sendAdminNotification = async (
   options = {},
 ) => {
   const friendlyTime = formatTimeForMessage(time);
-  const messageText = `هلا والله! جاكم حجز جديد من ${customerName} ✨\n📅 متى؟ ${date} الساعة ${friendlyTime}\n💈 عند مين؟ ${barberName || "غير محدد"}\nشيكوا المواعيد وجهزوا العدة! ✂️`;
+  const event = options.event;
+  const heading = event === "cancelled" ? "إلغاء موعد" : event === "rescheduled" ? "تعديل موعد" : "🎉 حجز جديد وصلك!";
+  const messageText = event === "cancelled"
+    ? `ألغى ${customerName} موعده يوم ${date} الساعة ${friendlyTime} لدى ${barberName || "غير محدد"}.`
+    : event === "rescheduled"
+      ? `نقل ${customerName} موعده إلى ${date} الساعة ${friendlyTime} لدى ${barberName || "غير محدد"}.`
+      : `هلا والله! جاكم حجز جديد من ${customerName} ✨\n📅 متى؟ ${date} الساعة ${friendlyTime}\n💈 عند مين؟ ${barberName || "غير محدد"}\nشيكوا المواعيد وجهزوا العدة! ✂️`;
 
   return enqueueNotification({
     tenantId,
     type: "booking",
     dedupeKey: options.dedupeKey,
-    headings: { en: "🎉 حجز جديد وصلك!", ar: "🎉 حجز جديد وصلك!" },
+    headings: { en: heading, ar: heading },
     contents: { en: messageText, ar: messageText },
   });
 };

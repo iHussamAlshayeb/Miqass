@@ -111,7 +111,7 @@ const registerTenant = async (req, res) => {
 
     try {
       await Promise.all([
-        Barber.insertMany([
+        Barber.create([
           { tenantId: newTenant._id, name: "كرسي 1", pin: "0000" },
           { tenantId: newTenant._id, name: "كرسي 2", pin: "1111" },
         ]),

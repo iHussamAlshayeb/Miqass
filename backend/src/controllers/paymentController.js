@@ -1,9 +1,8 @@
-const axios = require("axios"); // للاتصال بسيرفرات ميسر
+const mongoose = require("mongoose");
 const Appointment = require("../models/Appointment");
 const Tenant = require("../models/Tenant");
 
 const crypto = require("crypto");
-const { decrypt } = require("../utils/encryption");
 const zatcaXML = require("../utils/zatcaXML");
 const zatcaCore = require("../utils/zatcaCore");
 const { generateZatcaQR } = require("../utils/zatca");
@@ -11,8 +10,9 @@ const { generateZatcaQR } = require("../utils/zatca");
 const { sendWhatsAppMessage } = require("../utils/whatsapp");
 const { sendAdminNotification } = require("../utils/onesignal");
 const {
-  getStcWebhookContext,
-  isPaidWebhookStatus,
+  MOYASAR_PROVIDER,
+  getTenantMoyasarSecret,
+  getVerifiedMoyasarPayment,
 } = require("../services/paymentGatewayService");
 
 const toMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
@@ -291,146 +291,86 @@ const getInvoiceData = async (req, res) => {
 
 const moyasarWebhook = async (req, res) => {
   try {
-    const paymentData = req.body;
+    const payload = req.body || {};
+    const data =
+      payload.data && typeof payload.data === "object" ? payload.data : payload;
+    const tenantId = String(req.query.tenantId || data.metadata?.tenantId || "");
 
-    if (paymentData.status !== "paid") {
-      return res.status(200).send("Payment not paid yet");
-    }
-
-    const appointmentId = paymentData.metadata?.appointmentId;
-    const tenantId = paymentData.metadata?.tenantId;
-
-    if (!appointmentId || !tenantId) {
-      return res
-        .status(400)
-        .send("Missing metadata (appointmentId or tenantId)");
+    if (!mongoose.isValidObjectId(tenantId)) {
+      return res.status(400).send("Missing tenant reference");
     }
 
     const tenant = await Tenant.findById(tenantId).select(
       "salonName slug ownerPhone branding taxSettings whatsappSettings settings paymentSettings",
     );
-
     if (!tenant || !tenant.paymentSettings?.moyasarSecretKey) {
       return res.status(400).send("Tenant or secret key not found");
     }
 
-    // 🔓 فك التشفير السري بأمان
-    const secretKey = decrypt(tenant.paymentSettings.moyasarSecretKey);
-    if (!secretKey) {
-      return res.status(500).send("Failed to decrypt secret key");
+    const secretKey = getTenantMoyasarSecret(tenant);
+    // 🔐 التحقق يتم من API ميسر مباشرة، وليس من جسم الطلب
+    const verifiedPayment = await getVerifiedMoyasarPayment({
+      payload,
+      secretKey,
+    });
+
+    if (verifiedPayment.status !== "paid") {
+      return res.status(200).send("Payment not paid yet");
     }
 
-    const verifyResponse = await axios.get(
-      `https://api.moyasar.com/v1/payments/${paymentData.id}`,
-      {
-        auth: {
-          username: secretKey,
-          password: "",
-        },
-      },
-    );
-
-    const verifiedPayment = verifyResponse.data;
-    const verifiedAppointmentId = verifiedPayment.metadata?.appointmentId;
-    const verifiedTenantId = verifiedPayment.metadata?.tenantId;
-
+    const appointmentId = String(verifiedPayment.metadata?.appointmentId || "");
     if (
-      String(verifiedAppointmentId || "") !== String(appointmentId) ||
-      String(verifiedTenantId || "") !== String(tenantId)
+      String(verifiedPayment.metadata?.tenantId || "") !== String(tenant._id) ||
+      !mongoose.isValidObjectId(appointmentId)
     ) {
       return res.status(400).send("Payment metadata mismatch");
     }
 
-    if (verifiedPayment.status === "paid") {
-      const primaryAppointment =
-        await Appointment.findOne({
-          _id: appointmentId,
-          tenantId: tenant._id,
-        }).populate("customerId");
-      if (!primaryAppointment)
-        return res.status(404).send("Appointment not found");
-
-      if (
-        primaryAppointment.status === "Booked" &&
-        primaryAppointment.payment?.status === "Paid"
-      ) {
-        return res.status(200).send("Already processed");
-      }
-
-      const bookedAppointments = await confirmPaidAppointmentGroup({
-        appointment: primaryAppointment,
-        tenant,
-        provider: "moyasar",
-        providerPaymentId: verifiedPayment.id,
-        amount: verifiedPayment.amount / 100,
-        method: verifiedPayment.source?.type || "online",
-      });
-
-      const combinedNames = bookedAppointments.map((app) => app.childName).join(" و ");
-
-      console.log(
-        `✅ [Webhook] تم تأكيد حجز ${combinedNames} لصالون ${tenant.salonName} بعد استلام العربون!`,
-      );
-      return res.status(200).send("Webhook processed successfully");
-    } else {
-      console.warn(
-        `⚠️ محاولة تلاعب أو دفع غير مكتمل لصالون ${tenant.salonName}`,
-      );
-      return res.status(400).send("Payment verification failed");
-    }
-  } catch (error) {
-    console.error("❌ Moyasar Webhook Error:", error.message);
-    res.status(500).send("Internal Server Error");
-  }
-};
-
-const stcBankWebhook = async (req, res) => {
-  try {
-    const {
-      appointment,
-      tenant,
-      providerPaymentId,
-      amount,
-      status,
-    } = await getStcWebhookContext(req);
-
-    if (!isPaidWebhookStatus(status)) {
-      return res.status(200).send("Payment not paid yet");
-    }
+    const primaryAppointment = await Appointment.findOne({
+      _id: appointmentId,
+      tenantId: tenant._id,
+    }).populate("customerId");
+    if (!primaryAppointment) return res.status(404).send("Appointment not found");
 
     if (
-      appointment.status === "Booked" &&
-      appointment.payment?.status === "Paid"
+      primaryAppointment.status === "Booked" &&
+      primaryAppointment.payment?.status === "Paid"
     ) {
       return res.status(200).send("Already processed");
     }
 
-    const paidAmount = amount || appointment.payment?.amount || 0;
-    if (paidAmount <= 0) {
-      return res.status(400).send("Missing paid amount");
+    const paidAmount = toMoney(verifiedPayment.amount / 100);
+    const expectedAmount = toMoney(primaryAppointment.payment?.amount || 0);
+    if (expectedAmount > 0 && paidAmount < expectedAmount) {
+      console.warn(
+        `⚠️ مبلغ مدفوع أقل من العربون لصالون ${tenant.salonName}: ${paidAmount} < ${expectedAmount}`,
+      );
+      return res.status(400).send("Paid amount mismatch");
     }
 
     const bookedAppointments = await confirmPaidAppointmentGroup({
-      appointment,
+      appointment: primaryAppointment,
       tenant,
-      provider: "stc_bank",
-      providerPaymentId,
+      provider: MOYASAR_PROVIDER,
+      providerPaymentId: verifiedPayment.providerPaymentId,
       amount: paidAmount,
-      method: "card",
+      method: verifiedPayment.method,
     });
 
     const combinedNames = bookedAppointments.map((app) => app.childName).join(" و ");
     console.log(
-      `✅ [STC Bank] تم تأكيد حجز ${combinedNames} بعد استلام العربون.`,
+      `✅ [Moyasar] تم تأكيد حجز ${combinedNames} لصالون ${tenant.salonName} بعد استلام العربون!`,
     );
-
     return res.status(200).send("Webhook processed successfully");
   } catch (error) {
-    console.error("STC Bank Webhook Error:", error.message);
+    console.error(
+      "❌ Moyasar Webhook Error:",
+      error.response?.data || error.message,
+    );
     return res
       .status(error.statusCode || 500)
-      .send(error.message || "Internal Server Error");
+      .send(error.statusCode ? error.message : "Internal Server Error");
   }
 };
 
-module.exports = { getInvoiceData, moyasarWebhook, stcBankWebhook };
+module.exports = { getInvoiceData, moyasarWebhook };
