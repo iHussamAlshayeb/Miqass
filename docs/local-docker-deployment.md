@@ -23,11 +23,13 @@ After local health checks pass, start the public tunnel:
 .\scripts\start-local.ps1 -Public
 ```
 
-Cron jobs are disabled by default to prevent duplicate reminders and campaigns while the Render service is still running. Only after Render has been stopped, recreate the local app with cron enabled:
+Docker is the only runtime (Render has been retired), so cron jobs (reminders, campaigns, review requests) are enabled by default. To start the app without them, for example while testing against production data, pass `-DisableCron`:
 
 ```powershell
-.\scripts\start-local.ps1 -Public -EnableCron
+.\scripts\start-local.ps1 -DisableCron
 ```
+
+Only one running instance should have cron enabled at a time, otherwise customers receive duplicate messages.
 
 ## Status and stop
 

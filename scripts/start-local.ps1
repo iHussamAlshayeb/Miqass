@@ -1,5 +1,7 @@
 param(
   [switch]$Public,
+  [switch]$DisableCron,
+  # Kept for backward compatibility; cron jobs are now enabled by default.
   [switch]$EnableCron
 )
 
@@ -15,7 +17,7 @@ if ($Public -and -not (Test-Path -LiteralPath ".cloudflared\tunnel.env")) {
   throw "Cloudflare tunnel credentials are missing."
 }
 
-$env:MIQASS_DISABLE_CRON_JOBS = if ($EnableCron) { "false" } else { "true" }
+$env:MIQASS_DISABLE_CRON_JOBS = if ($DisableCron) { "true" } else { "false" }
 
 docker compose config --quiet
 docker compose up -d --build app
@@ -47,6 +49,8 @@ if ($Public) {
 
 docker compose --profile public ps
 Write-Host "Miqass is healthy at http://127.0.0.1:15000" -ForegroundColor Green
-if (-not $EnableCron) {
-  Write-Host "Background cron jobs are disabled until Render is stopped." -ForegroundColor Yellow
+if ($DisableCron) {
+  Write-Host "Background cron jobs are DISABLED (reminders, campaigns and review requests will not run)." -ForegroundColor Yellow
+} else {
+  Write-Host "Background cron jobs are enabled." -ForegroundColor Green
 }
