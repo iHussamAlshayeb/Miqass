@@ -4,17 +4,40 @@ const Service = require("../models/Service");
 const Review = require("../models/Review");
 const { normalizeBarberLeaves } = require("../utils/barberLeave");
 
+// قائمة سماح: هذا المسار عام (صفحة الحجز والكشك وبوابة الحلاق)،
+// فلا يُرجع إلا ما تحتاجه هذه الصفحات. أي حقل جديد في Tenant يبقى مخفياً افتراضياً.
+const PUBLIC_TENANT_FIELDS = [
+  "_id",
+  "salonName",
+  "slug",
+  "ownerName",
+  "bio",
+  "socialLinks",
+  "branding",
+  "settings.startTime",
+  "settings.endTime",
+  "settings.slotDuration",
+  "settings.breakStart",
+  "settings.breakEnd",
+  "settings.closedDates",
+  "settings.maxBookingDate",
+  "settings.locationUrl",
+  "settings.isLoyaltyEnabled",
+  "settings.loyaltyVisitsRequired",
+  "whatsappSettings.isEnabled",
+  "paymentSettings.isOnlinePaymentEnabled",
+  "paymentSettings.depositAmount",
+].join(" ");
+
 const getTenantBySlug = async (req, res) => {
   try {
-    const { slug } = req.params;
+    const slug = String(req.params.slug || "");
 
     const tenant = await Tenant.findOne({
       slug,
       "subscription.status": "Active",
     })
-      .select(
-        "-password -email -resetPasswordToken -resetPasswordExpires -taxSettings.zatcaCredentials -taxSettings.zakaty -invoiceCounter -whatsappSettings.webhookSecret -paymentSettings.moyasarSecretKey",
-      )
+      .select(PUBLIC_TENANT_FIELDS)
       .lean();
 
     if (!tenant)
@@ -22,6 +45,9 @@ const getTenantBySlug = async (req, res) => {
         .status(404)
         .json({ message: "الصالون غير موجود أو أن اشتراكه منتهي." });
 
+    tenant.whatsappSettings = {
+      isEnabled: Boolean(tenant.whatsappSettings?.isEnabled),
+    };
     tenant.paymentSettings = {
       isOnlinePaymentEnabled:
         tenant.paymentSettings?.isOnlinePaymentEnabled || false,
@@ -60,4 +86,4 @@ const getTenantBySlug = async (req, res) => {
   }
 };
 
-module.exports = { getTenantBySlug };
+module.exports = { getTenantBySlug, PUBLIC_TENANT_FIELDS };
