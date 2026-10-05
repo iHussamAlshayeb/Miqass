@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CalendarDays, Check, Clock3, LoaderCircle, RefreshCw, Scissors, X } from 'lucide-react';
+import { CalendarDays, Check, Clock3, LoaderCircle, RefreshCw, Scissors, Users, X } from 'lucide-react';
 import API from '../../services/api';
 import { formatTime12Hour, getLocalDate, getTimePeriod } from '../../utils/helpers';
 
@@ -10,7 +10,10 @@ const statusLabels = {
     Cancelled: 'ملغي',
 };
 
-const CustomerAppointments = ({ tenant, onClose, initialPhone = '', onVerified }) => {
+// mode='names': تحقق فقط لجلب الأسماء المحفوظة أثناء الحجز، ثم تُغلق النافذة دون عرض المواعيد
+const CustomerAppointments = ({ tenant, onClose, initialPhone = '', onVerified, mode = 'appointments' }) => {
+    const namesOnly = mode === 'names';
+    const title = namesOnly ? 'الأسماء المحفوظة' : 'مواعيدي';
     const [phone, setPhone] = useState(initialPhone);
     const [code, setCode] = useState('');
     const [stage, setStage] = useState('phone');
@@ -90,6 +93,11 @@ const CustomerAppointments = ({ tenant, onClose, initialPhone = '', onVerified }
             const response = await API.post('/appointments/customer/verify-code', {
                 tenantId: tenant._id, phone, code,
             });
+            if (namesOnly) {
+                onVerified?.({ token: response.data.token, phone });
+                onClose();
+                return;
+            }
             await loadAppointments(response.data.token);
             setToken(response.data.token);
             onVerified?.({ token: response.data.token, phone });
@@ -131,9 +139,9 @@ const CustomerAppointments = ({ tenant, onClose, initialPhone = '', onVerified }
 
     return (
         <div className="fixed inset-0 z-[90] flex items-end justify-center bg-slate-950/60 p-0 sm:items-center sm:p-4" dir="rtl" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-            <div className="flex max-h-[94vh] w-full max-w-lg flex-col rounded-t-lg bg-white shadow-2xl sm:rounded-lg" role="dialog" aria-modal="true" aria-label="مواعيدي">
+            <div className="flex max-h-[94vh] w-full max-w-lg flex-col rounded-t-lg bg-white shadow-2xl sm:rounded-lg" role="dialog" aria-modal="true" aria-label={title}>
                 <header className="flex shrink-0 items-center justify-between border-b border-slate-200 px-5 py-4">
-                    <div className="flex items-center gap-2 text-slate-900"><CalendarDays size={20} /><h2 className="text-lg font-black">مواعيدي</h2></div>
+                    <div className="flex items-center gap-2 text-slate-900">{namesOnly ? <Users size={20} /> : <CalendarDays size={20} />}<h2 className="text-lg font-black">{title}</h2></div>
                     <button type="button" onClick={onClose} aria-label="إغلاق" className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100" title="إغلاق"><X size={19} /></button>
                 </header>
 
@@ -143,7 +151,7 @@ const CustomerAppointments = ({ tenant, onClose, initialPhone = '', onVerified }
 
                     {stage === 'phone' && (
                         <form onSubmit={sendCode} className="space-y-4">
-                            <p className="text-sm leading-6 text-slate-600">أدخل رقم الجوال المستخدم في الحجز، وسنرسل لك رمز تحقق عبر واتساب.</p>
+                            <p className="text-sm leading-6 text-slate-600">{namesOnly ? 'سنرسل رمز تحقق عبر واتساب إلى رقمك لعرض الأسماء المحفوظة عليه.' : 'أدخل رقم الجوال المستخدم في الحجز، وسنرسل لك رمز تحقق عبر واتساب.'}</p>
                             <label className="block text-sm font-bold text-slate-800">رقم الجوال
                                 <input type="tel" inputMode="numeric" autoComplete="tel" dir="ltr" maxLength={10} value={phone} onChange={(event) => setPhone(event.target.value.replace(/\D/g, ''))} placeholder="05xxxxxxxx" className="mt-2 h-11 w-full rounded-lg border border-slate-300 px-3 text-left outline-none focus:border-slate-900" />
                             </label>
@@ -157,7 +165,7 @@ const CustomerAppointments = ({ tenant, onClose, initialPhone = '', onVerified }
                             <label className="block text-sm font-bold text-slate-800">رمز التحقق
                                 <input type="text" inputMode="numeric" autoComplete="one-time-code" dir="ltr" maxLength={6} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))} placeholder="000000" className="mt-2 h-11 w-full rounded-lg border border-slate-300 px-3 text-center text-xl tracking-widest outline-none focus:border-slate-900" />
                             </label>
-                            <button type="submit" disabled={busy || code.length !== 6} className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-slate-900 font-black text-white disabled:opacity-50">{busy && <LoaderCircle size={17} className="animate-spin" />} عرض المواعيد</button>
+                            <button type="submit" disabled={busy || code.length !== 6} className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-slate-900 font-black text-white disabled:opacity-50">{busy && <LoaderCircle size={17} className="animate-spin" />} {namesOnly ? 'عرض الأسماء' : 'عرض المواعيد'}</button>
                             <div className="flex items-center justify-between text-sm font-bold">
                                 <button type="button" onClick={() => { setStage('phone'); setCode(''); setError(''); }} className="text-slate-600 underline">تغيير الرقم</button>
                                 <button type="button" onClick={sendCode} disabled={busy} className="text-slate-900 underline disabled:opacity-50">إعادة إرسال الرمز</button>

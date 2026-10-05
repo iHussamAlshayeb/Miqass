@@ -67,6 +67,7 @@ const BookingScreen = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [showMyAppointments, setShowMyAppointments] = useState(false);
     const [myAppointmentsPhone, setMyAppointmentsPhone] = useState('');
+    const [myAppointmentsMode, setMyAppointmentsMode] = useState('appointments');
     // توكن التحقق برمز الجوال (صالح 20 دقيقة) — يسمح بعرض أسماء الأطفال المحفوظة
     const [customerAccess, setCustomerAccess] = useState(null);
     const [childrenNames, setChildrenNames] = useState(['']);
@@ -693,7 +694,7 @@ const BookingScreen = () => {
                 savedChildren={savedChildren}
                 onRequestSavedNames={
                     loyaltyVisits > 0 && savedChildren.length === 0 && tenantData?.whatsappSettings?.isEnabled
-                        ? () => { setMyAppointmentsPhone(phone); setShowMyAppointments(true); }
+                        ? () => { setMyAppointmentsPhone(phone); setMyAppointmentsMode('names'); setShowMyAppointments(true); }
                         : null
                 }
                 handleBookingSubmit={handleBookingSubmit} isLoading={isLoading}
@@ -715,8 +716,9 @@ const BookingScreen = () => {
                 <CustomerAppointments
                     tenant={tenantData}
                     initialPhone={myAppointmentsPhone}
+                    mode={myAppointmentsMode}
                     onVerified={setCustomerAccess}
-                    onClose={() => { setShowMyAppointments(false); setMyAppointmentsPhone(''); }}
+                    onClose={() => { setShowMyAppointments(false); setMyAppointmentsPhone(''); setMyAppointmentsMode('appointments'); }}
                 />
             )}
 
