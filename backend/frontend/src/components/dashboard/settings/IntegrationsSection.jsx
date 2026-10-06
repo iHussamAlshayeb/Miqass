@@ -20,16 +20,14 @@ const WHATSAPP_MESSAGE_TYPES = [
 ];
 
 const IntegrationsSection = ({
+    part = 'all',
     whatsappTemplates,
     setWhatsappTemplates,
     whatsappTemplateDefaults,
     activeMessageType,
-    activeSettingsTab,
     currentPlan,
     handleConnectWhatsapp,
     handleDisconnectWhatsapp,
-    handleSaveTemplates,
-    isSavingTemplates,
     isWaLoading,
     qrCode,
     whatsiInfo,
@@ -43,17 +41,10 @@ const IntegrationsSection = ({
     setTemplateSaved,
     setUpsellConfig,
     templateError,
-    templateSaved,
     waStatus,
 }) => (
-    <section role="tabpanel" data-settings-tab="integrations" className={`${activeSettingsTab === 'integrations' ? 'block' : 'hidden'} bg-white p-5 md:p-7 rounded-lg shadow-sm border border-slate-100`}>
-        <div className="flex justify-between items-center mb-6">
-            <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
-                ربط الواتساب الآلي
-            </h3>
-        </div>
-
-        {currentPlan === 'Free' ? (
+    <section className="bg-white p-5 md:p-7 rounded-lg shadow-sm border border-slate-100">
+        {part !== 'templates' && (currentPlan === 'Free' ? (
             <div onClick={() => setUpsellConfig({ isOpen: true, featureName: 'الواتساب الآلي (تأكيد وتذكير)', requiredPlan: 'Pro' })} className="bg-slate-50 border border-slate-200 p-8 rounded-lg text-center group cursor-pointer hover:border-emerald-200 transition-all">
                 <div className="w-16 h-16 bg-white text-slate-400 rounded-lg flex items-center justify-center mx-auto mb-4 shadow-sm border border-slate-100 group-hover:text-emerald-600 transition-colors">
                     <MessageCircle size={26} />
@@ -146,14 +137,12 @@ const IntegrationsSection = ({
                     </div>
                 );
             })()
-        )}
-        {currentPlan !== 'Free' && Object.keys(whatsappTemplateDefaults || {}).length > 0 && (
-            <div className="mt-8 border-t border-slate-200 pt-6">
-                <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
-                    <h4 className="text-base font-black text-slate-800">رسائل واتساب الآلية</h4>
-                    <button type="button" onClick={handleSaveTemplates} disabled={isSavingTemplates} className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-4 py-2.5 rounded-md text-sm font-bold">
-                        <Save size={16} />{isSavingTemplates ? 'جاري الحفظ...' : 'حفظ الرسائل'}
-                    </button>
+        ))}
+        {part !== 'connection' && currentPlan !== 'Free' && Object.keys(whatsappTemplateDefaults || {}).length > 0 && (
+            <div>
+                <div className="mb-4">
+                    <h4 className="text-base font-black text-slate-800">نصوص الرسائل</h4>
+                    <p className="mt-1 text-xs font-bold text-slate-500">اختر الرسالة لتعديل نصها. المتغيرات بين الأقواس تُستبدل تلقائياً عند الإرسال.</p>
                 </div>
                 <div className="flex gap-2 overflow-x-auto pb-2 mb-4" role="tablist" aria-label="أنواع رسائل واتساب">
                     {WHATSAPP_MESSAGE_TYPES.map(({ key, label }) => (
@@ -171,7 +160,6 @@ const IntegrationsSection = ({
                     </div>
                 ))}
                 {templateError && <p role="alert" className="mt-3 text-sm font-bold text-red-600">{templateError}</p>}
-                {templateSaved && <p role="status" className="mt-3 text-sm font-bold text-emerald-700">تم حفظ الرسائل.</p>}
             </div>
         )}
     </section>

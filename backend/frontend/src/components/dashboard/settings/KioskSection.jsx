@@ -3,7 +3,7 @@ import { Copy, LockKeyhole, RefreshCw, Tablet } from 'lucide-react';
 import API from '../../../services/api';
 
 // إعدادات الكشك: قفله على الأجهزة المفعّلة، ورمز التفعيل الذي يكتبه الموظف في شاشة الكشك
-const KioskSection = ({ activeSettingsTab, currentPlan }) => {
+const KioskSection = ({ currentPlan }) => {
     const isPremium = currentPlan === 'Premium';
     const [settings, setSettings] = useState(null);
     const [busy, setBusy] = useState(false);
@@ -58,9 +58,9 @@ const KioskSection = ({ activeSettingsTab, currentPlan }) => {
     };
 
     return (
-        <section data-settings-tab="booking" className={`${activeSettingsTab === 'booking' ? 'block' : 'hidden'} mt-6 bg-white p-5 md:p-7 rounded-lg shadow-sm border border-slate-100`}>
+        <section className="bg-white p-5 md:p-7 rounded-lg shadow-sm border border-slate-100">
             <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
-                <Tablet size={18} /> الكشك داخل الصالون
+                <Tablet size={18} /> القفل ورمز التفعيل
             </h3>
 
             {!isPremium ? (

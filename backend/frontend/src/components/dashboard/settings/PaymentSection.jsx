@@ -8,11 +8,10 @@ const MotionDiv = Motion.div;
 const PaymentSection = ({
     paymentSettings,
     setPaymentSettings,
-    activeSettingsTab,
     currentPlan,
     setUpsellConfig,
 }) => (
-    <section role="tabpanel" data-settings-tab="finance" className={`${activeSettingsTab === 'finance' ? 'block' : 'hidden'} bg-white p-5 md:p-7 rounded-lg shadow-sm border border-slate-100`}>
+    <section className="bg-white p-5 md:p-7 rounded-lg shadow-sm border border-slate-100">
         <div className="flex justify-between items-center mb-6 border-b border-slate-50 pb-4">
             <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
                 إعدادات الدفع المسبق (العربون)
@@ -71,12 +70,6 @@ const PaymentSection = ({
                                     </div>
                                 </div>
 
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 mb-2">مزود الدفع</label>
-                                    <div className="w-full p-3 bg-white border border-slate-200 rounded-lg font-black text-slate-800 text-sm">
-                                        ميسر (Moyasar)
-                                    </div>
-                                </div>
                             </div>
 
                             <div>

@@ -1,14 +1,22 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 const MotionDiv = motion.div;
 import {
     CircleDollarSign,
     Clock3,
-    Palette,
-    Plug,
+    Copy,
+    CreditCard,
+    ExternalLink,
+    MessageCircle,
+    Monitor,
+    Receipt,
+    RotateCcw,
     Save,
     Scissors,
-    Sparkles,
+    Send,
+    Store,
+    Tablet,
+    Users,
 } from 'lucide-react';
 import API from '../../services/api';
 import UpgradeModal from './UpgradeModal';
@@ -21,58 +29,65 @@ import KioskSection from './settings/KioskSection';
 import TeamSection from './settings/TeamSection';
 import PaymentSection from './settings/PaymentSection';
 import IntegrationsSection from './settings/IntegrationsSection';
+import BillingTab from './BillingTab';
 import { buildLeavePeriod } from './settings/barberLeaveOptions';
 
-const SETTINGS_TABS = [
+// صفحات الإعدادات مجمّعة حسب ما يبحث عنه صاحب الصالون، لا حسب بنية النظام
+const SETTINGS_GROUPS = [
     {
-        id: 'identity',
-        label: 'الهوية',
-        description: 'بيانات المنشأة ومظهر صفحة الحجز',
-        icon: Palette,
-        activeClass: 'border-blue-500 bg-blue-50 text-blue-700',
-        iconClass: 'bg-blue-100 text-blue-700',
+        label: 'الصالون',
+        pages: [
+            { id: 'profile', label: 'الملف التعريفي', icon: Store, description: 'الاسم والشعار والألوان والنبذة وبيانات التواصل الظاهرة في صفحة الحجز.' },
+            { id: 'hours', label: 'ساعات العمل', icon: Clock3, description: 'الدوام والاستراحة وأيام الإغلاق، وآخر تاريخ يُسمح بالحجز فيه.' },
+        ],
     },
     {
-        id: 'booking',
-        label: 'الحجز',
-        description: 'ساعات العمل والاستراحات وأيام الإغلاق',
-        icon: Clock3,
-        activeClass: 'border-amber-500 bg-amber-50 text-amber-700',
-        iconClass: 'bg-amber-100 text-amber-700',
-    },
-    {
-        id: 'team',
         label: 'الفريق والخدمات',
-        description: 'الحلاقون والإجازات والخدمات والأسعار',
-        icon: Scissors,
-        activeClass: 'border-emerald-500 bg-emerald-50 text-emerald-700',
-        iconClass: 'bg-emerald-100 text-emerald-700',
+        pages: [
+            { id: 'barbers', label: 'الحلاقون', icon: Users, description: 'الحلاقون وألوانهم في صفحة الحجز ورموز دخولهم وإجازاتهم.' },
+            { id: 'services', label: 'الخدمات', icon: Scissors, description: 'الخدمات وأسعارها شاملة الضريبة ومدة كل خدمة.' },
+        ],
     },
     {
-        id: 'finance',
-        label: 'الدفع والفوترة',
-        description: 'العربون والدفع الإلكتروني والفوترة الضريبية',
-        icon: CircleDollarSign,
-        activeClass: 'border-indigo-500 bg-indigo-50 text-indigo-700',
-        iconClass: 'bg-indigo-100 text-indigo-700',
+        label: 'التواصل مع العملاء',
+        pages: [
+            { id: 'whatsapp', label: 'واتساب', icon: MessageCircle, description: 'ربط رقم واتساب الصالون الذي تُرسل منه الرسائل للعملاء.' },
+            { id: 'messages', label: 'الرسائل التلقائية', icon: Send, description: 'التأكيد والتذكير والإلغاء تُرسل دائماً عند ربط واتساب. هنا تشغّل الرسائل الإضافية وتعدّل نصوص الرسائل.' },
+        ],
     },
     {
-        id: 'marketing',
-        label: 'التسويق',
-        description: 'التقييمات والولاء وإعادة الاستهداف',
-        icon: Sparkles,
-        activeClass: 'border-rose-500 bg-rose-50 text-rose-700',
-        iconClass: 'bg-rose-100 text-rose-700',
+        label: 'المدفوعات والضرائب',
+        pages: [
+            { id: 'deposit', label: 'العربون', icon: CircleDollarSign, description: 'تحصيل عربون عند الحجز عبر حساب ميسر الخاص بالصالون.' },
+            { id: 'einvoice', label: 'الفوترة الإلكترونية', icon: Receipt, description: 'إرسال فواتير المبيعات لهيئة الزكاة والضريبة والجمارك عبر Zakaty.' },
+        ],
     },
     {
-        id: 'integrations',
-        label: 'الربط',
-        description: 'ربط واتساب ومتابعة حالة الاتصال',
-        icon: Plug,
-        activeClass: 'border-teal-500 bg-teal-50 text-teal-700',
-        iconClass: 'bg-teal-100 text-teal-700',
+        label: 'الأجهزة',
+        pages: [
+            { id: 'kiosk', label: 'الكشك', icon: Tablet, description: 'جهاز تسجيل الحضور والحلاقة المباشرة داخل الصالون.' },
+            { id: 'screens', label: 'الطابور وبوابة الحلاقين', icon: Monitor, description: 'شاشة الطابور على تلفزيون الصالون، وبوابة دخول الحلاقين لمواعيدهم.' },
+        ],
+    },
+    {
+        label: 'الحساب',
+        pages: [
+            { id: 'plan', label: 'الاشتراك', icon: CreditCard, description: 'الباقة الحالية وتاريخ التجديد والترقية.' },
+        ],
     },
 ];
+
+const SETTINGS_PAGES = SETTINGS_GROUPS.flatMap((group) => group.pages);
+
+// الصفحات التي تُحفظ عبر شريط الحفظ (حقول نموذج)، والبقية إجراءات فورية (ربط وفك ربط)
+const FORM_PAGES = new Set(['profile', 'hours', 'barbers', 'services', 'messages', 'deposit']);
+
+const PageCard = ({ title, children }) => (
+    <section className="rounded-lg border border-slate-100 bg-white p-5 shadow-sm md:p-7">
+        {title && <h3 className="mb-4 text-base font-black text-slate-800">{title}</h3>}
+        {children}
+    </section>
+);
 
 const SettingsTab = ({
     salonName, setSalonName,
@@ -90,14 +105,15 @@ const SettingsTab = ({
     bio, setBio,
     socialLinks, setSocialLinks,
     themeColors, setThemeColors,
-    paymentSettings, setPaymentSettings
-    ,whatsappTemplates, setWhatsappTemplates, whatsappTemplateDefaults
+    paymentSettings, setPaymentSettings,
+    whatsappTemplates, setWhatsappTemplates, whatsappTemplateDefaults,
+    slug, tenantId, campaignCredits, promoBanner, initialPage,
 }) => {
 
     const [newBarberName, setNewBarberName] = useState('');
     const [newBarberPin, setNewBarberPin] = useState('');
     const [leaveDrafts, setLeaveDrafts] = useState({});
-    const [activeSettingsTab, setActiveSettingsTab] = useState('identity');
+    const [activePage, setActivePage] = useState(SETTINGS_PAGES.some((page) => page.id === initialPage) ? initialPage : 'profile');
     const [qrCode, setQrCode] = useState('');
     const [whatsiInfo, setWhatsiInfo] = useState(null);
     const [waProvider, setWaProvider] = useState('');
@@ -108,12 +124,90 @@ const SettingsTab = ({
     const [activeMessageType, setActiveMessageType] = useState('confirmation');
     const [isSavingTemplates, setIsSavingTemplates] = useState(false);
     const [templateError, setTemplateError] = useState('');
-    const [templateSaved, setTemplateSaved] = useState(false);
 
     const [upsellConfig, setUpsellConfig] = useState({ isOpen: false, featureName: '', requiredPlan: '' });
     const currentPlan = subscription?.plan || 'Free';
     const fileInputRef = useRef(null);
-    const activeTab = SETTINGS_TABS.find((tab) => tab.id === activeSettingsTab) || SETTINGS_TABS[0];
+    const activePageInfo = SETTINGS_PAGES.find((page) => page.id === activePage) || SETTINGS_PAGES[0];
+
+    // ─── شريط الحفظ: يظهر فقط عند وجود تغييرات غير محفوظة ───
+    const formState = { salonName, ownerName, ownerPhone, logoUrl, settings, bio, socialLinks, themeColors, barbers, services, paymentSettings };
+    const [savedForm, setSavedForm] = useState(() => formState);
+    const [savedTemplates, setSavedTemplates] = useState(() => whatsappTemplates || {});
+    const [saveFeedback, setSaveFeedback] = useState(null);
+    const isFormDirty = JSON.stringify(formState) !== JSON.stringify(savedForm);
+    const areTemplatesDirty = JSON.stringify(whatsappTemplates || {}) !== JSON.stringify(savedTemplates);
+    const isDirty = isFormDirty || areTemplatesDirty;
+
+    const discardChanges = () => {
+        setSalonName(savedForm.salonName);
+        setOwnerName(savedForm.ownerName);
+        setOwnerPhone(savedForm.ownerPhone);
+        setLogoUrl(savedForm.logoUrl);
+        setSettings(savedForm.settings);
+        setBio(savedForm.bio);
+        setSocialLinks(savedForm.socialLinks);
+        setThemeColors(savedForm.themeColors);
+        setBarbers(savedForm.barbers);
+        setServices(savedForm.services);
+        setPaymentSettings(savedForm.paymentSettings);
+        setWhatsappTemplates(savedTemplates);
+        setTemplateError('');
+        setSaveFeedback(null);
+    };
+
+    const saveAllChanges = async (event) => {
+        event?.preventDefault();
+        setSaveFeedback(null);
+        if (isFormDirty) {
+            const result = await handleSaveSettings();
+            if (!result?.ok) {
+                setSaveFeedback({ ok: false, text: result?.message || 'تعذر حفظ التغييرات.' });
+                return;
+            }
+            setSavedForm({
+                ...formState,
+                barbers: result.barbers || formState.barbers,
+                paymentSettings: result.paymentSettings || formState.paymentSettings,
+            });
+        }
+        if (areTemplatesDirty) {
+            const templatesSaved = await handleSaveTemplates();
+            if (!templatesSaved) {
+                setSaveFeedback({ ok: false, text: 'تعذر حفظ نصوص الرسائل. راجع النص وحاول مرة أخرى.' });
+                return;
+            }
+        }
+        setSaveFeedback({ ok: true, text: 'تم حفظ التغييرات.' });
+        setTimeout(() => setSaveFeedback((current) => (current?.ok ? null : current)), 3000);
+    };
+
+    // ─── الأجهزة: فتح الكشك على هذا الجهاز ونسخ الروابط ───
+    const isPremium = currentPlan === 'Premium';
+    const openKioskOnThisDevice = async () => {
+        if (!isPremium) {
+            setUpsellConfig({ isOpen: true, featureName: 'وضع الكشك', requiredPlan: 'Premium' });
+            return;
+        }
+        const kioskWindow = window.open('', '_blank');
+        try {
+            const res = await API.post('/appointments/kiosk/activate');
+            const url = `/kiosk/${slug}#activate=${encodeURIComponent(res.data.token)}`;
+            if (kioskWindow) kioskWindow.location.href = url;
+            else window.location.href = url;
+        } catch {
+            kioskWindow?.close();
+            alert('تعذر فتح الكشك، حاول مرة أخرى.');
+        }
+    };
+    const [copiedLink, setCopiedLink] = useState('');
+    const copyDeviceLink = async (key, url) => {
+        try {
+            await navigator.clipboard.writeText(url);
+            setCopiedLink(key);
+            setTimeout(() => setCopiedLink(''), 2000);
+        } catch { setCopiedLink(''); }
+    };
 
     // يطبق بيانات الربط القادمة من أي وسيط (WaSender: جلسة + QR، Whatsi: مفتاح API + حالة الرقم)
     const applyWaSession = (session) => {
@@ -246,14 +340,15 @@ const SettingsTab = ({
 
     const handleSaveTemplates = async () => {
         setTemplateError('');
-        setTemplateSaved(false);
         setIsSavingTemplates(true);
         try {
             const res = await API.put('/appointments/settings/whatsapp/templates', { templates: whatsappTemplates });
             setWhatsappTemplates(res.data.templates);
-            setTemplateSaved(true);
+            setSavedTemplates(res.data.templates);
+            return true;
         } catch (error) {
             setTemplateError(error.response?.data?.message || 'تعذر حفظ الرسائل. حاول مرة أخرى.');
+            return false;
         } finally {
             setIsSavingTemplates(false);
         }
@@ -317,184 +412,248 @@ const SettingsTab = ({
         }));
     };
 
+    const pageHidden = (id) => activePage !== id;
+    const isSaving = isSavingSettings || isSavingTemplates;
+    const bookingUrl = `https://www.miqass.app/${slug}`;
+    const tvUrl = `https://www.miqass.app/tv/${slug}`;
+    const staffUrl = `https://www.miqass.app/barber/${slug}`;
+
     return (
-        <MotionDiv initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-5 pb-28 relative">
-
-            <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm">
-                <div className="flex items-center justify-between gap-4 p-4 sm:p-5 border-b border-slate-100">
-                    <div className="flex items-center gap-3 min-w-0">
-                        <div className={`w-11 h-11 shrink-0 rounded-lg flex items-center justify-center ${activeTab.iconClass}`}>
-                            {React.createElement(activeTab.icon, { size: 20 })}
-                        </div>
-                        <div className="min-w-0">
-                            <h2 className="text-xl sm:text-2xl font-black text-slate-800">إعدادات المنشأة</h2>
-                            <p className="text-xs sm:text-sm font-bold text-slate-500 mt-1 truncate">{activeTab.description}</p>
-                        </div>
+        <MotionDiv initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="pb-28">
+            <div className="grid gap-5 lg:grid-cols-[240px_1fr]">
+                {/* قائمة صفحات الإعدادات */}
+                <nav aria-label="صفحات الإعدادات" className="lg:sticky lg:top-4 lg:self-start">
+                    <label className="block lg:hidden">
+                        <span className="sr-only">صفحة الإعدادات</span>
+                        <select value={activePage} onChange={(event) => setActivePage(event.target.value)} className="w-full rounded-lg border border-slate-200 bg-white p-3 text-sm font-black text-slate-800">
+                            {SETTINGS_GROUPS.map((group) => (
+                                <optgroup key={group.label} label={group.label}>
+                                    {group.pages.map((page) => <option key={page.id} value={page.id}>{page.label}</option>)}
+                                </optgroup>
+                            ))}
+                        </select>
+                    </label>
+                    <div className="hidden rounded-lg border border-slate-200 bg-white p-2 lg:block">
+                        {SETTINGS_GROUPS.map((group) => (
+                            <div key={group.label} className="py-1.5">
+                                <p className="px-3 pb-1 pt-2 text-[11px] font-black text-slate-400">{group.label}</p>
+                                {group.pages.map((page) => {
+                                    const PageIcon = page.icon;
+                                    const isActive = page.id === activePage;
+                                    return (
+                                        <button
+                                            key={page.id}
+                                            type="button"
+                                            aria-current={isActive ? 'page' : undefined}
+                                            onClick={() => setActivePage(page.id)}
+                                            className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-right text-sm font-bold transition-colors ${isActive ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
+                                        >
+                                            <PageIcon size={16} className="shrink-0" />
+                                            {page.label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        ))}
                     </div>
-                    <span className="hidden sm:inline-flex shrink-0 items-center rounded-md bg-slate-100 px-3 py-1.5 text-[11px] font-black text-slate-600">
-                        {activeTab.label}
-                    </span>
-                </div>
+                </nav>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6" role="tablist" aria-label="أقسام الإعدادات">
-                    {SETTINGS_TABS.map((tab) => {
-                        const TabIcon = tab.icon;
-                        const isActive = activeSettingsTab === tab.id;
-                        return (
-                            <button
-                                key={tab.id}
-                                type="button"
-                                role="tab"
-                                aria-selected={isActive}
-                                onClick={() => setActiveSettingsTab(tab.id)}
-                                className={`min-h-20 px-3 py-3 border-b-2 flex flex-col items-center justify-center gap-2 text-center transition-colors ${isActive
-                                    ? tab.activeClass
-                                    : 'border-transparent bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}
-                            >
-                                <TabIcon size={18} />
-                                <span className="text-xs font-black leading-tight">{tab.label}</span>
+                <div className="min-w-0 space-y-4">
+                    <header className="rounded-lg border border-slate-200 bg-white p-5">
+                        <h2 className="text-xl font-black text-slate-800">{activePageInfo.label}</h2>
+                        <p className="mt-1 text-sm font-bold leading-6 text-slate-500">{activePageInfo.description}</p>
+                    </header>
+
+                    <form
+                        id="settings-form"
+                        onSubmit={saveAllChanges}
+                        // إذا كان حقل غير مكتمل في صفحة أخرى، ننتقل إليها ليظهر سبب منع الحفظ
+                        onInvalidCapture={(event) => {
+                            const page = event.target.closest('[data-settings-page]');
+                            if (page && page.dataset.settingsPage !== activePage) setActivePage(page.dataset.settingsPage);
+                        }}
+                    >
+                        <div data-settings-page="profile" hidden={pageHidden('profile')}>
+                            <IdentitySection
+                                salonName={salonName} setSalonName={setSalonName}
+                                ownerName={ownerName} setOwnerName={setOwnerName}
+                                ownerPhone={ownerPhone} setOwnerPhone={setOwnerPhone}
+                                logoUrl={logoUrl} setLogoUrl={setLogoUrl}
+                                settings={settings} setSettings={setSettings}
+                                bio={bio} setBio={setBio}
+                                socialLinks={socialLinks} setSocialLinks={setSocialLinks}
+                                themeColors={themeColors} setThemeColors={setThemeColors}
+                                fileInputRef={fileInputRef}
+                                handleLogoUpload={handleLogoUpload}
+                            />
+                        </div>
+
+                        <div data-settings-page="hours" hidden={pageHidden('hours')}>
+                            <BookingHoursSection
+                                settings={settings} setSettings={setSettings}
+                                newClosedDate={newClosedDate} setNewClosedDate={setNewClosedDate}
+                            />
+                        </div>
+
+                        {['barbers', 'services'].map((part) => (
+                            <div key={part} data-settings-page={part} hidden={pageHidden(part)}>
+                                <TeamSection
+                                    part={part}
+                                    settings={settings}
+                                    barbers={barbers}
+                                    setBarbers={setBarbers}
+                                    services={services}
+                                    themeColors={themeColors}
+                                    currentPlan={currentPlan}
+                                    handleAddBarber={handleAddBarber}
+                                    handleAddBarberLeave={handleAddBarberLeave}
+                                    handleAddService={handleAddService}
+                                    handleRemoveBarberLeave={handleRemoveBarberLeave}
+                                    handleRemoveService={handleRemoveService}
+                                    handleServiceChange={handleServiceChange}
+                                    leaveDrafts={leaveDrafts}
+                                    newBarberName={newBarberName}
+                                    newBarberPin={newBarberPin}
+                                    setNewBarberName={setNewBarberName}
+                                    setNewBarberPin={setNewBarberPin}
+                                    setUpsellConfig={setUpsellConfig}
+                                    updateLeaveDraft={updateLeaveDraft}
+                                />
+                            </div>
+                        ))}
+
+                        <div data-settings-page="messages" hidden={pageHidden('messages')} className="space-y-4">
+                            <MarketingSection settings={settings} setSettings={setSettings} currentPlan={currentPlan} setUpsellConfig={setUpsellConfig} />
+                            <IntegrationsSection
+                                part="templates"
+                                whatsappTemplates={whatsappTemplates}
+                                setWhatsappTemplates={setWhatsappTemplates}
+                                whatsappTemplateDefaults={whatsappTemplateDefaults}
+                                activeMessageType={activeMessageType}
+                                currentPlan={currentPlan}
+                                setActiveMessageType={setActiveMessageType}
+                                setTemplateError={setTemplateError}
+                                setTemplateSaved={() => {}}
+                                setUpsellConfig={setUpsellConfig}
+                                templateError={templateError}
+                            />
+                        </div>
+
+                        <div data-settings-page="deposit" hidden={pageHidden('deposit')}>
+                            <PaymentSection
+                                paymentSettings={paymentSettings}
+                                setPaymentSettings={setPaymentSettings}
+                                currentPlan={currentPlan}
+                                setUpsellConfig={setUpsellConfig}
+                            />
+                        </div>
+                    </form>
+
+                    <div hidden={pageHidden('whatsapp')}>
+                        <IntegrationsSection
+                            part="connection"
+                            whatsappTemplates={whatsappTemplates}
+                            setWhatsappTemplates={setWhatsappTemplates}
+                            whatsappTemplateDefaults={whatsappTemplateDefaults}
+                            activeMessageType={activeMessageType}
+                            currentPlan={currentPlan}
+                            handleConnectWhatsapp={handleConnectWhatsapp}
+                            handleDisconnectWhatsapp={handleDisconnectWhatsapp}
+                            isWaLoading={isWaLoading}
+                            qrCode={qrCode}
+                            whatsiInfo={whatsiInfo}
+                            handleSaveWhatsi={handleSaveWhatsi}
+                            waProvider={waProvider}
+                            waProviders={waProviders}
+                            selectedWaProvider={selectedWaProvider}
+                            setSelectedWaProvider={setSelectedWaProvider}
+                            setActiveMessageType={setActiveMessageType}
+                            setTemplateError={setTemplateError}
+                            setTemplateSaved={() => {}}
+                            setUpsellConfig={setUpsellConfig}
+                            templateError={templateError}
+                            waStatus={waStatus}
+                        />
+                    </div>
+
+                    <div hidden={pageHidden('einvoice')}>
+                        <PageCard>
+                            <ZakatySection onTaxNumberSaved={setTaxNumber} />
+                        </PageCard>
+                    </div>
+
+                    <div hidden={pageHidden('kiosk')} className="space-y-4">
+                        <PageCard title="فتح الكشك على هذا الجهاز">
+                            <p className="text-sm font-bold leading-7 text-slate-500">
+                                إذا كنت على جهاز الكشك نفسه، افتحه من هنا ويتفعّل الجهاز مباشرة. لتفعيل جهاز آخر، استخدم رمز التفعيل أدناه.
+                            </p>
+                            <button type="button" onClick={openKioskOnThisDevice} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-black text-white hover:bg-slate-800">
+                                <ExternalLink size={15} /> فتح الكشك
                             </button>
-                        );
-                    })}
+                        </PageCard>
+                        <KioskSection currentPlan={currentPlan} />
+                    </div>
+
+                    <div hidden={pageHidden('screens')} className="space-y-4">
+                        {[
+                            { key: 'tv', title: 'شاشة الطابور', text: 'افتح الرابط على تلفزيون الصالون لعرض حالة كل كرسي والدور القادم. لا تُعرض أرقام العملاء.', url: tvUrl },
+                            { key: 'staff', title: 'بوابة الحلاقين', text: 'يدخل كل حلاق من هذا الرابط برمزه السري ليرى مواعيده ويسجّل إنهاء الخدمة. رموز الحلاقين في صفحة الحلاقون.', url: staffUrl },
+                        ].map((item) => (
+                            <PageCard key={item.key} title={item.title}>
+                                <p className="text-sm font-bold leading-7 text-slate-500">{item.text}</p>
+                                {isPremium ? (
+                                    <div className="mt-4 flex flex-wrap items-center gap-2">
+                                        <code dir="ltr" className="min-w-0 max-w-full truncate rounded-md bg-slate-100 px-3 py-2 text-xs text-slate-700">{item.url}</code>
+                                        <button type="button" onClick={() => copyDeviceLink(item.key, item.url)} className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-50">
+                                            <Copy size={13} /> {copiedLink === item.key ? 'تم النسخ' : 'نسخ'}
+                                        </button>
+                                        <a href={item.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-50">
+                                            <ExternalLink size={13} /> فتح
+                                        </a>
+                                    </div>
+                                ) : (
+                                    <button type="button" onClick={() => setUpsellConfig({ isOpen: true, featureName: item.title, requiredPlan: 'Premium' })} className="mt-4 rounded-md border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-black text-violet-700">
+                                        متاحة في الباقة المميزة
+                                    </button>
+                                )}
+                            </PageCard>
+                        ))}
+                        <PageCard title="رابط الحجز للعملاء">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <code dir="ltr" className="min-w-0 max-w-full truncate rounded-md bg-slate-100 px-3 py-2 text-xs text-slate-700">{bookingUrl}</code>
+                                <button type="button" onClick={() => copyDeviceLink('booking', bookingUrl)} className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-50">
+                                    <Copy size={13} /> {copiedLink === 'booking' ? 'تم النسخ' : 'نسخ'}
+                                </button>
+                            </div>
+                        </PageCard>
+                    </div>
+
+                    {activePage === 'plan' && (
+                        <BillingTab subscription={subscription} tenantId={tenantId} campaignCredits={campaignCredits} promoBanner={promoBanner} />
+                    )}
                 </div>
             </div>
 
-            <form
-                id="settings-form"
-                onSubmit={handleSaveSettings}
-                // إذا كان الحقل غير المكتمل في تبويب مخفي، ننتقل إليه حتى يظهر سبب منع الحفظ
-                onInvalidCapture={(e) => {
-                    const panel = e.target.closest('[data-settings-tab]');
-                    if (panel && panel.dataset.settingsTab !== activeSettingsTab) {
-                        setActiveSettingsTab(panel.dataset.settingsTab);
-                    }
-                }}
-                className="space-y-4"
-            >
-
-                <IdentitySection
-                    salonName={salonName}
-                    setSalonName={setSalonName}
-                    ownerName={ownerName}
-                    setOwnerName={setOwnerName}
-                    ownerPhone={ownerPhone}
-                    setOwnerPhone={setOwnerPhone}
-                    logoUrl={logoUrl}
-                    setLogoUrl={setLogoUrl}
-                    settings={settings}
-                    setSettings={setSettings}
-                    bio={bio}
-                    setBio={setBio}
-                    socialLinks={socialLinks}
-                    setSocialLinks={setSocialLinks}
-                    themeColors={themeColors}
-                    setThemeColors={setThemeColors}
-                    activeSettingsTab={activeSettingsTab}
-                    fileInputRef={fileInputRef}
-                    handleLogoUpload={handleLogoUpload}
-                />
-
-                <BookingHoursSection
-                    settings={settings}
-                    setSettings={setSettings}
-                    newClosedDate={newClosedDate}
-                    setNewClosedDate={setNewClosedDate}
-                    activeSettingsTab={activeSettingsTab}
-                />
-
-                <KioskSection activeSettingsTab={activeSettingsTab} currentPlan={currentPlan} />
-
-                <div role="tabpanel" data-settings-tab="finance" className={activeSettingsTab === 'finance' ? 'block' : 'hidden'}>
-                    <ZakatySection onTaxNumberSaved={setTaxNumber} />
-                </div>
-
-                <TeamSection
-                    settings={settings}
-                    barbers={barbers}
-                    setBarbers={setBarbers}
-                    services={services}
-                    themeColors={themeColors}
-                    activeSettingsTab={activeSettingsTab}
-                    currentPlan={currentPlan}
-                    handleAddBarber={handleAddBarber}
-                    handleAddBarberLeave={handleAddBarberLeave}
-                    handleAddService={handleAddService}
-                    handleRemoveBarberLeave={handleRemoveBarberLeave}
-                    handleRemoveService={handleRemoveService}
-                    handleServiceChange={handleServiceChange}
-                    leaveDrafts={leaveDrafts}
-                    newBarberName={newBarberName}
-                    newBarberPin={newBarberPin}
-                    setNewBarberName={setNewBarberName}
-                    setNewBarberPin={setNewBarberPin}
-                    setUpsellConfig={setUpsellConfig}
-                    updateLeaveDraft={updateLeaveDraft}
-                />
-
-                <PaymentSection
-                    paymentSettings={paymentSettings}
-                    setPaymentSettings={setPaymentSettings}
-                    activeSettingsTab={activeSettingsTab}
-                    currentPlan={currentPlan}
-                    setUpsellConfig={setUpsellConfig}
-                />
-
-                <div role="tabpanel" data-settings-tab="marketing" className={activeSettingsTab === 'marketing' ? 'block' : 'hidden'}>
-                    <MarketingSection
-                        settings={settings}
-                        setSettings={setSettings}
-                        currentPlan={currentPlan}
-                        setUpsellConfig={setUpsellConfig}
-                    />
-                </div>
-
-                {activeSettingsTab !== 'integrations' && <div className="fixed bottom-4 sm:bottom-6 left-0 right-0 z-40 px-3 sm:px-4 md:pl-8 lg:pl-[20%] pointer-events-none">
-                    <div className="max-w-4xl mx-auto bg-white/80 backdrop-blur-xl border border-slate-200/50 p-4 rounded-lg shadow-2xl flex items-center justify-between pointer-events-auto">
-                        <div className="hidden sm:block text-right pr-4">
-                            <p className="text-sm font-black text-slate-800">حفظ إعدادات {activeTab.label}</p>
-                            <p className="text-[10px] font-bold text-slate-500">تُحفظ جميع التغييرات التي أجريتها في التبويبات.</p>
-                        </div>
-                        <button type="submit" disabled={isSavingSettings} className="w-full sm:w-auto bg-slate-900 text-white font-black px-10 py-4 rounded-lg hover:bg-blue-600 active:scale-95 transition-all disabled:opacity-50 shadow-lg text-sm flex items-center justify-center gap-2">
-                            {isSavingSettings ? (
-                                <span className="animate-pulse">جاري الحفظ...</span>
-                            ) : (
-                                <>
-                                    <Save size={16} />
-                                    <span>حفظ التحديثات</span>
-                                </>
-                            )}
-                        </button>
+            {/* شريط الحفظ الموحد */}
+            {(isDirty || saveFeedback) && (
+                <div className="fixed inset-x-0 bottom-4 z-40 px-3 sm:bottom-6 lg:pl-8 lg:pr-[34rem]" role="region" aria-label="حفظ التغييرات">
+                    <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3 shadow-2xl sm:p-4">
+                        <p role={saveFeedback && !saveFeedback.ok ? 'alert' : 'status'} className={`text-sm font-black ${saveFeedback ? (saveFeedback.ok ? 'text-emerald-700' : 'text-red-600') : 'text-slate-800'}`}>
+                            {saveFeedback?.text || (FORM_PAGES.has(activePage) ? 'لديك تغييرات غير محفوظة.' : 'لديك تغييرات غير محفوظة في صفحات أخرى.')}
+                        </p>
+                        {isDirty && (
+                            <div className="flex gap-2">
+                                <button type="button" onClick={discardChanges} disabled={isSaving} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-black text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+                                    <RotateCcw size={15} /> تراجع
+                                </button>
+                                <button type="submit" form="settings-form" disabled={isSaving} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-6 py-2.5 text-sm font-black text-white hover:bg-slate-800 disabled:opacity-50">
+                                    <Save size={15} /> {isSaving ? 'جاري الحفظ...' : 'حفظ'}
+                                </button>
+                            </div>
+                        )}
                     </div>
-                </div>}
-            </form>
-
-            <IntegrationsSection
-                whatsappTemplates={whatsappTemplates}
-                setWhatsappTemplates={setWhatsappTemplates}
-                whatsappTemplateDefaults={whatsappTemplateDefaults}
-                activeMessageType={activeMessageType}
-                activeSettingsTab={activeSettingsTab}
-                currentPlan={currentPlan}
-                handleConnectWhatsapp={handleConnectWhatsapp}
-                handleDisconnectWhatsapp={handleDisconnectWhatsapp}
-                handleSaveTemplates={handleSaveTemplates}
-                isSavingTemplates={isSavingTemplates}
-                isWaLoading={isWaLoading}
-                qrCode={qrCode}
-                whatsiInfo={whatsiInfo}
-                handleSaveWhatsi={handleSaveWhatsi}
-                waProvider={waProvider}
-                waProviders={waProviders}
-                selectedWaProvider={selectedWaProvider}
-                setSelectedWaProvider={setSelectedWaProvider}
-                setActiveMessageType={setActiveMessageType}
-                setTemplateError={setTemplateError}
-                setTemplateSaved={setTemplateSaved}
-                setUpsellConfig={setUpsellConfig}
-                templateError={templateError}
-                templateSaved={templateSaved}
-                waStatus={waStatus}
-            />
+                </div>
+            )}
 
             <UpgradeModal isOpen={upsellConfig.isOpen} onClose={() => setUpsellConfig({ ...upsellConfig, isOpen: false })} requiredPlan={upsellConfig.requiredPlan} featureName={upsellConfig.featureName} />
         </MotionDiv>

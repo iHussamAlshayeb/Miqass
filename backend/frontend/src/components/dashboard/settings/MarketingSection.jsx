@@ -49,7 +49,7 @@ const MarketingSection = ({ settings, setSettings, currentPlan, setUpsellConfig 
         <section className="bg-white p-4 sm:p-5 rounded-lg shadow-sm border border-slate-100">
             <div className="flex items-center gap-2 border-b border-slate-100 pb-4 mb-5">
                 <MousePointerClick size={18} className="text-slate-500" />
-                <h3 className="text-lg font-black text-slate-800">التسويق الذكي والولاء</h3>
+                <h3 className="text-lg font-black text-slate-800">رسائل إضافية</h3>
             </div>
 
             <div className="flex flex-col gap-4">

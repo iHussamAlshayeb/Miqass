@@ -9,12 +9,8 @@ const BookingHoursSection = ({
     setSettings,
     newClosedDate,
     setNewClosedDate,
-    activeSettingsTab,
 }) => (
-    <section role="tabpanel" data-settings-tab="booking" className={`${activeSettingsTab === 'booking' ? 'block' : 'hidden'} bg-white p-5 md:p-7 rounded-lg shadow-sm border border-slate-100`}>
-        <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-2 border-b border-slate-50 pb-4">
-            أوقات العمل والجدولة
-        </h3>
+    <section className="bg-white p-5 md:p-7 rounded-lg shadow-sm border border-slate-100">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <div>
                 <label className="block text-xs font-bold text-slate-500 mb-2">وقت الافتتاح</label>

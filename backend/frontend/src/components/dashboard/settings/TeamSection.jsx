@@ -11,12 +11,12 @@ import { WEEKDAY_OPTIONS, LEAVE_TYPE_OPTIONS, formatLeaveDate } from './barberLe
 
 // 4. قسم قائمة الخدمات والطاقم
 const TeamSection = ({
+    part = 'all',
     settings,
     barbers,
     setBarbers,
     services,
     themeColors,
-    activeSettingsTab,
     currentPlan,
     handleAddBarber,
     handleAddBarberLeave,
@@ -32,13 +32,10 @@ const TeamSection = ({
     setUpsellConfig,
     updateLeaveDraft,
 }) => (
-    <section role="tabpanel" data-settings-tab="team" className={`${activeSettingsTab === 'team' ? 'block' : 'hidden'} bg-white p-5 md:p-7 rounded-lg shadow-sm border border-slate-100`}>
-        <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-2 border-b border-slate-50 pb-4">
-            الفريق والخدمات
-        </h3>
-
+    <section className="bg-white p-5 md:p-7 rounded-lg shadow-sm border border-slate-100">
         {/* إدارة الطاقم */}
-        <div className="mb-8 bg-slate-50/50 p-6 rounded-lg border border-slate-100">
+        {part !== 'services' && (
+        <div className="bg-slate-50/50 p-6 rounded-lg border border-slate-100">
             <div className="flex justify-between items-center mb-6">
                 <div>
                     <label className="block text-sm font-black text-slate-800">إدارة الطاقم وصلاحيات الدخول (PIN)</label>
@@ -312,8 +309,10 @@ const TeamSection = ({
                 )}
             </div>
         </div>
+        )}
 
         {/* قائمة الخدمات */}
+        {part !== 'barbers' && (
         <div>
             <div className="flex justify-between items-center mb-4">
                 <div>
@@ -356,6 +355,7 @@ const TeamSection = ({
                 )}
             </div>
         </div>
+        )}
     </section>
 );
 

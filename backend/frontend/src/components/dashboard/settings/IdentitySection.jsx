@@ -7,7 +7,6 @@ import {
 
 // 1. قسم الهوية والتواصل وتخصيص الواجهة
 // الشعار المرفوع يصل كرابط داخلي (/logo/...) أو base64؛ حقل الرابط يعرض الروابط الخارجية فقط
-const isExternalLogo = (value) => /^https?:\/\//i.test(value || '');
 
 const IdentitySection = ({
     salonName,
@@ -17,7 +16,6 @@ const IdentitySection = ({
     ownerPhone,
     setOwnerPhone,
     logoUrl,
-    setLogoUrl,
     settings,
     setSettings,
     bio,
@@ -26,14 +24,10 @@ const IdentitySection = ({
     setSocialLinks,
     themeColors,
     setThemeColors,
-    activeSettingsTab,
     fileInputRef,
     handleLogoUpload,
 }) => (
-    <section role="tabpanel" data-settings-tab="identity" className={`${activeSettingsTab === 'identity' ? 'block' : 'hidden'} bg-white p-5 md:p-7 rounded-lg shadow-sm border border-slate-100`}>
-        <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-2 border-b border-slate-50 pb-4">
-            الهوية، التواصل، وتخصيص الواجهة
-        </h3>
+    <section className="bg-white p-5 md:p-7 rounded-lg shadow-sm border border-slate-100">
 
         {/* الحقول الأساسية */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -78,17 +72,9 @@ const IdentitySection = ({
                     <div className="flex-1 space-y-2">
                         <input type="file" accept="image/*" ref={fileInputRef} onChange={handleLogoUpload} className="hidden" />
                         <button type="button" onClick={() => fileInputRef.current.click()} className="bg-white border border-slate-200 text-slate-700 font-black px-6 py-2.5 rounded-lg text-sm hover:bg-slate-50 hover:text-blue-600 transition-colors shadow-sm">
-                            رفع صورة من الجهاز
+                            {logoUrl ? 'تغيير الشعار' : 'رفع الشعار'}
                         </button>
-                        <input
-                            type="text"
-                            inputMode="url"
-                            value={isExternalLogo(logoUrl) ? logoUrl : ''}
-                            onChange={(e) => setLogoUrl(e.target.value)}
-                            className="w-full p-3 bg-white border border-slate-200 rounded-lg font-bold text-slate-500 outline-none focus:border-blue-400 text-xs"
-                            placeholder={logoUrl && !isExternalLogo(logoUrl) ? 'تم رفع الشعار — أو ضع رابط صورة بدلاً منه' : 'أو ضع رابط الصورة مباشرة هنا...'}
-                            dir="ltr"
-                        />
+                        <p className="text-[11px] font-bold text-slate-400">صورة مربعة بصيغة PNG أو JPG، حتى 2 ميجابايت. تُضغط تلقائياً.</p>
                     </div>
                 </div>
             </div>

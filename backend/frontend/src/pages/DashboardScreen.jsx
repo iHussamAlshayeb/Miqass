@@ -19,7 +19,6 @@ import Sidebar from '../components/dashboard/Sidebar';
 import DailyTab from '../components/dashboard/DailyTab';
 import AllTab from '../components/dashboard/AllTab';
 import SettingsTab from '../components/dashboard/SettingsTab';
-import BillingTab from '../components/dashboard/BillingTab';
 import ReviewsTab from '../components/dashboard/ReviewsTab';
 import CustomersTab from '../components/dashboard/CustomersTab';
 import BroadcastsTab from '../components/dashboard/BroadcastsTab';
@@ -239,8 +238,8 @@ const DashboardScreen = () => {
         return () => clearInterval(interval);
     }, []);
 
-    const handleSaveSettings = async (e) => {
-        if (e) e.preventDefault();
+    // يُستدعى من شريط الحفظ في الإعدادات؛ يرجع النتيجة بدل التنبيهات المنبثقة
+    const handleSaveSettings = async () => {
         setIsSavingSettings(true);
         try {
             await API.put('/appointments/settings', {
@@ -249,14 +248,20 @@ const DashboardScreen = () => {
                 paymentSettings
             });
             // إعادة تحميل الحلاقين والدفع: الرموز والمفاتيح السرية لا تُرجع من السيرفر (فقط hasPin / hasSecretKey)
+            let refreshedBarbers = null;
+            let refreshedPayment = null;
             try {
                 const refreshed = await API.get('/appointments/settings');
-                setBarbers(refreshed.data.barbers || []);
-                if (refreshed.data.paymentSettings) setPaymentSettings(refreshed.data.paymentSettings);
+                refreshedBarbers = refreshed.data.barbers || [];
+                setBarbers(refreshedBarbers);
+                if (refreshed.data.paymentSettings) {
+                    refreshedPayment = refreshed.data.paymentSettings;
+                    setPaymentSettings(refreshedPayment);
+                }
             } catch { /* الحفظ نجح؛ التحديث المحلي اختياري */ }
-            alert('تم حفظ إعدادات الصالون بنجاح');
+            return { ok: true, barbers: refreshedBarbers, paymentSettings: refreshedPayment };
         } catch (error) {
-            alert(error.response?.data?.message || 'حدث خطأ أثناء حفظ الإعدادات');
+            return { ok: false, message: error.response?.data?.message || 'حدث خطأ أثناء حفظ الإعدادات' };
         } finally { setIsSavingSettings(false); }
     };
 
@@ -469,8 +474,11 @@ const DashboardScreen = () => {
                         {activeTab === 'reviews' && <ReviewsTab reviews={reviews} isLoading={isLoading} />}
                         {activeTab === 'customers' && <CustomersTab />}
                         {activeTab === 'broadcasts' && <BroadcastsTab tenantId={tenantId} />}
-                        {activeTab === 'settings' &&
+                        {(activeTab === 'settings' || activeTab === 'billing') &&
                             <SettingsTab
+                                key={activeTab}
+                                initialPage={activeTab === 'billing' ? 'plan' : undefined}
+                                slug={slug} tenantId={tenantId} campaignCredits={campaignCredits} promoBanner={promoBanner}
                                 salonName={salonName} setSalonName={setSalonName}
                                 ownerName={ownerName} setOwnerName={setOwnerName}
                                 ownerPhone={ownerPhone} setOwnerPhone={setOwnerPhone}
@@ -492,7 +500,6 @@ const DashboardScreen = () => {
                                 paymentSettings={paymentSettings} setPaymentSettings={setPaymentSettings}
                             />
                         }
-                        {activeTab === 'billing' && <BillingTab subscription={subscription} tenantId={tenantId} campaignCredits={campaignCredits} promoBanner={promoBanner} />}
                     </main>
                 </div>
             </div>
