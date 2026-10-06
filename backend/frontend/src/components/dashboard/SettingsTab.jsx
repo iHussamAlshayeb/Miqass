@@ -22,7 +22,7 @@ import API from '../../services/api';
 import UpgradeModal from './UpgradeModal';
 
 import ZakatySection from './settings/ZakatySection';
-import MarketingSection from './settings/MarketingSection';
+import AutomationsSection from './settings/AutomationsSection';
 import IdentitySection from './settings/IdentitySection';
 import BookingHoursSection from './settings/BookingHoursSection';
 import KioskSection from './settings/KioskSection';
@@ -30,6 +30,7 @@ import TeamSection from './settings/TeamSection';
 import PaymentSection from './settings/PaymentSection';
 import IntegrationsSection from './settings/IntegrationsSection';
 import BillingTab from './BillingTab';
+import { PlanBadge } from './settings/PlanBadge';
 import { buildLeavePeriod } from './settings/barberLeaveOptions';
 
 // صفحات الإعدادات مجمّعة حسب ما يبحث عنه صاحب الصالون، لا حسب بنية النظام
@@ -121,7 +122,6 @@ const SettingsTab = ({
     const [selectedWaProvider, setSelectedWaProvider] = useState('wasender');
     const [waStatus, setWaStatus] = useState('DISCONNECTED');
     const [isWaLoading, setIsWaLoading] = useState(false);
-    const [activeMessageType, setActiveMessageType] = useState('confirmation');
     const [isSavingTemplates, setIsSavingTemplates] = useState(false);
     const [templateError, setTemplateError] = useState('');
 
@@ -522,20 +522,18 @@ const SettingsTab = ({
                             </div>
                         ))}
 
-                        <div data-settings-page="messages" hidden={pageHidden('messages')} className="space-y-4">
-                            <MarketingSection settings={settings} setSettings={setSettings} currentPlan={currentPlan} setUpsellConfig={setUpsellConfig} />
-                            <IntegrationsSection
-                                part="templates"
+                        <div data-settings-page="messages" hidden={pageHidden('messages')}>
+                            <AutomationsSection
+                                settings={settings}
+                                setSettings={setSettings}
                                 whatsappTemplates={whatsappTemplates}
                                 setWhatsappTemplates={setWhatsappTemplates}
                                 whatsappTemplateDefaults={whatsappTemplateDefaults}
-                                activeMessageType={activeMessageType}
-                                currentPlan={currentPlan}
-                                setActiveMessageType={setActiveMessageType}
-                                setTemplateError={setTemplateError}
-                                setTemplateSaved={() => {}}
-                                setUpsellConfig={setUpsellConfig}
                                 templateError={templateError}
+                                currentPlan={currentPlan}
+                                setUpsellConfig={setUpsellConfig}
+                                isWhatsappConnected={['CONNECTED', 'WORKING'].includes(String(waStatus || '').toUpperCase())}
+                                onOpenWhatsapp={() => setActivePage('whatsapp')}
                             />
                         </div>
 
@@ -551,11 +549,6 @@ const SettingsTab = ({
 
                     <div hidden={pageHidden('whatsapp')}>
                         <IntegrationsSection
-                            part="connection"
-                            whatsappTemplates={whatsappTemplates}
-                            setWhatsappTemplates={setWhatsappTemplates}
-                            whatsappTemplateDefaults={whatsappTemplateDefaults}
-                            activeMessageType={activeMessageType}
                             currentPlan={currentPlan}
                             handleConnectWhatsapp={handleConnectWhatsapp}
                             handleDisconnectWhatsapp={handleDisconnectWhatsapp}
@@ -567,11 +560,7 @@ const SettingsTab = ({
                             waProviders={waProviders}
                             selectedWaProvider={selectedWaProvider}
                             setSelectedWaProvider={setSelectedWaProvider}
-                            setActiveMessageType={setActiveMessageType}
-                            setTemplateError={setTemplateError}
-                            setTemplateSaved={() => {}}
                             setUpsellConfig={setUpsellConfig}
-                            templateError={templateError}
                             waStatus={waStatus}
                         />
                     </div>
@@ -591,7 +580,7 @@ const SettingsTab = ({
                                 <ExternalLink size={15} /> فتح الكشك
                             </button>
                         </PageCard>
-                        <KioskSection currentPlan={currentPlan} />
+                        <KioskSection currentPlan={currentPlan} setUpsellConfig={setUpsellConfig} />
                     </div>
 
                     <div hidden={pageHidden('screens')} className="space-y-4">
@@ -612,9 +601,9 @@ const SettingsTab = ({
                                         </a>
                                     </div>
                                 ) : (
-                                    <button type="button" onClick={() => setUpsellConfig({ isOpen: true, featureName: item.title, requiredPlan: 'Premium' })} className="mt-4 rounded-md border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-black text-violet-700">
-                                        متاحة في الباقة المميزة
-                                    </button>
+                                    <div className="mt-4">
+                                        <PlanBadge plan="Premium" onClick={() => setUpsellConfig({ isOpen: true, featureName: item.title, requiredPlan: 'Premium' })} />
+                                    </div>
                                 )}
                             </PageCard>
                         ))}

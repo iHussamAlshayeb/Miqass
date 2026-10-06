@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Copy, LockKeyhole, RefreshCw, Tablet } from 'lucide-react';
 import API from '../../../services/api';
+import { LockedNotice } from './PlanBadge';
 
 // إعدادات الكشك: قفله على الأجهزة المفعّلة، ورمز التفعيل الذي يكتبه الموظف في شاشة الكشك
-const KioskSection = ({ currentPlan }) => {
+const KioskSection = ({ currentPlan, setUpsellConfig }) => {
     const isPremium = currentPlan === 'Premium';
     const [settings, setSettings] = useState(null);
     const [busy, setBusy] = useState(false);
@@ -64,7 +65,9 @@ const KioskSection = ({ currentPlan }) => {
             </h3>
 
             {!isPremium ? (
-                <p className="mt-3 text-sm font-bold text-slate-500">الكشك متاح في الباقة المميزة.</p>
+                <div className="mt-4">
+                    <LockedNotice plan="Premium" text="الكشك داخل الصالون متاح في الباقة المميزة." onUpgrade={() => setUpsellConfig?.({ isOpen: true, featureName: 'وضع الكشك', requiredPlan: 'Premium' })} />
+                </div>
             ) : !settings ? (
                 <p className="mt-3 text-sm font-bold text-slate-400">{notice?.text || 'جاري التحميل...'}</p>
             ) : (

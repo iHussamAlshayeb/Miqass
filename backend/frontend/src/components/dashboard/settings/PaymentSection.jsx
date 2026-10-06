@@ -2,6 +2,7 @@ import { motion as Motion, AnimatePresence } from 'framer-motion';
 import {
     CircleDollarSign,
 } from 'lucide-react';
+import { PlanBadge } from './PlanBadge';
 
 const MotionDiv = Motion.div;
 
@@ -12,16 +13,13 @@ const PaymentSection = ({
     setUpsellConfig,
 }) => (
     <section className="bg-white p-5 md:p-7 rounded-lg shadow-sm border border-slate-100">
-        <div className="flex justify-between items-center mb-6 border-b border-slate-50 pb-4">
-            <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
-                إعدادات الدفع المسبق (العربون)
-            </h3>
-        </div>
-
         <div className="bg-indigo-50/50 p-6 rounded-lg border border-indigo-100">
             <div className="flex items-center justify-between mb-6">
                 <div>
-                    <label className="block text-sm font-black text-indigo-900">تفعيل الدفع الإلكتروني</label>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <label className="block text-sm font-black text-indigo-900">تفعيل العربون الإلكتروني</label>
+                        {currentPlan === 'Free' && <PlanBadge plan="Pro" onClick={() => setUpsellConfig({ isOpen: true, featureName: 'بوابة الدفع والعربون', requiredPlan: 'Pro' })} />}
+                    </div>
                     <p className="text-xs font-bold text-indigo-700/70 mt-1 max-w-sm">
                         اطلب من عملائك دفع عربون لتأكيد الحجز. الربط يتم بحساب ميسر الخاص بالصالون.
                     </p>
