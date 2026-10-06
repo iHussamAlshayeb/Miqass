@@ -25,6 +25,8 @@ const tenantSchema = new mongoose.Schema(
     resetPasswordExpires: Date,
     // أي توكن صادر قبل هذا التاريخ يُرفض
     passwordChangedAt: { type: Date, default: null },
+    // يزداد عند إلغاء تفعيل أجهزة الكشك فتبطل مفاتيحها السابقة
+    kioskTokenVersion: { type: Number, default: 0 },
 
     // الحذف المؤقت: يُحذف الصالون نهائياً بعد deletionInfo.purgeAfter
     deletedAt: { type: Date, default: null },

@@ -18,6 +18,9 @@ const {
   getPaymentReturnStatus,
   cancelCustomerAppointment,
   rescheduleCustomerAppointment,
+  activateKioskDevice,
+  revokeKioskDevices,
+  getKioskCustomer,
 } = require("../controllers/bookingController");
 
 const {
@@ -96,6 +99,15 @@ const customerAccessLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// جهاز الكشك داخل الصالون يخدم عملاء كثيرين من نفس العنوان
+const kioskLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 150,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "محاولات كثيرة، حاول بعد قليل." },
+});
+
 const loyaltyLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
@@ -121,6 +133,7 @@ router.get("/payment-status/:appointmentId", queueLimiter, getPaymentReturnStatu
 router.post("/customer/appointments/:appointmentId/cancel", customerActionLimiter, cancelCustomerAppointment);
 router.post("/customer/appointments/:appointmentId/reschedule", customerActionLimiter, rescheduleCustomerAppointment);
 router.get("/loyalty/:tenantId/:phone", loyaltyLimiter, getCustomerLoyalty);
+router.get("/kiosk/customer/:phone", kioskLimiter, getKioskCustomer);
 
 router.get("/live-queue/:slug", queueLimiter, getLiveQueue);
 router.post("/barber-portal/queue", barberLimiter, getBarberQueue);
@@ -145,6 +158,8 @@ router.get("/history", getAppointmentHistory);
 router.put("/status/:appointmentId", updateAppointmentStatus);
 router.put("/cancel/:appointmentId", cancelAppointment);
 router.post("/block", blockTimeSlot);
+router.post("/kiosk/activate", activateKioskDevice);
+router.post("/kiosk/revoke", revokeKioskDevices);
 router.post("/resend-whatsapp/:id", resendSingleWhatsApp);
 
 router.get("/customers", getTenantCustomers);

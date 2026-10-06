@@ -135,14 +135,43 @@ const KioskScreen = () => {
         if (slug) fetchTenant();
     }, [slug]);
 
+    // مفتاح جهاز الكشك: يصدره صاحب الصالون من لوحة التحكم، وبه تظهر الأسماء المحفوظة دون رمز تحقق
+    const kioskTokenKey = `miqass:kiosk-token:${slug}`;
     useEffect(() => {
+        const match = window.location.hash.match(/activate=([^&]+)/);
+        if (!match) return;
+        try { localStorage.setItem(kioskTokenKey, decodeURIComponent(match[1])); } catch { /* التخزين غير متاح */ }
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }, [kioskTokenKey]);
+
+    useEffect(() => {
+        const readKioskToken = () => {
+            try { return localStorage.getItem(kioskTokenKey) || ''; } catch { return ''; }
+        };
         const checkLoyaltyAndFetchData = async () => {
             if (phone.length === 10 && phone.startsWith('05') && tenantData) {
                 setIsCheckingLoyalty(true);
                 try {
+                    const kioskToken = readKioskToken();
+                    if (kioskToken) {
+                        try {
+                            const res = await API.get(`/appointments/kiosk/customer/${phone}`, {
+                                headers: { 'X-Kiosk-Token': kioskToken },
+                            });
+                            setLoyaltyVisits(res.data.visits);
+                            setSavedChildren(res.data.children || []);
+                            return;
+                        } catch (error) {
+                            if (error.response?.status === 401) {
+                                try { localStorage.removeItem(kioskTokenKey); } catch { /* التخزين غير متاح */ }
+                            } else {
+                                throw error;
+                            }
+                        }
+                    }
+                    // بدون جهاز مفعّل: المسار العام يرجع عدد الزيارات فقط (حماية الأسماء)
                     const res = await API.get(`/appointments/loyalty/${tenantData._id}/${phone}`);
                     setLoyaltyVisits(res.data.visits);
-                    // أسماء الأطفال لم تعد تُرجع من المسار العام (حماية بيانات القاصرين)
                     setSavedChildren([]);
                 } catch {
                     setLoyaltyVisits(null);
@@ -158,7 +187,7 @@ const KioskScreen = () => {
 
         const timeoutId = setTimeout(() => { checkLoyaltyAndFetchData(); }, 500);
         return () => clearTimeout(timeoutId);
-    }, [phone, tenantData]);
+    }, [phone, tenantData, kioskTokenKey]);
 
     const calculateTotals = () => {
         if (!tenantData?.services || tenantData.services.length === 0) return { price: 0, duration: tenantData?.settings?.slotDuration || 30 };

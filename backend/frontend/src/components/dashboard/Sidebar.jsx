@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import API from '../../services/api';
 import {
     BarChart3,
     CalendarDays,
@@ -88,6 +89,34 @@ const Sidebar = ({
 
         setActiveTab(item.id);
         onClose?.();
+    };
+
+    // يفتح الكشك على هذا الجهاز بعد تفعيله، ليعرض الأسماء المحفوظة للعملاء دون رمز تحقق
+    const openKiosk = async () => {
+        if (currentPlan !== 'Premium') {
+            setUpsellConfig({ isOpen: true, featureName: 'وضع الكشك', requiredPlan: 'Premium', icon: 'Premium' });
+            return;
+        }
+        const kioskWindow = window.open('', '_blank');
+        try {
+            const res = await API.post('/appointments/kiosk/activate');
+            const url = `/kiosk/${slug}#activate=${encodeURIComponent(res.data.token)}`;
+            if (kioskWindow) kioskWindow.location.href = url;
+            else window.location.href = url;
+        } catch {
+            kioskWindow?.close();
+            alert('تعذر تفعيل جهاز الكشك، حاول مرة أخرى.');
+        }
+    };
+
+    const revokeKioskDevices = async () => {
+        if (!window.confirm('سيتوقف عرض الأسماء المحفوظة على كل أجهزة الكشك المفعّلة حتى تفعّلها من جديد. متابعة؟')) return;
+        try {
+            const res = await API.post('/appointments/kiosk/revoke');
+            alert(res.data?.message || 'تم إلغاء تفعيل أجهزة الكشك.');
+        } catch {
+            alert('تعذر إلغاء تفعيل أجهزة الكشك.');
+        }
     };
 
     const copyLink = async (value, successMessage) => {
@@ -228,12 +257,18 @@ const Sidebar = ({
                                 </button>
                                 <button
                                     type="button"
-                                    onClick={() => openPremiumLink(`/kiosk/${slug}`, 'وضع الكشك')}
+                                    onClick={openKiosk}
+                                    title="يفتح الكشك على هذا الجهاز ويفعّله لعرض الأسماء المحفوظة للعملاء"
                                     className="flex h-10 w-full items-center justify-between rounded-lg border border-slate-200 px-3 text-xs font-black text-slate-700 hover:bg-slate-50"
                                 >
                                     <span>بوابة الكشك</span>
                                     <Smartphone size={15} />
                                 </button>
+                                {currentPlan === 'Premium' && (
+                                    <button type="button" onClick={revokeKioskDevices} className="w-full px-1 text-right text-[11px] font-bold text-slate-400 underline decoration-dotted underline-offset-4 hover:text-red-500">
+                                        إلغاء تفعيل أجهزة الكشك
+                                    </button>
+                                )}
                                 <button
                                     type="button"
                                     onClick={() => {
