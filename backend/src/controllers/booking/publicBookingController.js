@@ -122,12 +122,15 @@ const createAppointment = async (req, res) => {
       }
     }
 
-    // تجهيز الحلاق
+    // تجهيز الحلاق: الحلاقة المباشرة تُسجل باسم الحلاق المختار من الكشك،
+    // ولا تُستخدم التسمية العامة إلا إذا لم يُختر حلاق (صالون بلا طاقم مسجل)
+    const walkInChair =
+      isWalkInBooking && typeof chair === "string" ? chair.trim() : "";
     const effectiveChair = isWalkInBooking
-      ? WALK_IN_BARBER_NAME
+      ? walkInChair || WALK_IN_BARBER_NAME
       : chair.trim();
     let barber = null;
-    if (!isWalkInBooking) {
+    if (!isWalkInBooking || walkInChair) {
       barber = await Barber.findOne({
         tenantId: tenant._id,
         name: effectiveChair,
@@ -354,7 +357,7 @@ const createAppointment = async (req, res) => {
         combinedNames,
         effectiveDate,
         newAppointments[0].timeSlot,
-        WALK_IN_BARBER_NAME,
+        barber?.name || WALK_IN_BARBER_NAME,
         tenantId,
         {
           dedupeKey: `appointments:${newAppointments.map((item) => item._id).join(",")}`,
@@ -364,6 +367,7 @@ const createAppointment = async (req, res) => {
       return res.status(201).json({
         message: "تم تسجيل الحلاقة المباشرة بنجاح.",
         walkIn: true,
+        barberName: barber?.name || null,
         appointments: newAppointments,
       });
     }

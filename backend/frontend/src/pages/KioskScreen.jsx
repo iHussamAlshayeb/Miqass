@@ -92,6 +92,8 @@ const KioskScreen = () => {
 
     const [step, setStep] = useState(0);
     const [successMode, setSuccessMode] = useState('scheduled');
+    const [isWalkInPickerOpen, setIsWalkInPickerOpen] = useState(false);
+    const [walkInBarber, setWalkInBarber] = useState('');
     const [phone, setPhone] = useState('');
     const [name, setName] = useState('');
     const [selectedChair, setSelectedChair] = useState('');
@@ -214,19 +216,33 @@ const KioskScreen = () => {
         setSelectedServicesIds([]);
         setLoyaltyVisits(null);
         setSavedChildren([]);
+        setIsWalkInPickerOpen(false);
+        setWalkInBarber('');
     };
 
-    const handleWalkInBooking = async () => {
+    // الحلاقة المباشرة تُسجل باسم الحلاق المختار: نعرض قائمة الحلاقين إن كان هناك أكثر من حلاق
+    const handleWalkInBooking = async (barberName) => {
         if (phone.length !== 10 || name.trim().length < 2 || !tenantData) return;
 
+        const barbers = tenantData.barbers || [];
+        let chair = typeof barberName === 'string' ? barberName : '';
+        if (!chair && barbers.length === 1) chair = barbers[0].name;
+        if (!chair && barbers.length > 1) {
+            setIsWalkInPickerOpen(true);
+            return;
+        }
+
+        setIsWalkInPickerOpen(false);
         setIsLoading(true);
         try {
-            await API.post('/appointments/book', {
+            const res = await API.post('/appointments/book', {
                 tenantId: tenantData._id,
                 customerPhone: phone,
                 childrenNames: [name.trim()],
-                bookingSource: 'kiosk_walk_in'
+                bookingSource: 'kiosk_walk_in',
+                ...(chair ? { chair } : {}),
             });
+            setWalkInBarber(res.data?.barberName || chair || '');
             setSuccessMode('walkIn');
             setStep(3);
             setTimeout(() => {
@@ -353,7 +369,7 @@ const KioskScreen = () => {
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 mt-4 md:mt-8">
                                 <button
-                                    onClick={handleWalkInBooking}
+                                    onClick={() => handleWalkInBooking()}
                                     disabled={phone.length !== 10 || name.trim().length < 2 || isLoading}
                                     className="w-full py-4 md:py-6 text-white rounded-2xl md:rounded-3xl text-lg md:text-2xl font-black transition-all disabled:opacity-50 disabled:scale-100 active:scale-95 shadow-xl flex justify-center items-center gap-2"
                                     style={{ backgroundColor: '#059669', boxShadow: '0 10px 25px rgba(5,150,105,0.25)' }}
@@ -534,13 +550,53 @@ const KioskScreen = () => {
                         </h2>
                         {successMode === 'walkIn' ? (
                             <p className="text-lg md:text-xl lg:text-2xl font-bold text-slate-500 mb-6 md:mb-8 relative z-10">
-                                يمكنك البدء بالحلاقة مباشرة. تُحتسب زيارتك بعد تأكيد إتمام الخدمة في الصالون.
+                                {walkInBarber
+                                    ? <>دورك الآن مع <span className="text-slate-800 font-black">{walkInBarber}</span>. تُحتسب زيارتك بعد تأكيد إتمام الخدمة في الصالون.</>
+                                    : 'يمكنك البدء بالحلاقة مباشرة. تُحتسب زيارتك بعد تأكيد إتمام الخدمة في الصالون.'}
                             </p>
                         ) : (
                             <p className="text-lg md:text-xl lg:text-2xl font-bold text-slate-500 mb-6 md:mb-8 relative z-10">موعدك مع <span className="text-slate-800 font-black">{selectedChair}</span> الساعة <span dir="ltr" className="text-slate-800 font-black">{formatTime12Hour(selectedTime)}</span> {getTimePeriod(selectedTime)}</p>
                         )}
 
                         <p className="text-sm md:text-base font-black text-slate-400 bg-slate-50 py-3 md:py-4 px-6 rounded-xl md:rounded-2xl inline-block mt-4 relative z-10 border border-slate-100">ستتم إعادتك للشاشة الرئيسية تلقائياً لخدمة العميل التالي...</p>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* اختيار الحلاق للحلاقة المباشرة */}
+            <AnimatePresence>
+                {isWalkInPickerOpen && tenantData && (
+                    <motion.div
+                        key="walkin-picker"
+                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"
+                        role="dialog" aria-modal="true" aria-labelledby="walkin-picker-title"
+                        onMouseDown={(event) => { if (event.target === event.currentTarget) setIsWalkInPickerOpen(false); }}
+                    >
+                        <motion.div initial={{ y: 24, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 24, opacity: 0 }} className="w-full max-w-3xl rounded-3xl bg-white p-6 md:p-10 shadow-2xl">
+                            <h2 id="walkin-picker-title" className="text-center text-2xl md:text-4xl font-black text-slate-800">اختر الحلاق</h2>
+                            <p className="mt-2 text-center text-sm md:text-lg font-bold text-slate-400">ستُسجل الحلاقة المباشرة باسم الحلاق الذي تختاره.</p>
+                            <div className="mt-8 grid grid-cols-2 gap-4 md:grid-cols-3">
+                                {tenantData.barbers.map((barberObj, index) => {
+                                    const chairColor = getBarberColor(barberObj, index, brandPrimary, brandSecondary);
+                                    return (
+                                        <button
+                                            key={barberObj.name}
+                                            type="button"
+                                            disabled={isLoading}
+                                            onClick={() => handleWalkInBooking(barberObj.name)}
+                                            className="flex flex-col items-center gap-3 rounded-2xl md:rounded-3xl border-2 border-slate-100 bg-slate-50 p-5 md:p-7 transition-all hover:border-slate-200 hover:bg-white active:scale-95 disabled:opacity-50"
+                                        >
+                                            <BarberChairIcon className="h-12 w-12 md:h-16 md:w-16" style={{ color: chairColor }} />
+                                            <span className="text-lg md:text-2xl font-black text-slate-800">{barberObj.name}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            <button type="button" onClick={() => setIsWalkInPickerOpen(false)} className="mx-auto mt-8 block rounded-xl bg-slate-100 px-8 py-3 text-base md:text-lg font-bold text-slate-600 hover:bg-slate-200">
+                                إلغاء
+                            </button>
+                        </motion.div>
                     </motion.div>
                 )}
             </AnimatePresence>
