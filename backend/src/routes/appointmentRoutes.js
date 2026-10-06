@@ -22,6 +22,9 @@ const {
   revokeKioskDevices,
   getKioskCustomer,
   getKioskStatus,
+  activateKioskWithCode,
+  getKioskSettings,
+  updateKioskSettings,
 } = require("../controllers/bookingController");
 
 const {
@@ -109,6 +112,15 @@ const kioskLimiter = rateLimit({
   message: { message: "محاولات كثيرة، حاول بعد قليل." },
 });
 
+// تخمين رمز تفعيل الكشك: حد صارم لكل عنوان (بالإضافة لقفل الصالون بعد 10 محاولات خاطئة)
+const kioskCodeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "محاولات كثيرة لتفعيل الكشك. حاول بعد 15 دقيقة." },
+});
+
 const loyaltyLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
@@ -136,6 +148,7 @@ router.post("/customer/appointments/:appointmentId/reschedule", customerActionLi
 router.get("/loyalty/:tenantId/:phone", loyaltyLimiter, getCustomerLoyalty);
 router.get("/kiosk/customer/:phone", kioskLimiter, getKioskCustomer);
 router.get("/kiosk/status", kioskLimiter, getKioskStatus);
+router.post("/kiosk/activate-code", kioskCodeLimiter, activateKioskWithCode);
 
 router.get("/live-queue/:slug", queueLimiter, getLiveQueue);
 router.post("/barber-portal/queue", barberLimiter, getBarberQueue);
@@ -162,6 +175,8 @@ router.put("/cancel/:appointmentId", cancelAppointment);
 router.post("/block", blockTimeSlot);
 router.post("/kiosk/activate", activateKioskDevice);
 router.post("/kiosk/revoke", revokeKioskDevices);
+router.get("/kiosk/settings", getKioskSettings);
+router.put("/kiosk/settings", updateKioskSettings);
 router.post("/resend-whatsapp/:id", resendSingleWhatsApp);
 
 router.get("/customers", getTenantCustomers);

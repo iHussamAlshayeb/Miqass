@@ -27,6 +27,11 @@ const tenantSchema = new mongoose.Schema(
     passwordChangedAt: { type: Date, default: null },
     // يزداد عند إلغاء تفعيل أجهزة الكشك فتبطل مفاتيحها السابقة
     kioskTokenVersion: { type: Number, default: 0 },
+    // قفل الكشك: بلا قيمة افتراضية حتى لا يُقفل كشك الصالونات القديمة تلقائياً (يُفعّل عند التسجيل)
+    kioskLockEnabled: { type: Boolean },
+    kioskActivationCode: { type: String, default: "" }, // مشفّر
+    kioskCodeFailures: { type: Number, default: 0 },
+    kioskCodeLockedUntil: { type: Date, default: null },
 
     // الحذف المؤقت: يُحذف الصالون نهائياً بعد deletionInfo.purgeAfter
     deletedAt: { type: Date, default: null },

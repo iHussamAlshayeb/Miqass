@@ -109,16 +109,6 @@ const Sidebar = ({
         }
     };
 
-    const revokeKioskDevices = async () => {
-        if (!window.confirm('سيتوقف عرض الأسماء المحفوظة على كل أجهزة الكشك المفعّلة حتى تفعّلها من جديد. متابعة؟')) return;
-        try {
-            const res = await API.post('/appointments/kiosk/revoke');
-            alert(res.data?.message || 'تم إلغاء تفعيل أجهزة الكشك.');
-        } catch {
-            alert('تعذر إلغاء تفعيل أجهزة الكشك.');
-        }
-    };
-
     const copyLink = async (value, successMessage) => {
         await navigator.clipboard.writeText(value);
         alert(successMessage);
@@ -264,11 +254,6 @@ const Sidebar = ({
                                     <span>بوابة الكشك</span>
                                     <Smartphone size={15} />
                                 </button>
-                                {currentPlan === 'Premium' && (
-                                    <button type="button" onClick={revokeKioskDevices} className="w-full px-1 text-right text-[11px] font-bold text-slate-400 underline decoration-dotted underline-offset-4 hover:text-red-500">
-                                        إلغاء تفعيل أجهزة الكشك
-                                    </button>
-                                )}
                                 <button
                                     type="button"
                                     onClick={() => {

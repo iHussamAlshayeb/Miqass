@@ -83,6 +83,52 @@ const LoyaltyCard = ({ visits, primaryColor, requiredVisits }) => {
 // ==========================================
 // 💡 مكون الـ Kiosk الرئيسي
 // ==========================================
+// تفعيل جهاز الكشك برمز التفعيل الظاهر لصاحب الصالون في الإعدادات
+const KioskActivationForm = ({ slug, onActivated, onCancel }) => {
+    const [code, setCode] = useState('');
+    const [error, setError] = useState('');
+    const [busy, setBusy] = useState(false);
+
+    const submit = async (event) => {
+        event.preventDefault();
+        setError('');
+        setBusy(true);
+        try {
+            const res = await API.post('/appointments/kiosk/activate-code', { slug, code });
+            onActivated(res.data.token);
+        } catch (requestError) {
+            setError(requestError.response?.data?.message || 'تعذر تفعيل الجهاز، حاول مرة أخرى.');
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <form onSubmit={submit} className="mt-6">
+            <label className="block text-base md:text-lg font-black text-slate-700">
+                رمز التفعيل
+                <input
+                    type="text" inputMode="numeric" autoComplete="one-time-code" dir="ltr" maxLength={6}
+                    value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))}
+                    placeholder="000000"
+                    className="mt-2 w-full rounded-2xl border-2 border-slate-200 bg-slate-50 p-4 text-center text-3xl md:text-4xl font-black tracking-[0.4em] outline-none focus:border-slate-900 focus:bg-white"
+                />
+            </label>
+            {error && <p role="alert" className="mt-3 rounded-xl bg-red-50 px-4 py-2 text-sm md:text-base font-bold text-red-700">{error}</p>}
+            <div className="mt-6 flex flex-wrap gap-3">
+                <button type="submit" disabled={busy || code.length !== 6} className="rounded-xl bg-slate-900 px-8 py-3 text-lg font-black text-white hover:bg-slate-800 disabled:opacity-50">
+                    {busy ? 'جاري التفعيل...' : 'تفعيل الجهاز'}
+                </button>
+                {onCancel && (
+                    <button type="button" onClick={onCancel} className="rounded-xl border border-slate-200 px-6 py-3 text-lg font-bold text-slate-600 hover:bg-slate-50">
+                        إلغاء
+                    </button>
+                )}
+            </div>
+        </form>
+    );
+};
+
 const KioskScreen = () => {
     const { slug } = useParams();
     const navigate = useNavigate();
@@ -147,8 +193,10 @@ const KioskScreen = () => {
     const forgetKioskToken = () => {
         try { localStorage.removeItem(kioskTokenKey); } catch { /* التخزين غير متاح */ }
     };
-    // الكشك خدمة داخلية: يعمل فقط على جهاز فعّله صاحب الصالون من لوحة التحكم
+    // الكشك خدمة داخلية: عند قفله من الإعدادات يعمل فقط على جهاز مفعّل (من لوحة التحكم أو برمز التفعيل)
     const [kioskAccess, setKioskAccess] = useState('checking');
+    const [isKioskActivated, setIsKioskActivated] = useState(false);
+    const [isActivationOpen, setIsActivationOpen] = useState(false);
     useEffect(() => {
         const match = window.location.hash.match(/activate=([^&]+)/);
         if (match) {
@@ -157,26 +205,37 @@ const KioskScreen = () => {
         }
         let token = '';
         try { token = localStorage.getItem(kioskTokenKey) || ''; } catch { token = ''; }
-        if (!token) {
-            setKioskAccess('inactive');
-            return;
-        }
-        API.get('/appointments/kiosk/status', { params: { slug }, headers: { 'X-Kiosk-Token': token } })
-            .then(() => setKioskAccess('active'))
+        API.get('/appointments/kiosk/status', { params: { slug }, headers: token ? { 'X-Kiosk-Token': token } : {} })
+            .then((res) => {
+                if (token && !res.data?.activated) {
+                    try { localStorage.removeItem(kioskTokenKey); } catch { /* التخزين غير متاح */ }
+                }
+                setIsKioskActivated(Boolean(res.data?.activated));
+                setKioskAccess('active');
+            })
             .catch((error) => {
                 if (error.response?.status === 401) {
                     try { localStorage.removeItem(kioskTokenKey); } catch { /* التخزين غير متاح */ }
+                    setIsKioskActivated(false);
                     setKioskAccess('inactive');
                 } else {
-                    // تعذر الاتصال مؤقتاً: نسمح بالمتابعة والخادم يرفض أي حجز من جهاز غير مفعّل
+                    // تعذر الاتصال مؤقتاً: نسمح بالمتابعة والخادم يرفض أي حجز غير مسموح
                     setKioskAccess('active');
                 }
             });
     }, [kioskTokenKey, slug]);
 
+    const handleKioskActivated = (token) => {
+        try { localStorage.setItem(kioskTokenKey, token); } catch { /* التخزين غير متاح */ }
+        setIsKioskActivated(true);
+        setIsActivationOpen(false);
+        setKioskAccess('active');
+    };
+
     const handleKioskRequestError = (error) => {
         if (error.response?.data?.code === 'KIOSK_NOT_ACTIVATED') {
             forgetKioskToken();
+            setIsKioskActivated(false);
             setKioskAccess('inactive');
             return true;
         }
@@ -360,17 +419,12 @@ const KioskScreen = () => {
                 <div className="w-full max-w-lg rounded-3xl bg-white p-8 md:p-10 shadow-2xl">
                     <h1 className="text-2xl md:text-3xl font-black text-slate-800">هذا الجهاز غير مفعّل ككشك</h1>
                     <p className="mt-4 text-base md:text-lg font-bold leading-8 text-slate-500">
-                        الكشك يعمل داخل الصالون فقط. لتفعيل هذا الجهاز، سجّل الدخول إلى لوحة تحكم الصالون عليه، ثم اضغط «بوابة الكشك» من القائمة الجانبية.
+                        اكتب رمز التفعيل المكون من 6 أرقام. يجده صاحب الصالون في لوحة التحكم، في الإعدادات ضمن قسم الكشك.
                     </p>
-                    <p className="mt-3 text-sm font-bold text-slate-400">للحجز كعميل، استخدم رابط الحجز الخاص بالصالون.</p>
-                    <div className="mt-8 flex flex-wrap gap-3">
-                        <button type="button" onClick={() => navigate('/login')} className="rounded-xl bg-slate-900 px-6 py-3 font-black text-white hover:bg-slate-800">
-                            دخول لوحة التحكم
-                        </button>
-                        <button type="button" onClick={() => navigate(`/${slug}`)} className="rounded-xl border border-slate-200 px-6 py-3 font-black text-slate-700 hover:bg-slate-50">
-                            صفحة الحجز
-                        </button>
-                    </div>
+                    <KioskActivationForm slug={slug} onActivated={handleKioskActivated} />
+                    <p className="mt-8 border-t border-slate-100 pt-5 text-sm font-bold text-slate-400">
+                        للحجز كعميل، استخدم <button type="button" onClick={() => navigate(`/${slug}`)} className="underline underline-offset-4 hover:text-slate-600">صفحة الحجز</button>.
+                    </p>
                 </div>
             </div>
         );
@@ -408,6 +462,15 @@ const KioskScreen = () => {
                         <button className="text-xl md:text-3xl lg:text-4xl font-black text-white px-10 py-4 md:px-16 md:py-6 rounded-full md:rounded-[35px] shadow-2xl transition-transform active:scale-95 animate-pulse w-[90%] sm:w-auto" style={{ backgroundColor: brandPrimary, boxShadow: `0 20px 40px ${brandPrimary}50` }}>
                             اضغط هنا للبدء 👈
                         </button>
+                        {!isKioskActivated && (
+                            <button
+                                type="button"
+                                onClick={(event) => { event.stopPropagation(); setIsActivationOpen(true); }}
+                                className="mt-10 text-sm md:text-base font-bold text-slate-400 underline decoration-dotted underline-offset-4 hover:text-slate-600"
+                            >
+                                تفعيل هذا الجهاز لعرض الأسماء المحفوظة
+                            </button>
+                        )}
                     </motion.div>
                 )}
 
@@ -656,6 +719,16 @@ const KioskScreen = () => {
                     </motion.div>
                 )}
             </AnimatePresence>
+
+            {isActivationOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4" role="dialog" aria-modal="true" aria-labelledby="kiosk-activation-title">
+                    <div className="w-full max-w-lg rounded-3xl bg-white p-8 shadow-2xl">
+                        <h2 id="kiosk-activation-title" className="text-2xl font-black text-slate-800">تفعيل جهاز الكشك</h2>
+                        <p className="mt-3 font-bold leading-7 text-slate-500">بعد التفعيل تظهر للعملاء أسماؤهم المحفوظة دون رمز تحقق. رمز التفعيل في لوحة التحكم، في الإعدادات ضمن قسم الكشك.</p>
+                        <KioskActivationForm slug={slug} onActivated={handleKioskActivated} onCancel={() => setIsActivationOpen(false)} />
+                    </div>
+                </div>
+            )}
 
             {/* اختيار الحلاق للحلاقة المباشرة */}
             <AnimatePresence>

@@ -20,7 +20,7 @@ const getAllTenants = async (req, res) => {
   try {
     const tenants = await Tenant.find()
       .select(
-        "-password -taxSettings.zakaty.apiKey -resetPasswordToken -resetPasswordExpires -whatsappSettings.apiKey -whatsappSettings.apiKeyHash -whatsappSettings.webhookSecret -whatsappSettings.whatsiWebhookSecret -paymentSettings.moyasarSecretKey",
+        "-password -taxSettings.zakaty.apiKey -resetPasswordToken -resetPasswordExpires -whatsappSettings.apiKey -whatsappSettings.apiKeyHash -whatsappSettings.webhookSecret -whatsappSettings.whatsiWebhookSecret -kioskActivationCode -paymentSettings.moyasarSecretKey",
       )
       .sort({ createdAt: -1 })
       .lean();

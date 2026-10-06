@@ -17,6 +17,7 @@ import ZakatySection from './settings/ZakatySection';
 import MarketingSection from './settings/MarketingSection';
 import IdentitySection from './settings/IdentitySection';
 import BookingHoursSection from './settings/BookingHoursSection';
+import KioskSection from './settings/KioskSection';
 import TeamSection from './settings/TeamSection';
 import PaymentSection from './settings/PaymentSection';
 import IntegrationsSection from './settings/IntegrationsSection';
@@ -400,6 +401,8 @@ const SettingsTab = ({
                     setNewClosedDate={setNewClosedDate}
                     activeSettingsTab={activeSettingsTab}
                 />
+
+                <KioskSection activeSettingsTab={activeSettingsTab} currentPlan={currentPlan} />
 
                 <div role="tabpanel" data-settings-tab="finance" className={activeSettingsTab === 'finance' ? 'block' : 'hidden'}>
                     <ZakatySection onTaxNumberSaved={setTaxNumber} />

@@ -138,6 +138,8 @@ const registerTenant = async (req, res) => {
       email,
       password: hashedPassword,
       subscription: { plan: "Free", status: "Active" },
+      // الصالونات الجديدة: الكشك يعمل على الأجهزة المفعّلة فقط
+      kioskLockEnabled: true,
     });
 
     await newTenant.save();

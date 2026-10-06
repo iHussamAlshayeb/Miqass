@@ -63,10 +63,10 @@ test("a kiosk key cannot open the salon dashboard", async () => {
   assert.equal(res.statusCode, 401);
 });
 
-test("kiosk bookings (walk-in and late slots) are refused from a device that is not activated", async () => {
+test("with the lock on, kiosk bookings are refused from a device that is not activated", async () => {
   const { createAppointment } = require("../src/controllers/booking/publicBookingController");
   const Appointment = require("../src/models/Appointment");
-  const tenant = { _id: TENANT_ID, kioskTokenVersion: 0, settings: {}, subscription: { status: "Active", plan: "Pro" } };
+  const tenant = { _id: TENANT_ID, kioskTokenVersion: 0, kioskLockEnabled: true, settings: {}, subscription: { status: "Active", plan: "Pro" } };
   const body = { tenantId: TENANT_ID, customerPhone: "0551234567", childrenNames: ["خالد"] };
 
   for (const bookingSource of ["kiosk_walk_in", "kiosk"]) {
@@ -82,4 +82,60 @@ test("kiosk bookings (walk-in and late slots) are refused from a device that is 
   await withStubs([[Tenant, "findById", () => query(tenant)], [Appointment, "init", async () => {}]], () =>
     createAppointment({ headers: { "x-kiosk-token": otherSalonKey }, body: { ...body, bookingSource: "kiosk_walk_in" } }, res));
   assert.equal(res.statusCode, 403, "a key from another salon does not work");
+});
+
+const { encrypt } = require("../src/utils/encryption");
+const {
+  isKioskRequestAllowed,
+  getKioskStatus,
+  activateKioskWithCode,
+  verifyKioskToken,
+} = require("../src/controllers/booking/kioskController");
+
+test("with the lock off (existing salons), the kiosk keeps working without activation", () => {
+  assert.equal(isKioskRequestAllowed({ headers: {} }, { _id: TENANT_ID }), true);
+  assert.equal(isKioskRequestAllowed({ headers: {} }, { _id: TENANT_ID, kioskLockEnabled: false }), true);
+  assert.equal(isKioskRequestAllowed({ headers: {} }, { _id: TENANT_ID, kioskLockEnabled: true }), false);
+});
+
+test("kiosk status: unlocked salons run, locked salons need an activated device", async () => {
+  const unlocked = response();
+  await withStubs([[Tenant, "findOne", () => query({ _id: TENANT_ID, slug: "balloon" })]], () =>
+    getKioskStatus({ headers: {}, query: { slug: "balloon" } }, unlocked));
+  assert.equal(unlocked.statusCode, 200);
+  assert.equal(unlocked.body.activated, false);
+
+  const locked = response();
+  await withStubs([[Tenant, "findOne", () => query({ _id: TENANT_ID, slug: "balloon", kioskLockEnabled: true })]], () =>
+    getKioskStatus({ headers: {}, query: { slug: "balloon" } }, locked));
+  assert.equal(locked.statusCode, 401);
+});
+
+test("the activation code issues a kiosk key; wrong codes are counted and lock out", async () => {
+  const salon = { _id: TENANT_ID, slug: "balloon", kioskTokenVersion: 3, kioskActivationCode: encrypt("482913"), kioskCodeFailures: 0 };
+
+  const ok = response();
+  await withStubs([[Tenant, "findOne", () => query(salon)], [Tenant, "updateOne", async () => ({})]], () =>
+    activateKioskWithCode({ body: { slug: "balloon", code: "482913" } }, ok));
+  assert.equal(ok.statusCode, 200);
+  const payload = verifyKioskToken(ok.body.token);
+  assert.equal(payload.tenantId, TENANT_ID);
+  assert.equal(payload.v, 3);
+
+  const wrong = response();
+  let failureUpdate;
+  await withStubs([[Tenant, "findOne", () => query(salon)], [Tenant, "updateOne", async (filter, update) => { failureUpdate = update; return {}; }]], () =>
+    activateKioskWithCode({ body: { slug: "balloon", code: "000000" } }, wrong));
+  assert.equal(wrong.statusCode, 400);
+  assert.deepEqual(failureUpdate, { $set: { kioskCodeFailures: 1 } });
+
+  let lockUpdate;
+  await withStubs([[Tenant, "findOne", () => query({ ...salon, kioskCodeFailures: 9 })], [Tenant, "updateOne", async (filter, update) => { lockUpdate = update; return {}; }]], () =>
+    activateKioskWithCode({ body: { slug: "balloon", code: "000000" } }, response()));
+  assert.ok(lockUpdate.$set.kioskCodeLockedUntil > new Date(), "the tenth wrong code locks activation for a while");
+
+  const lockedOut = response();
+  await withStubs([[Tenant, "findOne", () => query({ ...salon, kioskCodeLockedUntil: new Date(Date.now() + 60000) })]], () =>
+    activateKioskWithCode({ body: { slug: "balloon", code: "482913" } }, lockedOut));
+  assert.equal(lockedOut.statusCode, 429, "even the right code waits during the lockout");
 });

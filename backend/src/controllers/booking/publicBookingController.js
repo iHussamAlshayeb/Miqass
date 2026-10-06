@@ -28,7 +28,7 @@ const {
   isSlotDuringBreak,
   normalizeSelectedServiceIds,
 } = require("./helpers");
-const { hasActiveKioskAccess } = require("./kioskController");
+const { isKioskRequestAllowed } = require("./kioskController");
 
 // 1. إنشاء موعد جديد
 const createAppointment = async (req, res) => {
@@ -60,14 +60,14 @@ const createAppointment = async (req, res) => {
     }
 
     const tenant = await Tenant.findById(tenantId)
-      .select("settings subscription paymentSettings deletedAt kioskTokenVersion")
+      .select("settings subscription paymentSettings deletedAt kioskTokenVersion kioskLockEnabled")
       .lean();
     if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
 
     // الكشك خدمة داخلية: حجوزاته (الحلاقة المباشرة والحجز المتأخر) تتطلب جهازاً مفعّلاً من لوحة التحكم
     if (
       (isWalkInBooking || isKioskBookingSource(bookingSource)) &&
-      !hasActiveKioskAccess(req, tenant)
+      !isKioskRequestAllowed(req, tenant)
     ) {
       return res.status(403).json({
         message: "هذا الجهاز غير مفعّل ككشك لهذا الصالون.",
@@ -475,11 +475,11 @@ const getAvailableSlots = async (req, res) => {
     const { tenantId, date, chair, requestedDuration, bookingSource } =
       req.query;
 
-    const tenant = await Tenant.findById(tenantId).select("settings kioskTokenVersion deletedAt").lean();
+    const tenant = await Tenant.findById(tenantId).select("settings kioskTokenVersion kioskLockEnabled deletedAt").lean();
     if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
     // أوقات الكشك (بعد بداية الموعد بدقائق) لا تظهر إلا لجهاز كشك مفعّل
     const effectiveBookingSource =
-      isKioskBookingSource(bookingSource) && !hasActiveKioskAccess(req, tenant)
+      isKioskBookingSource(bookingSource) && !isKioskRequestAllowed(req, tenant)
         ? "public"
         : bookingSource;
 
