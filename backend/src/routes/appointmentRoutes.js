@@ -21,6 +21,7 @@ const {
   activateKioskDevice,
   revokeKioskDevices,
   getKioskCustomer,
+  getKioskStatus,
 } = require("../controllers/bookingController");
 
 const {
@@ -134,6 +135,7 @@ router.post("/customer/appointments/:appointmentId/cancel", customerActionLimite
 router.post("/customer/appointments/:appointmentId/reschedule", customerActionLimiter, rescheduleCustomerAppointment);
 router.get("/loyalty/:tenantId/:phone", loyaltyLimiter, getCustomerLoyalty);
 router.get("/kiosk/customer/:phone", kioskLimiter, getKioskCustomer);
+router.get("/kiosk/status", kioskLimiter, getKioskStatus);
 
 router.get("/live-queue/:slug", queueLimiter, getLiveQueue);
 router.post("/barber-portal/queue", barberLimiter, getBarberQueue);

@@ -17,6 +17,34 @@ const signKioskToken = ({ tenantId, version }) =>
 const verifyKioskToken = (token) =>
   jwt.verify(String(token || ""), process.env.JWT_SECRET, { audience: KIOSK_TOKEN_AUDIENCE });
 
+// هل الطلب قادم من جهاز كشك مفعّل لهذا الصالون؟ (مفتاح صالح لنفس الصالون ونفس إصدار التفعيل)
+const hasActiveKioskAccess = (req, tenant) => {
+  if (!tenant || tenant.deletedAt) return false;
+  try {
+    const payload = verifyKioskToken(req.headers?.["x-kiosk-token"]);
+    return (
+      String(payload.tenantId) === String(tenant._id) &&
+      Number(payload.v || 0) === Number(tenant.kioskTokenVersion || 0)
+    );
+  } catch {
+    return false;
+  }
+};
+
+// شاشة الكشك: تتحقق عند التشغيل أن الجهاز مفعّل لهذا الصالون
+const getKioskStatus = async (req, res) => {
+  try {
+    const payload = verifyKioskToken(req.headers["x-kiosk-token"]);
+    const tenant = await Tenant.findById(payload.tenantId).select("_id slug kioskTokenVersion deletedAt").lean();
+    if (!hasActiveKioskAccess(req, tenant) || (req.query.slug && tenant.slug !== String(req.query.slug).toLowerCase())) {
+      throw new Error("inactive");
+    }
+    return res.status(200).json({ active: true });
+  } catch {
+    return res.status(401).json({ active: false, code: "KIOSK_NOT_ACTIVATED" });
+  }
+};
+
 // لوحة التحكم: يصدر مفتاحاً لجهاز كشك
 const activateKioskDevice = async (req, res) => {
   try {
@@ -77,6 +105,8 @@ module.exports = {
   KIOSK_TOKEN_AUDIENCE,
   signKioskToken,
   verifyKioskToken,
+  hasActiveKioskAccess,
+  getKioskStatus,
   activateKioskDevice,
   revokeKioskDevices,
   getKioskCustomer,

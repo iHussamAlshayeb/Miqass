@@ -137,12 +137,51 @@ const KioskScreen = () => {
 
     // مفتاح جهاز الكشك: يصدره صاحب الصالون من لوحة التحكم، وبه تظهر الأسماء المحفوظة دون رمز تحقق
     const kioskTokenKey = `miqass:kiosk-token:${slug}`;
+    const readStoredKioskToken = () => {
+        try { return localStorage.getItem(kioskTokenKey) || ''; } catch { return ''; }
+    };
+    const kioskHeaders = () => {
+        const token = readStoredKioskToken();
+        return token ? { 'X-Kiosk-Token': token } : {};
+    };
+    const forgetKioskToken = () => {
+        try { localStorage.removeItem(kioskTokenKey); } catch { /* التخزين غير متاح */ }
+    };
+    // الكشك خدمة داخلية: يعمل فقط على جهاز فعّله صاحب الصالون من لوحة التحكم
+    const [kioskAccess, setKioskAccess] = useState('checking');
     useEffect(() => {
         const match = window.location.hash.match(/activate=([^&]+)/);
-        if (!match) return;
-        try { localStorage.setItem(kioskTokenKey, decodeURIComponent(match[1])); } catch { /* التخزين غير متاح */ }
-        window.history.replaceState(null, '', window.location.pathname + window.location.search);
-    }, [kioskTokenKey]);
+        if (match) {
+            try { localStorage.setItem(kioskTokenKey, decodeURIComponent(match[1])); } catch { /* التخزين غير متاح */ }
+            window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        }
+        let token = '';
+        try { token = localStorage.getItem(kioskTokenKey) || ''; } catch { token = ''; }
+        if (!token) {
+            setKioskAccess('inactive');
+            return;
+        }
+        API.get('/appointments/kiosk/status', { params: { slug }, headers: { 'X-Kiosk-Token': token } })
+            .then(() => setKioskAccess('active'))
+            .catch((error) => {
+                if (error.response?.status === 401) {
+                    try { localStorage.removeItem(kioskTokenKey); } catch { /* التخزين غير متاح */ }
+                    setKioskAccess('inactive');
+                } else {
+                    // تعذر الاتصال مؤقتاً: نسمح بالمتابعة والخادم يرفض أي حجز من جهاز غير مفعّل
+                    setKioskAccess('active');
+                }
+            });
+    }, [kioskTokenKey, slug]);
+
+    const handleKioskRequestError = (error) => {
+        if (error.response?.data?.code === 'KIOSK_NOT_ACTIVATED') {
+            forgetKioskToken();
+            setKioskAccess('inactive');
+            return true;
+        }
+        return false;
+    };
 
     useEffect(() => {
         const readKioskToken = () => {
@@ -164,6 +203,8 @@ const KioskScreen = () => {
                         } catch (error) {
                             if (error.response?.status === 401) {
                                 try { localStorage.removeItem(kioskTokenKey); } catch { /* التخزين غير متاح */ }
+                                setKioskAccess('inactive');
+                                return;
                             } else {
                                 throw error;
                             }
@@ -215,7 +256,7 @@ const KioskScreen = () => {
             try {
                 const today = getLocalDate();
                 const reqDuration = totals.duration;
-                const res = await API.get(`/appointments/available?tenantId=${tenantData._id}&date=${today}&chair=${selectedChair}&requestedDuration=${reqDuration}&bookingSource=kiosk&t=${new Date().getTime()}`);
+                const res = await API.get(`/appointments/available?tenantId=${tenantData._id}&date=${today}&chair=${selectedChair}&requestedDuration=${reqDuration}&bookingSource=kiosk&t=${new Date().getTime()}`, { headers: kioskHeaders() });
                 setAvailableSlots(res.data.availableSlots);
             } catch (error) {
                 console.error(error);
@@ -270,7 +311,7 @@ const KioskScreen = () => {
                 childrenNames: [name.trim()],
                 bookingSource: 'kiosk_walk_in',
                 ...(chair ? { chair } : {}),
-            });
+            }, { headers: kioskHeaders() });
             setWalkInBarber(res.data?.barberName || chair || '');
             setSuccessMode('walkIn');
             setStep(3);
@@ -278,6 +319,7 @@ const KioskScreen = () => {
                 resetKiosk();
             }, 5000);
         } catch (error) {
+            if (handleKioskRequestError(error)) return;
             alert(error.response?.data?.message || 'حدث خطأ، يرجى المحاولة.');
         } finally {
             setIsLoading(false);
@@ -298,20 +340,43 @@ const KioskScreen = () => {
                 chair: selectedChair,
                 selectedServices: fullSelectedServices,
                 bookingSource: 'kiosk'
-            });
+            }, { headers: kioskHeaders() });
             setSuccessMode('scheduled');
             setStep(3);
             setTimeout(() => {
                 resetKiosk();
             }, 5000);
         } catch (error) {
+            if (handleKioskRequestError(error)) return;
             alert(error.response?.data?.message || 'حدث خطأ، يرجى المحاولة.');
         } finally {
             setIsLoading(false);
         }
     };
 
-    if (isLoading && !tenantData) {
+    if (kioskAccess === 'inactive') {
+        return (
+            <div dir="rtl" className="min-h-screen bg-slate-900 flex items-center justify-center p-6 font-arabic text-right">
+                <div className="w-full max-w-lg rounded-3xl bg-white p-8 md:p-10 shadow-2xl">
+                    <h1 className="text-2xl md:text-3xl font-black text-slate-800">هذا الجهاز غير مفعّل ككشك</h1>
+                    <p className="mt-4 text-base md:text-lg font-bold leading-8 text-slate-500">
+                        الكشك يعمل داخل الصالون فقط. لتفعيل هذا الجهاز، سجّل الدخول إلى لوحة تحكم الصالون عليه، ثم اضغط «بوابة الكشك» من القائمة الجانبية.
+                    </p>
+                    <p className="mt-3 text-sm font-bold text-slate-400">للحجز كعميل، استخدم رابط الحجز الخاص بالصالون.</p>
+                    <div className="mt-8 flex flex-wrap gap-3">
+                        <button type="button" onClick={() => navigate('/login')} className="rounded-xl bg-slate-900 px-6 py-3 font-black text-white hover:bg-slate-800">
+                            دخول لوحة التحكم
+                        </button>
+                        <button type="button" onClick={() => navigate(`/${slug}`)} className="rounded-xl border border-slate-200 px-6 py-3 font-black text-slate-700 hover:bg-slate-50">
+                            صفحة الحجز
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (kioskAccess === 'checking' || (isLoading && !tenantData)) {
         return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white font-arabic text-xl md:text-2xl animate-pulse">جاري التحضير... ⏳</div>;
     }
 

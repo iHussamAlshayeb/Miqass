@@ -62,3 +62,24 @@ test("a kiosk key cannot open the salon dashboard", async () => {
   assert.equal(nextCalled, false);
   assert.equal(res.statusCode, 401);
 });
+
+test("kiosk bookings (walk-in and late slots) are refused from a device that is not activated", async () => {
+  const { createAppointment } = require("../src/controllers/booking/publicBookingController");
+  const Appointment = require("../src/models/Appointment");
+  const tenant = { _id: TENANT_ID, kioskTokenVersion: 0, settings: {}, subscription: { status: "Active", plan: "Pro" } };
+  const body = { tenantId: TENANT_ID, customerPhone: "0551234567", childrenNames: ["خالد"] };
+
+  for (const bookingSource of ["kiosk_walk_in", "kiosk"]) {
+    const res = response();
+    await withStubs([[Tenant, "findById", () => query(tenant)], [Appointment, "init", async () => {}]], () =>
+      createAppointment({ headers: {}, body: { ...body, bookingSource, date: "2026-10-06", timeSlot: "18:00", chair: "محمد" } }, res));
+    assert.equal(res.statusCode, 403, bookingSource);
+    assert.equal(res.body.code, "KIOSK_NOT_ACTIVATED");
+  }
+
+  const otherSalonKey = signKioskToken({ tenantId: "507f1f77bcf86cd799439099", version: 0 });
+  const res = response();
+  await withStubs([[Tenant, "findById", () => query(tenant)], [Appointment, "init", async () => {}]], () =>
+    createAppointment({ headers: { "x-kiosk-token": otherSalonKey }, body: { ...body, bookingSource: "kiosk_walk_in" } }, res));
+  assert.equal(res.statusCode, 403, "a key from another salon does not work");
+});

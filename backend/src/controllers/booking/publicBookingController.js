@@ -20,6 +20,7 @@ const {
   generateTimeSlots,
   getNextTimeSlot,
   getKsaNow,
+  isKioskBookingSource,
   isKioskWalkInBookingSource,
   formatKsaDate,
   formatWalkInTimeSlot,
@@ -27,6 +28,7 @@ const {
   isSlotDuringBreak,
   normalizeSelectedServiceIds,
 } = require("./helpers");
+const { hasActiveKioskAccess } = require("./kioskController");
 
 // 1. إنشاء موعد جديد
 const createAppointment = async (req, res) => {
@@ -58,9 +60,20 @@ const createAppointment = async (req, res) => {
     }
 
     const tenant = await Tenant.findById(tenantId)
-      .select("settings subscription paymentSettings deletedAt")
+      .select("settings subscription paymentSettings deletedAt kioskTokenVersion")
       .lean();
     if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
+
+    // الكشك خدمة داخلية: حجوزاته (الحلاقة المباشرة والحجز المتأخر) تتطلب جهازاً مفعّلاً من لوحة التحكم
+    if (
+      (isWalkInBooking || isKioskBookingSource(bookingSource)) &&
+      !hasActiveKioskAccess(req, tenant)
+    ) {
+      return res.status(403).json({
+        message: "هذا الجهاز غير مفعّل ككشك لهذا الصالون.",
+        code: "KIOSK_NOT_ACTIVATED",
+      });
+    }
     if (tenant.deletedAt || tenant.subscription?.status !== "Active") {
       return res.status(403).json({ message: "الصالون غير متاح للحجز حالياً." });
     }
@@ -462,8 +475,13 @@ const getAvailableSlots = async (req, res) => {
     const { tenantId, date, chair, requestedDuration, bookingSource } =
       req.query;
 
-    const tenant = await Tenant.findById(tenantId).select("settings").lean();
+    const tenant = await Tenant.findById(tenantId).select("settings kioskTokenVersion deletedAt").lean();
     if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
+    // أوقات الكشك (بعد بداية الموعد بدقائق) لا تظهر إلا لجهاز كشك مفعّل
+    const effectiveBookingSource =
+      isKioskBookingSource(bookingSource) && !hasActiveKioskAccess(req, tenant)
+        ? "public"
+        : bookingSource;
 
     const settings = tenant.settings || {};
     if (settings.closedDates && settings.closedDates.includes(date)) {
@@ -535,7 +553,7 @@ const getAvailableSlots = async (req, res) => {
         date,
         timeSlot: slot,
         startTime: start,
-        bookingSource,
+        bookingSource: effectiveBookingSource,
         now,
       });
     });
