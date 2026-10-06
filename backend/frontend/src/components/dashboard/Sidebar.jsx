@@ -1,16 +1,20 @@
 import React, { useState } from 'react';
+import API from '../../services/api';
 import {
     BarChart3,
     CalendarDays,
     ClipboardList,
     Copy,
+    ExternalLink,
     Headphones,
     LayoutDashboard,
     Lock,
     Megaphone,
+    Monitor,
     Package,
     Receipt,
     Settings,
+    Smartphone,
     Star,
     UsersRound,
     WalletCards,
@@ -85,9 +89,41 @@ const Sidebar = ({
         onClose?.();
     };
 
+    // يفتح الكشك على هذا الجهاز بعد تفعيله، ليعرض الأسماء المحفوظة للعملاء دون رمز تحقق
+    const openKiosk = async () => {
+        if (currentPlan !== 'Premium') {
+            setUpsellConfig({ isOpen: true, featureName: 'وضع الكشك', requiredPlan: 'Premium', icon: 'Premium' });
+            return;
+        }
+        const kioskWindow = window.open('', '_blank');
+        try {
+            const res = await API.post('/appointments/kiosk/activate');
+            const url = `/kiosk/${slug}#activate=${encodeURIComponent(res.data.token)}`;
+            if (kioskWindow) kioskWindow.location.href = url;
+            else window.location.href = url;
+        } catch {
+            kioskWindow?.close();
+            alert('تعذر تفعيل جهاز الكشك، حاول مرة أخرى.');
+        }
+    };
+
     const copyLink = async (value, successMessage) => {
         await navigator.clipboard.writeText(value);
         alert(successMessage);
+    };
+
+    const openPremiumLink = (url, featureName) => {
+        if (currentPlan !== 'Premium') {
+            setUpsellConfig({
+                isOpen: true,
+                featureName,
+                requiredPlan: 'Premium',
+                icon: 'Premium',
+            });
+            return;
+        }
+
+        window.open(url, '_blank');
     };
 
     return (
@@ -198,6 +234,37 @@ const Sidebar = ({
                                 >
                                     <span>رابط الحجز</span>
                                     <Copy size={15} />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => openPremiumLink(`/tv/${slug}`, 'شاشة التلفزيون التفاعلية')}
+                                    className="flex h-10 w-full items-center justify-between rounded-lg border border-slate-200 px-3 text-xs font-black text-slate-700 hover:bg-slate-50"
+                                >
+                                    <span>شاشة الانتظار</span>
+                                    <Monitor size={15} />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={openKiosk}
+                                    title="يفتح الكشك على هذا الجهاز ويفعّله لعرض الأسماء المحفوظة للعملاء"
+                                    className="flex h-10 w-full items-center justify-between rounded-lg border border-slate-200 px-3 text-xs font-black text-slate-700 hover:bg-slate-50"
+                                >
+                                    <span>بوابة الكشك</span>
+                                    <Smartphone size={15} />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (currentPlan !== 'Premium') {
+                                            openPremiumLink('', 'بوابة الطاقم');
+                                            return;
+                                        }
+                                        copyLink(`https://www.miqass.app/barber/${slug}`, 'تم نسخ رابط بوابة الطاقم.');
+                                    }}
+                                    className="flex h-10 w-full items-center justify-between rounded-lg border border-slate-200 px-3 text-xs font-black text-slate-700 hover:bg-slate-50"
+                                >
+                                    <span>بوابة الطاقم</span>
+                                    <ExternalLink size={15} />
                                 </button>
                             </div>
                         </div>
