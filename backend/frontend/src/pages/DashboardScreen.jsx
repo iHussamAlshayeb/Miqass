@@ -31,7 +31,7 @@ import ExpensesTab from '../components/dashboard/ExpensesTab';
 const pageMeta = {
     statistics: {
         title: 'لوحة الأداء',
-        description: 'نظرة تنفيذية على الحجوزات، الإيرادات، وأداء الفريق.',
+        description: 'الإيراد والخدمات وأداء الحلاقين خلال الفترة المختارة، مع المقارنة بالفترة السابقة.',
     },
     appointments: {
         title: 'مواعيد اليوم',
@@ -465,7 +465,7 @@ const DashboardScreen = () => {
                     <main className="mx-auto w-full max-w-screen-2xl flex-1 px-4 py-4 sm:px-6 lg:px-8 lg:py-6">
                         <PushNotificationPrompt tenantId={tenantId} />
 
-                        {activeTab === 'statistics' && <StatisticsTab allAppointments={allAppointments} />}
+                        {activeTab === 'statistics' && <StatisticsTab />}
                         {activeTab === 'appointments' && <DailyTab selectedDate={selectedDate} setSelectedDate={setSelectedDate} isLoading={isLoading} appointments={appointments} handleStatusChange={handleStatusChange} handleSingleWhatsApp={handleSingleWhatsApp} whatsappSettings={whatsappSettings} reviewEnabled={Boolean(settings?.enableGoogleReviews && settings?.googleReviewLink)} refreshAppointments={fetchAppointments} onOpenCheckout={openAppointmentCheckout} />}
                         {activeTab === 'all' && <AllTab isLoading={isLoading} allAppointments={allAppointments} exportToExcel={exportToExcel} handleStatusChange={handleStatusChange} />}
                         {activeTab === 'sales' && <SalesTab services={services} checkoutAppointment={checkoutAppointment} onClearCheckout={clearCheckout} onSaleSaved={() => fetchAppointments(true)} />}

@@ -38,6 +38,7 @@ const {
   updateBarberSettings,
   updateWhatsappSettings,
   getAllUpcomingAppointments,
+  getPerformanceSummary,
   getAppointmentHistory,
   resendSingleWhatsApp,
   updateWhatsappTemplates,
@@ -169,6 +170,7 @@ router.get("/whatsapp-status", (req, res) => {
 
 router.get("/barber", getBarberAppointments);
 router.get("/all-upcoming", getAllUpcomingAppointments);
+router.get("/performance", getPerformanceSummary);
 router.get("/history", getAppointmentHistory);
 router.put("/status/:appointmentId", updateAppointmentStatus);
 router.put("/cancel/:appointmentId", cancelAppointment);
