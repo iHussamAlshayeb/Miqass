@@ -593,9 +593,10 @@ const getSaleInvoice = async (req, res) => {
         logoUrl: tenant?.branding?.logoUrl || "",
         phone: tenant?.ownerPhone || "",
         taxNumber,
-        date: createdAt.toLocaleDateString("en-GB"),
+        date: createdAt.toLocaleDateString("en-GB", { timeZone: "Asia/Riyadh" }),
         isoDate: sale.createdAt,
         time: createdAt.toLocaleTimeString("ar-SA", {
+          timeZone: "Asia/Riyadh",
           hour: "2-digit",
           minute: "2-digit",
         }),
