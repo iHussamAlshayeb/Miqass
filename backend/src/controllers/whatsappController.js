@@ -135,6 +135,16 @@ const saveWhatsiSettings = async (req, res) => {
   }
 };
 
+const safelyMatchesSecret = (receivedSecret, expectedSecret) => {
+  const received = Buffer.from(String(receivedSecret || ""));
+  const expected = Buffer.from(String(expectedSecret || ""));
+  return (
+    received.length > 0 &&
+    received.length === expected.length &&
+    crypto.timingSafeEqual(received, expected)
+  );
+};
+
 const createWhatsappSession = async (req, res) => {
   const requestedProvider = String(req.body?.provider || "wasender").toLowerCase();
   if (!WHATSAPP_PROVIDERS.includes(requestedProvider)) {
