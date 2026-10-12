@@ -1,3 +1,4 @@
+process.env.ZAKATY_ENABLED = "true"; // هذه الاختبارات تفحص الاتصال نفسه
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const axios = require('axios');

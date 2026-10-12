@@ -4,6 +4,7 @@ const os = require("os");
 const Appointment = require("../models/Appointment");
 const Tenant = require("../models/Tenant");
 const { processPendingZakatySetups } = require('../services/zakatySetupService');
+const { isZakatyEnabled } = require('./zakatySwitch');
 const Campaign = require("../models/Campaign");
 const Customer = require("../models/Customer");
 
@@ -831,7 +832,7 @@ const startCronJobs = () => {
     { timezone: "Asia/Riyadh" },
   );
 
-  schedule("* * * * *", () => processPendingZakatySetups().catch((error) =>
+  schedule("* * * * *", () => isZakatyEnabled() && processPendingZakatySetups().catch((error) =>
     console.error('Zakaty setup recovery failed:', error.message)));
 };
 

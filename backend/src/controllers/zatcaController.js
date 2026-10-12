@@ -1,3 +1,4 @@
+const { isZakatyEnabled } = require('../utils/zakatySwitch');
 const Tenant = require("../models/Tenant");
 const { encrypt } = require("../utils/encryption");
 const {
@@ -16,7 +17,8 @@ const presentZakatyResponse = (tenant) => {
   try { provisioningEnvironment = getProvisioningConfig().environment; } catch { /* Optional in development. */ }
   return {
     config: presentZakatyConfig(tenant),
-    serviceConfigured: !!process.env.ZAKATY_BASE_URL,
+    serviceConfigured: isZakatyEnabled() && !!process.env.ZAKATY_BASE_URL,
+    serviceEnabled: isZakatyEnabled(),
     provisioningConfigured: !!provisioningEnvironment,
     provisioningEnvironment,
   };

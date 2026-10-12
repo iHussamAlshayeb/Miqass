@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const { protect } = require("../middlewares/authMiddleware");
+const { requireZakatyEnabled } = require("../utils/zakatySwitch");
 const { getZakatySaleStatus, submitSaleToZakaty, reconcileZakatySale } = require('../controllers/zakatySaleController');
 const {
   listSales,
@@ -23,7 +24,7 @@ router.post("/:saleId/cancel", cancelSale);
 router.get("/:saleId/invoice", getSaleInvoice);
 router.get('/:saleId/zakaty-readiness', getZakatyReadiness);
 router.get('/:saleId/zakaty/status', getZakatySaleStatus);
-router.post('/:saleId/zakaty/submit', submitSaleToZakaty);
-router.post('/:saleId/zakaty/reconcile', reconcileZakatySale);
+router.post('/:saleId/zakaty/submit', requireZakatyEnabled, submitSaleToZakaty);
+router.post('/:saleId/zakaty/reconcile', requireZakatyEnabled, reconcileZakatySale);
 
 module.exports = router;

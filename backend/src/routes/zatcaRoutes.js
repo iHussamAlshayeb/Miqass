@@ -4,6 +4,7 @@ const rateLimit = require("../middlewares/rateLimit");
 // وسيط الفوترة الإلكترونية الوحيد: Zakaty
 const zatcaController = require("../controllers/zatcaController");
 const { protect } = require("../middlewares/authMiddleware");
+const { requireZakatyEnabled } = require("../utils/zakatySwitch");
 
 const generalZatcaLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -16,6 +17,8 @@ const generalZatcaLimiter = rateLimit({
 router.get('/zakaty/config', protect, zatcaController.getZakatyConfig);
 
 router.use(generalZatcaLimiter);
+// كل ما بعد هذا السطر يتصل بـ Zakaty أو يغيّر حالة الربط
+router.use(requireZakatyEnabled);
 
 router.put('/zakaty/config', protect, zatcaController.updateZakatyConfig);
 router.delete('/zakaty/config', protect, zatcaController.disconnectZakatyConfig);

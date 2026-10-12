@@ -1,8 +1,10 @@
 const axios = require('axios');
 const fs = require('node:fs');
 const { decrypt } = require('../utils/encryption');
+const { isZakatyEnabled, zakatyDisabledError } = require('../utils/zakatySwitch');
 
 const getBaseUrl = () => {
+  if (!isZakatyEnabled()) throw zakatyDisabledError();
   const raw = process.env.ZAKATY_BASE_URL;
   if (!raw) throw new Error('عنوان خدمة Zakaty غير مضبوط على الخادم.');
   const url = new URL(raw);
@@ -144,7 +146,7 @@ const normalizeZakatyResult = (result) => {
 };
 
 const summarizeZakatyError = (error) => {
-  const status = Number(error.response?.status || 0);
+  const status = Number(error.response?.status || error.statusCode || 0);
   const message = String(error.response?.data?.message || error.message || 'تعذر الاتصال بخدمة Zakaty.').slice(0, 300);
   return { status, message };
 };

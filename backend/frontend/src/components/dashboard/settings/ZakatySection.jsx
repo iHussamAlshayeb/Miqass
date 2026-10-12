@@ -19,6 +19,7 @@ const ZakatySection = ({ onTaxNumberSaved }) => {
     const [taxNumber, setTaxNumber] = useState('');
     const [otp, setOtp] = useState('');
     const [serviceConfigured, setServiceConfigured] = useState(false);
+    const [serviceEnabled, setServiceEnabled] = useState(true);
     const [provisioningConfigured, setProvisioningConfigured] = useState(false);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -33,6 +34,7 @@ const ZakatySection = ({ onTaxNumberSaved }) => {
                 setConfig(data.config);
                 setTaxNumber(data.taxNumber || '');
                 setServiceConfigured(data.serviceConfigured);
+                setServiceEnabled(data.serviceEnabled !== false);
                 setProvisioningConfigured(data.provisioningConfigured);
             })
             .catch(() => { if (active) setError('تعذر تحميل إعدادات Zakaty.'); })
@@ -135,7 +137,7 @@ const ZakatySection = ({ onTaxNumberSaved }) => {
             </div>
             {loading ? <p className="text-sm text-slate-500">جاري تحميل الإعدادات...</p> : (
                 <form onSubmit={status === 'awaiting_otp' ? (event) => { event.preventDefault(); submitOtp(); } : start} className="space-y-4">
-                    {(!serviceConfigured || !provisioningConfigured) && <p role="alert" className="text-sm text-amber-700">خدمة الربط غير مجهزة على خادم مقص بعد.</p>}
+                    {!serviceEnabled ? <p role="alert" className="text-sm text-amber-700">الربط مع Zakaty متوقف حالياً.</p> : (!serviceConfigured || !provisioningConfigured) && <p role="alert" className="text-sm text-amber-700">خدمة الربط غير مجهزة على خادم مقص بعد.</p>}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <label className="block text-sm font-bold text-slate-700">
                             الرقم الضريبي
