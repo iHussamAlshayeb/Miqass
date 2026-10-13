@@ -1,4 +1,5 @@
 const express = require("express");
+const { rejectDisallowedOrigins, corsOptions } = require("./utils/corsPolicy");
 const cors = require("cors");
 const helmet = require("helmet");
 const compression = require("compression");
@@ -28,27 +29,8 @@ app.use((req, res, next) => {
 app.use(helmet({ contentSecurityPolicy }));
 app.use(compression());
 
-app.use(
-  cors({
-    origin: function (origin, callback) {
-      if (!origin) return callback(null, true);
-
-      const allowedPatterns = [
-        /^https?:\/\/localhost:\d+$/,
-        /^https:\/\/(www\.)?miqass\.app$/,
-      ];
-
-      const isAllowed = allowedPatterns.some((pattern) => pattern.test(origin));
-
-      if (isAllowed) {
-        callback(null, true);
-      } else {
-        callback(new Error("Access denied by Miqass Security Policy"));
-      }
-    },
-    credentials: true,
-  }),
-);
+app.use(rejectDisallowedOrigins);
+app.use(cors(corsOptions));
 
 app.use(
   express.json({
