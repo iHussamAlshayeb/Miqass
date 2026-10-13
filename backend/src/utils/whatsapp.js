@@ -398,9 +398,10 @@ const sendCampaignMessage = async (phone, messageText, tenant, options = {}) => 
     handleWhatsAppError("رسالة الحملة التسويقية", error);
     const status = error.response?.status;
     const isRateLimited = status === 429;
-    const isConnectionRejected = ["ENOTFOUND", "ECONNREFUSED"].includes(
-      error.code,
-    );
+    // أخطاء قبل اكتمال الاتصال: الطلب لم يغادر الخادم أصلاً، فإعادة المحاولة آمنة
+    const isConnectionRejected =
+      ["ENOTFOUND", "ECONNREFUSED", "ENETUNREACH", "EHOSTUNREACH", "EAI_AGAIN"].includes(error.code) ||
+      (error.code === "ETIMEDOUT" && (error.syscall === "connect" || /^connect /.test(String(error.message || ""))));
     const isUncertain =
       error.code === "ECONNABORTED" ||
       status === 408 ||
