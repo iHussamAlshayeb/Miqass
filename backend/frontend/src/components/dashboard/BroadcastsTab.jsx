@@ -432,7 +432,7 @@ const BroadcastsTab = ({ tenantId }) => {
                             </div>
                         )}
                         <p className="text-[11px] font-bold text-slate-500 leading-relaxed">
-                            عند بلوغ الحد تتوقف الحملة تلقائياً حتى بداية اليوم التالي بتوقيت الرياض. تُحسب كل محاولة إرسال ضمن الحد لحماية الرقم.
+                            عند بلوغ الحد تتوقف الحملة تلقائياً وتستأنف الساعة 12 ظهراً بتوقيت الرياض. تُحسب كل محاولة إرسال ضمن الحد لحماية الرقم.
                         </p>
                     </div>
 
@@ -621,7 +621,7 @@ const BroadcastsTab = ({ tenantId }) => {
                                                     حد اليوم: {Number(campaign.dailyAttemptCount || 0).toLocaleString('ar-SA')} من {Number(campaign.dailyMessageLimit).toLocaleString('ar-SA')} رسالة
                                                 </span>
                                                 {campaign.isDailyLimitReached && (
-                                                    <span className="font-black">يستأنف تلقائياً غداً بتوقيت الرياض</span>
+                                                    <span className="font-black">يستأنف تلقائياً الساعة 12 ظهراً بتوقيت الرياض</span>
                                                 )}
                                             </div>
                                         )}

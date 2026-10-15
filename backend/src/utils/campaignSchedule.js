@@ -19,6 +19,20 @@ const getNextRiyadhDayStart = (date = new Date()) => {
   );
 };
 
+// يوم الحملات يبدأ الساعة 12 ظهراً بتوقيت الرياض: عنده يتجدد الحد اليومي وتنطلق الدفعة التالية
+const CAMPAIGN_DAY_START_HOUR = 12;
+
+// مفتاح "يوم الحملة" = تاريخ الرياض بعد إزاحة ساعة البداية، فما قبل 12 ظهراً يتبع اليوم السابق
+const getCampaignDayKey = (date = new Date()) =>
+  getRiyadhDayKey(new Date(date.getTime() - CAMPAIGN_DAY_START_HOUR * 60 * 60 * 1000));
+
+const getNextCampaignDayStart = (date = new Date()) => {
+  const [year, month, day] = getCampaignDayKey(date).split("-").map(Number);
+  return new Date(
+    Date.UTC(year, month - 1, day + 1, CAMPAIGN_DAY_START_HOUR - RIYADH_UTC_OFFSET_HOURS, 0, 0),
+  );
+};
+
 const parseCampaignDailyLimit = (value) => {
   if (value === null || value === undefined || value === "") {
     return { value: null };
@@ -39,7 +53,10 @@ const parseCampaignDailyLimit = (value) => {
 };
 
 module.exports = {
+  CAMPAIGN_DAY_START_HOUR,
   MAX_CAMPAIGN_DAILY_LIMIT,
+  getCampaignDayKey,
+  getNextCampaignDayStart,
   getNextRiyadhDayStart,
   getRiyadhDayKey,
   parseCampaignDailyLimit,

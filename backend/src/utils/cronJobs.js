@@ -24,8 +24,8 @@ const {
   updateCampaignMessageDelivery,
 } = require("../services/campaignDeliveryService");
 const {
-  getNextRiyadhDayStart,
-  getRiyadhDayKey,
+  getNextCampaignDayStart,
+  getCampaignDayKey,
 } = require("./campaignSchedule");
 
 const formatDate = (d) =>
@@ -298,7 +298,7 @@ const hasReachedCampaignDailyLimit = (campaign) => {
 };
 
 const prepareCampaignDailyWindow = async (campaign) => {
-  const todayKey = getRiyadhDayKey();
+  const todayKey = getCampaignDayKey();
   if (campaign.dailyWindowDate === todayKey) return true;
 
   const result = await Campaign.updateOne(
@@ -389,7 +389,7 @@ const finalizeCampaignBatch = async (campaignId) => {
     const hasErrors = counts.Failed > 0 || counts.Uncertain > 0;
     const isPaused = campaign.status === "Paused";
     const dailyAttemptCount =
-      campaign.dailyWindowDate === getRiyadhDayKey(now)
+      campaign.dailyWindowDate === getCampaignDayKey(now)
         ? Number(campaign.dailyAttemptCount || 0)
         : 0;
     const isDailyLimitReached = Boolean(
@@ -425,7 +425,7 @@ const finalizeCampaignBatch = async (campaignId) => {
           nextRunAt:
             hasPending && !isPaused && !isCancelled
               ? isDailyLimitReached
-                ? getNextRiyadhDayStart(now)
+                ? getNextCampaignDayStart(now)
                 : nextAttemptAt
               : null,
           lockOwner: null,

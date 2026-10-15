@@ -3,7 +3,7 @@ const Tenant = require("../../models/Tenant");
 const Campaign = require("../../models/Campaign");
 const Customer = require("../../models/Customer");
 const {
-  getRiyadhDayKey,
+  getCampaignDayKey,
   parseCampaignDailyLimit,
 } = require("../../utils/campaignSchedule");
 const { normalizeSaudiMobile } = require("../../utils/saudiMobile");
@@ -87,7 +87,7 @@ const mapCampaignProgress = (campaign) => {
   );
   const dailyMessageLimit = Number(campaign.dailyMessageLimit || 0) || null;
   const dailyAttemptCount =
-    campaign.dailyWindowDate === getRiyadhDayKey()
+    campaign.dailyWindowDate === getCampaignDayKey()
       ? Number(campaign.dailyAttemptCount || 0)
       : 0;
 
@@ -618,7 +618,7 @@ const sendBroadcastCampaign = async (req, res) => {
       cancelledCount: 0,
       dailyMessageLimit: dailyLimitResult.value,
       dailyAttemptCount: 0,
-      dailyWindowDate: getRiyadhDayKey(),
+      dailyWindowDate: getCampaignDayKey(),
       status: "Pending",
       nextRunAt: new Date(),
     });
