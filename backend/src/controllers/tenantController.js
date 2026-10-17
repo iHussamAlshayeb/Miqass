@@ -1,3 +1,4 @@
+const { publicServicePrices } = require("../utils/servicePricing");
 const Tenant = require("../models/Tenant");
 const Barber = require("../models/Barber");
 const Service = require("../models/Service");
@@ -68,7 +69,7 @@ const getTenantBySlug = async (req, res) => {
 
     const [barbers, services, reviews] = await Promise.all([
       Barber.find({ tenantId: tenant._id, isActive: { $ne: false } })
-        .select("name +pin isActive leaves iconColor")
+        .select("name +pin isActive leaves iconColor servicePrices")
         .lean(),
       Service.find({ tenantId: tenant._id, isActive: true })
         .select("name description price duration category")
@@ -89,6 +90,7 @@ const getTenantBySlug = async (req, res) => {
       iconColor: b.iconColor || "",
       hasPin: !!b.pin,
       leaves: normalizeBarberLeaves(b.leaves),
+      servicePrices: publicServicePrices(b),
     }));
 
     res.status(200).json({ tenant, barbers: safeBarbers, services, reviews });

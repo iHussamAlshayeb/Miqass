@@ -4,11 +4,13 @@ import {
     Plus,
     RotateCcw,
     Scissors,
+    Tags,
     Trash2,
 } from 'lucide-react';
 import { useState } from 'react';
 import { PlanBadge } from './PlanBadge';
 import { WEEKDAY_OPTIONS, LEAVE_TYPE_OPTIONS, formatLeaveDate } from './barberLeaveOptions';
+import { getServiceKey } from '../../../utils/servicePricing';
 
 // 4. قسم قائمة الخدمات والطاقم
 const TeamSection = ({
@@ -35,6 +37,19 @@ const TeamSection = ({
 }) => {
     const [editingIndex, setEditingIndex] = useState(null);
     const onClose = () => setEditingIndex(null);
+
+    // سعر خاص للحلاق؛ القيمة الفارغة تعني الرجوع لسعر الخدمة الأساسي
+    const setBarberServicePrice = (index, serviceKey, value) => {
+        setBarbers((current) => current.map((item, itemIndex) => {
+            if (itemIndex !== index) return item;
+            const barber = typeof item === 'string' ? { name: item, isActive: true, leaves: [] } : item;
+            const others = (barber.servicePrices || []).filter((entry) => String(entry.serviceId) !== serviceKey);
+            return {
+                ...barber,
+                servicePrices: value === '' ? others : [...others, { serviceId: serviceKey, price: value }],
+            };
+        }));
+    };
 
     // محرر الحلاق: نفس الحقول السابقة، تُعرض في لوحة جانبية لحلاق واحد
     const renderBarberEditor = (barber, index) => {
@@ -187,6 +202,51 @@ const TeamSection = ({
                     </div>
 
                     <div className="border-t border-slate-100 p-5">
+                        <div className="flex items-center gap-2 text-slate-700">
+                            <Tags size={17} />
+                            <h5 className="text-sm font-black">أسعار الحلاق</h5>
+                        </div>
+                        <p className="mt-1 mb-3 text-[11px] font-bold text-slate-500">
+                            حدّد سعراً مختلفاً لهذا الحلاق، أو اترك الحقل فارغاً ليأخذ السعر الأساسي للخدمة.
+                        </p>
+                        {pricedServices.length === 0 ? (
+                            <p className="rounded-lg bg-slate-50 px-3 py-3 text-xs font-bold text-slate-500">أضف الخدمات أولاً من صفحة الخدمات.</p>
+                        ) : (
+                            <div className="divide-y divide-slate-100 border border-slate-100 rounded-lg overflow-hidden">
+                                {pricedServices.map((service) => {
+                                    const serviceKey = getServiceKey(service);
+                                    const custom = (typeof barber === 'string' ? [] : barber.servicePrices || [])
+                                        .find((entry) => String(entry.serviceId) === serviceKey);
+                                    const customValue = custom ? String(custom.price) : '';
+                                    return (
+                                        <div key={serviceKey} className="flex items-center justify-between gap-3 px-3 py-2.5 bg-white">
+                                            <div className="min-w-0">
+                                                <p className="truncate text-xs font-black text-slate-800">{service.name}</p>
+                                                <p className="mt-0.5 text-[11px] font-bold text-slate-400">الأساسي {Number(service.price || 0)} ر.س</p>
+                                            </div>
+                                            <div className="flex shrink-0 items-center gap-1.5">
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    step="0.5"
+                                                    inputMode="decimal"
+                                                    placeholder={String(Number(service.price || 0))}
+                                                    value={customValue}
+                                                    onChange={(event) => setBarberServicePrice(index, serviceKey, event.target.value)}
+                                                    className={`h-10 w-24 rounded-lg border px-3 text-sm font-black outline-none focus:border-emerald-400 ${customValue ? 'border-emerald-300 bg-emerald-50 text-emerald-900' : 'border-slate-200 bg-slate-50 text-slate-800'}`}
+                                                    dir="ltr"
+                                                    aria-label={`سعر ${service.name} لدى ${bName}`}
+                                                />
+                                                <span className="text-[11px] font-bold text-slate-400">ر.س</span>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="border-t border-slate-100 p-5">
                         <div className="flex items-center gap-2 mb-3 text-slate-700">
                             <CalendarDays size={17} />
                             <h5 className="text-sm font-black">إجازات الحلاق</h5>
@@ -275,6 +335,7 @@ const TeamSection = ({
     };
 
     const editingBarber = editingIndex !== null ? barbers?.[editingIndex] : null;
+    const pricedServices = (services || []).filter((service) => String(service?.name || '').trim() && getServiceKey(service));
 
     return (
     <section className="bg-white p-5 md:p-7 rounded-lg shadow-sm border border-slate-100">
@@ -310,6 +371,7 @@ const TeamSection = ({
                     const iconColor = (typeof barber === 'string' ? '' : barber.iconColor) || (index % 2 === 0 ? themeColors?.primaryColor : themeColors?.secondaryColor) || '#3b82f6';
                     const leavesCount = typeof barber === 'string' ? 0 : (barber.leaves || []).length;
                     const hasPin = typeof barber !== 'string' && (barber.hasPin || barber.pin);
+                    const customPricesCount = typeof barber === 'string' ? 0 : (barber.servicePrices || []).length;
                     return (
                         <div key={barber?._id || index} className="flex items-center gap-3 py-3">
                             <span className="h-9 w-9 shrink-0 rounded-lg border border-slate-200" style={{ backgroundColor: iconColor }} aria-hidden="true" />
@@ -319,6 +381,7 @@ const TeamSection = ({
                                     <span className={isActive ? 'text-emerald-700' : 'text-slate-400'}>{isActive ? 'متاح للحجز' : 'متوقف'}</span>
                                     {currentPlan === 'Premium' && <span>{hasPin ? '، له رمز دخول' : '، بدون رمز دخول'}</span>}
                                     {leavesCount > 0 && <span>{`، ${leavesCount} ${leavesCount === 1 ? 'إجازة' : 'إجازات'}`}</span>}
+                                    {customPricesCount > 0 && <span>{`، أسعار خاصة لـ ${customPricesCount} ${customPricesCount === 1 ? 'خدمة' : 'خدمات'}`}</span>}
                                 </p>
                             </div>
                             <button type="button" onClick={() => setEditingIndex(index)} className="shrink-0 rounded-lg border border-slate-200 px-4 py-2 text-sm font-black text-slate-700 hover:bg-slate-50">
@@ -342,7 +405,7 @@ const TeamSection = ({
             <div className="flex justify-between items-center mb-4">
                 <div>
                     <label className="block text-sm font-black text-slate-800">قائمة الخدمات والأسعار</label>
-                    <p className="text-[10px] font-bold text-slate-500 mt-1">لحساب الفاتورة بدقة، قم بإضافة خدماتك بأسعار شاملة الضريبة.</p>
+                    <p className="text-[10px] font-bold text-slate-500 mt-1">لحساب الفاتورة بدقة، قم بإضافة خدماتك بأسعار شاملة الضريبة. ولتحديد سعر مختلف لحلاق معيّن، افتح الحلاق من صفحة الحلاقين.</p>
                 </div>
                 <button type="button" onClick={handleAddService} className="bg-slate-800 text-white px-4 py-2.5 rounded-lg font-black text-xs hover:bg-slate-700 transition-colors shadow-sm flex items-center gap-2">
                     <span>+</span> خدمة جديدة
@@ -356,17 +419,17 @@ const TeamSection = ({
                     </div>
                 ) : (
                     services.map((srv, index) => (
-                        <div key={srv.id || index} className="flex flex-col md:flex-row gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200 items-center hover:border-blue-300 transition-colors">
+                        <div key={getServiceKey(srv) || index} className="flex flex-col md:flex-row gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200 items-center hover:border-blue-300 transition-colors">
                             <div className="w-full md:w-2/5 relative">
                                 <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-black bg-white w-5 h-5 flex items-center justify-center rounded-full shadow-sm">{index + 1}</span>
-                                <input type="text" required placeholder="اسم الخدمة (مثال: تنظيف بشرة)" value={srv.name} onChange={(e) => handleServiceChange(srv.id, 'name', e.target.value)} className="w-full pr-12 pl-4 py-3.5 rounded-lg border-none outline-none focus:ring-2 focus:ring-blue-100 text-sm font-black text-slate-800 shadow-sm" />
+                                <input type="text" required placeholder="اسم الخدمة (مثال: تنظيف بشرة)" value={srv.name} onChange={(e) => handleServiceChange(getServiceKey(srv), 'name', e.target.value)} className="w-full pr-12 pl-4 py-3.5 rounded-lg border-none outline-none focus:ring-2 focus:ring-blue-100 text-sm font-black text-slate-800 shadow-sm" />
                             </div>
                             <div className="w-full md:w-1/4 relative">
-                                <input type="number" required placeholder="السعر" min="0" value={srv.price} onChange={(e) => handleServiceChange(srv.id, 'price', Number(e.target.value))} className="w-full px-4 py-3.5 rounded-lg border-none outline-none focus:ring-2 focus:ring-blue-100 text-sm font-black text-slate-800 shadow-sm" dir="ltr" />
+                                <input type="number" required placeholder="السعر" min="0" value={srv.price} onChange={(e) => handleServiceChange(getServiceKey(srv), 'price', Number(e.target.value))} className="w-full px-4 py-3.5 rounded-lg border-none outline-none focus:ring-2 focus:ring-blue-100 text-sm font-black text-slate-800 shadow-sm" dir="ltr" />
                                 <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">ر.س</span>
                             </div>
                             <div className="w-full md:w-1/4 relative">
-                                <select value={srv.duration} onChange={(e) => handleServiceChange(srv.id, 'duration', Number(e.target.value))} className="w-full pl-10 pr-4 py-3.5 rounded-lg border-none outline-none focus:ring-2 focus:ring-blue-100 text-sm font-black text-slate-800 appearance-none shadow-sm cursor-pointer">
+                                <select value={srv.duration} onChange={(e) => handleServiceChange(getServiceKey(srv), 'duration', Number(e.target.value))} className="w-full pl-10 pr-4 py-3.5 rounded-lg border-none outline-none focus:ring-2 focus:ring-blue-100 text-sm font-black text-slate-800 appearance-none shadow-sm cursor-pointer">
                                     <option value={15}>15 دقيقة</option>
                                     <option value={30}>30 دقيقة</option>
                                     <option value={45}>45 دقيقة</option>
@@ -374,7 +437,7 @@ const TeamSection = ({
                                 </select>
                                 <Clock3 size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
                             </div>
-                            <button type="button" onClick={() => handleRemoveService(srv.id)} className="w-full md:w-auto p-3.5 bg-red-50 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center font-bold">حذف</button>
+                            <button type="button" onClick={() => handleRemoveService(getServiceKey(srv))} className="w-full md:w-auto p-3.5 bg-red-50 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center font-bold">حذف</button>
                         </div>
                     ))
                 )}

@@ -153,7 +153,8 @@ const StatisticsTab = () => {
         return () => { cancelled = true; };
     }, [period, requestKey]);
 
-    const data = result.data;
+    // رد غير مكتمل لا يُسقط اللوحة كلها؛ يُعامل كأنه لا توجد بيانات
+    const data = result.data?.current && result.data?.previous ? result.data : null;
     const current = data?.current;
     const previous = data?.previous;
     const previousText = PREVIOUS_LABEL[data?.range?.period || period];

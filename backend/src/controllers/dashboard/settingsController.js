@@ -8,6 +8,7 @@ const { hashPin, isValidPin, normalizePinInput } = require("../../utils/barberPi
 const { compressLogoDataUri, isDataUriLogo, publicLogoUrl } = require("../../utils/logoImage");
 const { DEFAULT_TEMPLATES, getTemplates, validateTemplates } = require("../../utils/whatsappTemplates");
 const { normalizeBarberLeaves } = require("../../utils/barberLeave");
+const { normalizeServicePrices, publicServicePrices, toPrice } = require("../../utils/servicePricing");
 
 // لوحة التحكم لا تحتاج المفتاح نفسه ولا أسرار الـ webhook
 const toSafeWhatsappSettings = (settings = {}) => ({
@@ -39,6 +40,7 @@ const getBarberSettings = async (req, res) => {
       hasPin: !!b.pin,
       isActive: b.isActive !== false,
       leaves: normalizeBarberLeaves(b.leaves),
+      servicePrices: publicServicePrices(b),
     }));
 
     const safePaymentSettings = {
@@ -84,6 +86,37 @@ const getBarberSettings = async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: "خطأ في جلب الإعدادات" });
   }
+};
+
+// تُحدَّث الخدمات في مكانها حتى تبقى معرفاتها ثابتة (أسعار الحلاقين والحجوزات تشير إليها).
+// يرجع خريطة من مفتاح الواجهة (المعرف أو المؤقت) إلى المعرف الحقيقي.
+const saveServicesInPlace = async (tenantId, services) => {
+  const existing = await Service.find({ tenantId }).select("_id").lean();
+  const existingIds = new Set(existing.map((service) => String(service._id)));
+  const keyMap = new Map();
+  const keptIds = [];
+  for (const service of services) {
+    const data = {
+      name: String(service.name || "").trim(),
+      price: toPrice(service.price),
+      duration: Number(service.duration),
+      isActive: true,
+    };
+    const requestedId = String(service._id || "");
+    const clientKey = String(service._id || service.id || "");
+    let id;
+    if (mongoose.Types.ObjectId.isValid(requestedId) && existingIds.has(requestedId)) {
+      await Service.updateOne({ _id: requestedId, tenantId }, { $set: data });
+      id = requestedId;
+    } else {
+      const created = await Service.create({ tenantId, ...data });
+      id = String(created._id);
+    }
+    keptIds.push(id);
+    if (clientKey) keyMap.set(clientKey, id);
+  }
+  await Service.deleteMany({ tenantId, _id: { $nin: keptIds } });
+  return keyMap;
 };
 
 // 2. تحديث إعدادات الصالون والحلاقين والخدمات
@@ -210,6 +243,22 @@ const updateBarberSettings = async (req, res) => {
       }
     }
 
+    if (services !== undefined) {
+      if (
+        !Array.isArray(services) ||
+        services.some((service) =>
+          !String(service?.name || "").trim() ||
+          toPrice(service?.price) === null ||
+          !Number.isFinite(Number(service?.duration)) ||
+          Number(service?.duration) < 5,
+        )
+      ) {
+        return res.status(400).json({
+          message: "بيانات الخدمات غير مكتملة: الاسم والسعر والمدة (5 دقائق على الأقل) مطلوبة لكل خدمة.",
+        });
+      }
+    }
+
     if (Array.isArray(barbers)) {
       const normalizedNames = barbers.map((barber) =>
         String(typeof barber === "string" ? barber : barber?.name || "")
@@ -245,6 +294,16 @@ const updateBarberSettings = async (req, res) => {
 
     const tasks = [];
 
+    const serviceKeyMap = Array.isArray(services)
+      ? await saveServicesInPlace(tenant._id, services)
+      : null;
+    // بدون قائمة خدمات في الطلب، تُقبل أسعار الحلاق للخدمات الموجودة فعلاً فقط
+    const knownServiceIds = serviceKeyMap
+      ? null
+      : new Set((await Service.find({ tenantId: tenant._id }).select("_id").lean()).map((s) => String(s._id)));
+    const resolveServiceId = (key) =>
+      serviceKeyMap ? serviceKeyMap.get(key) || null : knownServiceIds.has(key) ? key : null;
+
     if (barbers && Array.isArray(barbers)) {
       tasks.push(
         (async () => {
@@ -271,6 +330,10 @@ const updateBarberSettings = async (req, res) => {
               clearPin: data.clearPin === true,
               isActive: data.isActive !== false,
               leaves: normalizeBarberLeaves(data.leaves),
+              // لا تُمس الأسعار إن لم ترسلها الواجهة (نسخة قديمة مثلاً)
+              servicePrices: Array.isArray(data.servicePrices)
+                ? normalizeServicePrices(data.servicePrices, resolveServiceId)
+                : undefined,
             };
           });
 
@@ -292,6 +355,7 @@ const updateBarberSettings = async (req, res) => {
               isActive: barber.isActive,
               leaves: barber.leaves,
             };
+            if (barber.servicePrices) payload.servicePrices = barber.servicePrices;
 
             // رمز جديد → يُشفَّر. فارغ لحلاق موجود → يبقى الرمز الحالي كما هو.
             if (barber.pin) payload.pin = await hashPin(barber.pin);
@@ -307,21 +371,6 @@ const updateBarberSettings = async (req, res) => {
             }
           }
         })(),
-      );
-    }
-
-    if (services) {
-      tasks.push(
-        Service.deleteMany({ tenantId: tenant._id }).then(() => {
-          const servicesToInsert = services.map((s) => ({
-            tenantId: tenant._id,
-            name: s.name,
-            price: s.price,
-            duration: s.duration,
-          }));
-          if (servicesToInsert.length > 0)
-            return Service.insertMany(servicesToInsert);
-        }),
       );
     }
 

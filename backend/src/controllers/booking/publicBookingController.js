@@ -1,4 +1,5 @@
 // الحجز العام والكشك: الأوقات المتاحة وإنشاء الموعد
+const { applyBarberServicePrices } = require("../../utils/servicePricing");
 const Appointment = require("../../models/Appointment");
 const Tenant = require("../../models/Tenant");
 const Customer = require("../../models/Customer");
@@ -148,7 +149,7 @@ const createAppointment = async (req, res) => {
         tenantId: tenant._id,
         name: effectiveChair,
         isActive: { $ne: false },
-      }).select("_id name leaves");
+      }).select("_id name leaves servicePrices");
       if (!barber) {
         return res.status(400).json({
           message: "الحلاق المختار غير متاح للحجز.",
@@ -191,15 +192,18 @@ const createAppointment = async (req, res) => {
         servicesFromDb.map((service) => [String(service._id), service]),
       );
 
-      selectedServicesSnapshot = requestedServiceIds.map((id) => {
-        const service = servicesById.get(id);
-        return {
-          serviceId: service._id,
-          name: service.name,
-          price: Number(service.price) || 0,
-          duration: Number(service.duration) || 0,
-        };
-      });
+      selectedServicesSnapshot = applyBarberServicePrices(
+        requestedServiceIds.map((id) => {
+          const service = servicesById.get(id);
+          return {
+            serviceId: service._id,
+            name: service.name,
+            price: Number(service.price) || 0,
+            duration: Number(service.duration) || 0,
+          };
+        }),
+        barber,
+      );
     }
 
     // حساب المدة والسعر من قاعدة البيانات فقط

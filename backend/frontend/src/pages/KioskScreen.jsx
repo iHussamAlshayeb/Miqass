@@ -7,6 +7,7 @@ import { getLocalDate, formatTime12Hour, getTimePeriod, isBarberOnLeaveOnDate } 
 import { FaPhone } from "react-icons/fa";
 import BarberChairIcon from '../components/BarberChairIcon';
 import { getBarberColor, getSelectedBarberColor } from '../utils/barberTheme';
+import { findBarberByName, getBarberServicePrice } from '../utils/servicePricing';
 
 // ==========================================
 // 💡 مكون بطاقة الولاء (تم ترقيته بالكامل)
@@ -289,6 +290,8 @@ const KioskScreen = () => {
         return () => clearTimeout(timeoutId);
     }, [phone, tenantData, kioskTokenKey]);
 
+    // السعر يتبع الحلاق المختار: سعره الخاص إن حدده الصالون، وإلا السعر الأساسي
+    const selectedBarber = findBarberByName(tenantData?.barbers, selectedChair);
     const calculateTotals = () => {
         if (!tenantData?.services || tenantData.services.length === 0) return { price: 0, duration: tenantData?.settings?.slotDuration || 30 };
 
@@ -297,7 +300,7 @@ const KioskScreen = () => {
         selectedServicesIds.forEach(id => {
             const srv = tenantData.services.find(s => (s._id || s.id) === id);
             if (srv) {
-                totalP += srv.price;
+                totalP += getBarberServicePrice(srv, selectedBarber);
                 totalD += srv.duration;
             }
         });
@@ -639,7 +642,7 @@ const KioskScreen = () => {
                                                         </div>
                                                     </div>
                                                     <div className="text-left bg-white px-3 py-1.5 md:px-4 md:py-2 rounded-xl md:rounded-2xl border border-slate-100 shrink-0">
-                                                        <span className="font-black text-base md:text-xl text-slate-800">{srv.price}</span>
+                                                        <span className="font-black text-base md:text-xl text-slate-800">{getBarberServicePrice(srv, selectedBarber)}</span>
                                                         <span className="text-[10px] md:text-xs font-bold text-slate-400 mr-1">ر.س</span>
                                                     </div>
                                                 </button>

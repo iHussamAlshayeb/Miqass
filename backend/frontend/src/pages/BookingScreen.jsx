@@ -14,6 +14,7 @@ import BookingSuccess from '../components/booking/BookingSuccess';
 import { CalendarDays } from 'lucide-react';
 import BarberChairIcon from '../components/BarberChairIcon';
 import { getBarberColor, getIconBackground, getSelectedBarberColor } from '../utils/barberTheme';
+import { findBarberByName, getBarberServicePrice } from '../utils/servicePricing';
 
 const getNextTimeSlot = (time, durationMinutes) => {
     if (!time) return null;
@@ -149,12 +150,15 @@ const BookingScreen = () => {
         return () => { stopped = true; clearTimeout(timer); };
     }, [slug]);
 
+    // السعر يتبع الحلاق المختار: سعره الخاص إن حدده الصالون، وإلا السعر الأساسي
+    const selectedBarber = findBarberByName(tenantData?.barbers, selectedChair);
+    const hasBarberPricing = (tenantData?.barbers || []).some((barber) => barber?.servicePrices?.length > 0);
     const calculateTotals = () => {
         if (!tenantData?.services || tenantData.services.length === 0) return { price: 0, duration: tenantData?.settings?.slotDuration || 30 };
         let totalP = 0; let totalD = 0;
         selectedServicesIds.forEach(id => {
             const srv = tenantData.services.find(s => s._id === id || s.id === id);
-            if (srv) { totalP += srv.price; totalD += srv.duration; }
+            if (srv) { totalP += getBarberServicePrice(srv, selectedBarber); totalD += srv.duration; }
         });
         if (selectedServicesIds.length === 0) return { price: 0, duration: tenantData?.settings?.slotDuration || 30 };
         return { price: totalP, duration: totalD };
@@ -390,7 +394,12 @@ const BookingScreen = () => {
                 {tenantData?.services && tenantData.services.length > 0 && (
                     <Motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="mb-6">
                         <div className="flex justify-between items-center mb-3 px-1">
-                            <h2 className="text-slate-900 font-black text-base">الخدمات المطلوبة</h2>
+                            <div>
+                                <h2 className="text-slate-900 font-black text-base">الخدمات المطلوبة</h2>
+                                {hasBarberPricing && selectedChair && (
+                                    <p className="mt-0.5 text-[11px] font-bold text-slate-500">الأسعار حسب الحلاق: {selectedChair}</p>
+                                )}
+                            </div>
                             {servicesCount > 0 && (
                                 <span className="text-xs font-black px-2.5 py-1 rounded-lg transition-colors duration-300"
                                     style={{ backgroundColor: `${activeThemeColor}15`, color: activeThemeColor }}>
@@ -420,7 +429,7 @@ const BookingScreen = () => {
                                             </div>
                                         </div>
                                         <div className="text-left bg-slate-50 px-3 py-1.5 rounded-xl shrink-0">
-                                            <span className="font-black text-slate-900 text-sm">{srv.price}</span>
+                                            <span className="font-black text-slate-900 text-sm">{getBarberServicePrice(srv, selectedBarber)}</span>
                                             <span className="text-[10px] font-bold text-slate-400 mr-1">ر.س</span>
                                         </div>
                                     </button>

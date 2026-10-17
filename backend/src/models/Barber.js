@@ -45,6 +45,15 @@ const barberSchema = new mongoose.Schema(
       default: true,
     },
 
+    // أسعار خاصة بهذا الحلاق لبعض الخدمات؛ الخدمة غير المذكورة تأخذ سعرها الأساسي
+    servicePrices: [
+      {
+        _id: false,
+        serviceId: { type: mongoose.Schema.Types.ObjectId, ref: "Service", required: true },
+        price: { type: Number, required: true, min: 0 },
+      },
+    ],
+
     leaves: [
       {
         type: {

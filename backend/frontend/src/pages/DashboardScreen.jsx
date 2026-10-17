@@ -249,17 +249,21 @@ const DashboardScreen = () => {
             });
             // إعادة تحميل الحلاقين والدفع: الرموز والمفاتيح السرية لا تُرجع من السيرفر (فقط hasPin / hasSecretKey)
             let refreshedBarbers = null;
+            let refreshedServices = null;
             let refreshedPayment = null;
             try {
                 const refreshed = await API.get('/appointments/settings');
                 refreshedBarbers = refreshed.data.barbers || [];
                 setBarbers(refreshedBarbers);
+                // الخدمات الجديدة تأخذ معرفاتها الحقيقية حتى لا تُنشأ من جديد في الحفظ التالي
+                refreshedServices = refreshed.data.services || [];
+                setServices(refreshedServices);
                 if (refreshed.data.paymentSettings) {
                     refreshedPayment = refreshed.data.paymentSettings;
                     setPaymentSettings(refreshedPayment);
                 }
             } catch { /* الحفظ نجح؛ التحديث المحلي اختياري */ }
-            return { ok: true, barbers: refreshedBarbers, paymentSettings: refreshedPayment };
+            return { ok: true, barbers: refreshedBarbers, services: refreshedServices, paymentSettings: refreshedPayment };
         } catch (error) {
             return { ok: false, message: error.response?.data?.message || 'حدث خطأ أثناء حفظ الإعدادات' };
         } finally { setIsSavingSettings(false); }

@@ -19,6 +19,7 @@ import {
     Users,
 } from 'lucide-react';
 import API from '../../services/api';
+import { getServiceKey } from '../../utils/servicePricing';
 import UpgradeModal from './UpgradeModal';
 
 import ZakatySection from './settings/ZakatySection';
@@ -168,6 +169,7 @@ const SettingsTab = ({
             setSavedForm({
                 ...formState,
                 barbers: result.barbers || formState.barbers,
+                services: result.services || formState.services,
                 paymentSettings: result.paymentSettings || formState.paymentSettings,
             });
         }
@@ -316,8 +318,9 @@ const SettingsTab = ({
     };
 
     const handleAddService = () => setServices([...services, { id: Date.now().toString(), name: '', price: '', duration: 30 }]);
-    const handleServiceChange = (id, field, value) => setServices(services.map(srv => srv.id === id ? { ...srv, [field]: value } : srv));
-    const handleRemoveService = (id) => setServices(services.filter(srv => srv.id !== id));
+    // المفتاح الثابت للخدمة: معرفها المحفوظ أو المؤقت للخدمة الجديدة
+    const handleServiceChange = (key, field, value) => setServices(services.map(srv => getServiceKey(srv) === key ? { ...srv, [field]: value } : srv));
+    const handleRemoveService = (key) => setServices(services.filter(srv => getServiceKey(srv) !== key));
 
     const handleAddBarber = () => {
         const val = newBarberName.trim();
