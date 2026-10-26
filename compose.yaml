@@ -48,7 +48,9 @@ services:
     restart: unless-stopped
 
   cloudflared:
-    image: cloudflare/cloudflared:2026.9.3
+    # أحدث إصدار دائماً: يُسحب عند كل تشغيل، ومهمة مجدولة تحدّثه يومياً (scripts/update-tunnel.ps1)
+    image: cloudflare/cloudflared:latest
+    pull_policy: always
     env_file:
       - .cloudflared/tunnel.env
     command:
