@@ -5,6 +5,7 @@ import {
     CircleDollarSign,
     Clock3,
     Copy,
+    KeyRound,
     CreditCard,
     ExternalLink,
     MessageCircle,
@@ -27,6 +28,7 @@ import AutomationsSection from './settings/AutomationsSection';
 import IdentitySection from './settings/IdentitySection';
 import BookingHoursSection from './settings/BookingHoursSection';
 import KioskSection from './settings/KioskSection';
+import CashiersSection from './settings/CashiersSection';
 import TeamSection from './settings/TeamSection';
 import PaymentSection from './settings/PaymentSection';
 import IntegrationsSection from './settings/IntegrationsSection';
@@ -67,6 +69,7 @@ const SETTINGS_GROUPS = [
     {
         label: 'الأجهزة',
         pages: [
+            { id: 'cashiers', label: 'الكاشير', icon: KeyRound, description: 'حسابات الكاشير: كل كاشير يدخل نقطة البيع برمزه فقط دون الوصول للوحة التحكم.' },
             { id: 'kiosk', label: 'الكشك', icon: Tablet, description: 'جهاز تسجيل الحضور والحلاقة المباشرة داخل الصالون.' },
             { id: 'screens', label: 'الطابور وبوابة الحلاقين', icon: Monitor, description: 'شاشة الطابور على تلفزيون الصالون، وبوابة دخول الحلاقين لمواعيدهم.' },
         ],
@@ -572,6 +575,10 @@ const SettingsTab = ({
                         <PageCard>
                             <ZakatySection onTaxNumberSaved={setTaxNumber} />
                         </PageCard>
+                    </div>
+
+                    <div hidden={pageHidden('cashiers')} className="space-y-4">
+                        {activePage === 'cashiers' && <CashiersSection slug={slug} />}
                     </div>
 
                     <div hidden={pageHidden('kiosk')} className="space-y-4">

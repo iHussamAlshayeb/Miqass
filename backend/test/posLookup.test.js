@@ -78,25 +78,27 @@ test("a booked appointment can be checked out, a cancelled one cannot", async (t
   assert.equal(cancelled.body.code, "NOT_CHECKOUTABLE");
 });
 
-test("today's open bookings list only unpaid booked or completed appointments of this salon", async (t) => {
-  const { listOpenAppointments } = require("../src/controllers/posController");
+test("today's appointments list covers booked, completed and cancelled, with paid status", async (t) => {
+  const { listTodayAppointments } = require("../src/controllers/posController");
   let filter = null;
+  const saleId = id();
   stub(t, Appointment, "find", (query) => { filter = query; return { populate: () => ({ select: () => ({ sort: () => ({ limit: () => ({ lean: async () => [
     { _id: id(), childName: "سعد", timeSlot: "18:00", barberName: "ماجد", status: "Completed", customerId: { phone: "0551234567" },
-      selectedServices: [{ name: "قص شعر" }, { name: "حلاقة ذقن" }], totalPrice: 75, payment: { status: "Paid", amount: 20 } },
-    { _id: id(), childName: "زائر", timeSlot: "18:30", barberName: "محمود", status: "Booked", bookingSource: "kiosk_walk_in", selectedServices: [], totalPrice: 0 },
+      selectedServices: [{ name: "قص شعر" }, { name: "حلاقة ذقن" }], totalPrice: 75, payment: { status: "Paid", amount: 20 }, saleId },
+    { _id: id(), childName: "زائر", timeSlot: "18:30", barberName: "محمود", status: "Completed", bookingSource: "kiosk_walk_in", selectedServices: [], totalPrice: 0 },
   ] }) }) }) }) }; });
   const res = makeRes();
-  await listOpenAppointments({ tenantId: "t1" }, res);
+  await listTodayAppointments({ tenantId: "t1" }, res);
   assert.equal(filter.tenantId, "t1");
-  assert.deepEqual(filter.status.$in, ["Booked", "Completed"]);
-  assert.equal(filter.saleId, null, "already checked out bookings are hidden");
+  assert.deepEqual(filter.status.$in, ["Booked", "Completed", "Cancelled"]);
   assert.match(filter.date, /^\d{4}-\d{2}-\d{2}$/);
-  const [first, walkIn] = res.body.appointments;
-  assert.equal(first.servicesLabel, "قص شعر، حلاقة ذقن");
-  assert.equal(first.deposit, 20);
-  assert.equal(first.customerPhone, "0551234567");
+  const [paid, walkIn] = res.body.appointments;
+  assert.equal(paid.servicesLabel, "قص شعر، حلاقة ذقن");
+  assert.equal(paid.isPaid, true);
+  assert.equal(String(paid.saleId), String(saleId));
+  assert.equal(paid.deposit, 20);
   assert.equal(walkIn.isWalkIn, true);
+  assert.equal(walkIn.canRequestReview, true, "walk-in without a review request yet");
 });
 
 test("an appointment that already has a sale is refused with the sale id", async (t) => {

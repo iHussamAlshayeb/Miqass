@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Check, Search, UserRound, X } from 'lucide-react';
-import API from '../../services/api';
+import posApi from '../../services/posApi';
 
 const TYPE_LABELS = { VIP: 'مميز', Regular: 'دائم', New: 'جديد', Blacklisted: 'محظور' };
 
@@ -35,7 +35,7 @@ const CustomerLookup = ({ customer, onChange, onDone }) => {
         let cancelled = false;
         const timer = setTimeout(() => {
             setSearching(true);
-            API.get('/pos/customers', { params: { q: digits } })
+            posApi.get('/pos/customers', { params: { q: digits } })
                 .then((res) => {
                     if (cancelled) return;
                     const found = res.data.customers || [];

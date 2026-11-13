@@ -29,5 +29,5 @@ Write-Host ""
 Write-Host "Preview is ready: http://localhost:15100/login" -ForegroundColor Green
 Write-Host "Email:    preview@miqass.local"
 Write-Host "Password: Preview@1234"
-Write-Host "POS:      http://localhost:15100/pos"
+Write-Host "POS:      http://localhost:15100/pos  (cashier: salon preview, PIN 1234)"
 Write-Host "Booking:  http://localhost:15100/preview"

@@ -32,6 +32,9 @@ const tenantSchema = new mongoose.Schema(
     kioskActivationCode: { type: String, default: "" }, // مشفّر
     kioskCodeFailures: { type: Number, default: 0 },
     kioskCodeLockedUntil: { type: Date, default: null },
+    // محاولات دخول الكاشير الخاطئة: قفل مؤقت بعد التكرار
+    posLoginFailures: { type: Number, default: 0 },
+    posLoginLockedUntil: { type: Date, default: null },
 
     // الحذف المؤقت: يُحذف الصالون نهائياً بعد deletionInfo.purgeAfter
     deletedAt: { type: Date, default: null },

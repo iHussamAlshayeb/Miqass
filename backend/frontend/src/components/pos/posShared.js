@@ -7,6 +7,9 @@ export const METHODS = [
     { id: 'transfer', label: 'تحويل' },
     { id: 'online', label: 'أونلاين' },
 ];
+/** موعد اليوم الذي لم يُحصّل حسابه بعد */
+export const isAwaitingPayment = (item) => item.status === 'Booked' || (item.status === 'Completed' && !item.isPaid);
+
 export const methodLabel = (id) => METHODS.find((method) => method.id === id)?.label || id;
 
 /** إدخال لوحة الأرقام. القيمة نص حتى لا تضيع الأصفار والفاصلة أثناء الكتابة */
@@ -61,6 +64,7 @@ export const printShiftReport = (shift, salonName) => {
         <h2>الصندوق</h2><table>
             ${row('النقد الافتتاحي', money(shift.openingCash))}
             ${row('المقبوض نقداً', money(s.payments?.cash?.amount))}
+            ${s.cashExpenses ? row('مصروفات من الصندوق', `-${money(s.cashExpenses)}`) : ''}
             ${row('المتوقع في الدرج', money(shift.expectedCash ?? s.expectedCash), true)}
             ${shift.countedCash != null ? row('المعدود', money(shift.countedCash)) : ''}
             ${shift.cashDifference != null ? row(shift.cashDifference < 0 ? 'عجز' : shift.cashDifference > 0 ? 'زيادة' : 'الفرق', money(Math.abs(shift.cashDifference)), true) : ''}

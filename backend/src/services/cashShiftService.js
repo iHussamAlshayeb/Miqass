@@ -3,6 +3,7 @@ const mongoose = require("mongoose");
 const CashShift = require("../models/CashShift");
 const Payment = require("../models/Payment");
 const Sale = require("../models/Sale");
+const Expense = require("../models/Expense");
 
 const toMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
 const shiftError = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
@@ -19,7 +20,7 @@ const summarizeShift = async (shift) => {
   const tenantId = new mongoose.Types.ObjectId(String(shift.tenantId));
   const shiftId = new mongoose.Types.ObjectId(String(shift._id));
 
-  const [paymentGroups, salesGroups] = await Promise.all([
+  const [paymentGroups, salesGroups, expenseGroups] = await Promise.all([
     Payment.aggregate([
       { $match: { tenantId, shiftId, status: "Paid" } },
       { $group: { _id: "$method", amount: { $sum: "$amount" }, count: { $sum: 1 } } },
@@ -36,6 +37,11 @@ const summarizeShift = async (shift) => {
         },
       },
     ]),
+    // مصروفات دُفعت نقداً من الصندوق خلال الوردية
+    Expense.aggregate([
+      { $match: { tenantId, shiftId, status: "Paid", paymentMethod: "cash" } },
+      { $group: { _id: null, amount: { $sum: "$amount" }, count: { $sum: 1 } } },
+    ]),
   ]);
 
   const payments = Object.fromEntries(PAYMENT_METHODS.map((method) => [method, { amount: 0, count: 0 }]));
@@ -48,7 +54,8 @@ const summarizeShift = async (shift) => {
   const unpaid = salesGroups.filter((group) => group._id === "Draft" || group._id === "Partially_Paid");
 
   const collected = toMoney(PAYMENT_METHODS.reduce((sum, method) => sum + payments[method].amount, 0));
-  const expectedCash = toMoney(Number(shift.openingCash || 0) + payments.cash.amount);
+  const cashExpenses = toMoney(expenseGroups[0]?.amount || 0);
+  const expectedCash = toMoney(Number(shift.openingCash || 0) + payments.cash.amount - cashExpenses);
 
   return {
     salesCount: active.reduce((sum, group) => sum + group.count, 0),
@@ -60,6 +67,8 @@ const summarizeShift = async (shift) => {
     payments,
     collected,
     openingCash: toMoney(shift.openingCash),
+    cashExpenses,
+    cashExpensesCount: expenseGroups[0]?.count || 0,
     expectedCash,
   };
 };

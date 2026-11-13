@@ -2,15 +2,18 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
     ArrowRight, Maximize, Minus, Plus, Trash2, Percent, Scissors, Package, Search,
-    UserRound, LockKeyhole, Printer, CheckCircle2, ScanBarcode, X, CalendarDays, RefreshCw,
+    UserRound, LockKeyhole, Printer, CheckCircle2, ScanBarcode, X, CalendarDays, RefreshCw, ReceiptText, LogOut,
 } from 'lucide-react';
-import API from '../services/api';
+import posApi, { endCashierSession, hasPosSession, isCashierSession } from '../services/posApi';
+import CashierLogin from '../components/pos/CashierLogin';
+import TodayBookings from '../components/pos/TodayBookings';
+import ShiftPanel from '../components/pos/ShiftPanel';
 import { getBarberServicePrice } from '../utils/servicePricing';
 import { priceCart, money } from '../utils/posPricing';
 import OpenShiftGate from '../components/pos/OpenShiftGate';
 import PaymentModal from '../components/pos/PaymentModal';
 import CloseShiftModal from '../components/pos/CloseShiftModal';
-import { methodLabel, printShiftReport } from '../components/pos/posShared';
+import { methodLabel, printShiftReport, isAwaitingPayment } from '../components/pos/posShared';
 import DiscountSheet from '../components/pos/DiscountSheet';
 import InvoiceModal from '../components/dashboard/InvoiceModal';
 import CustomerLookup from '../components/pos/CustomerLookup';
@@ -70,6 +73,10 @@ function POSScreen() {
     const [invoice, setInvoice] = useState(null);
     const [autoPrint, setAutoPrint] = useState(() => readPref('pos_auto_print', '1') === '1');
     const [toast, setToast] = useState('');
+    const [showShiftPanel, setShowShiftPanel] = useState(false);
+    // الكاشير يدخل برمزه؛ المالك يدخل بجلسة لوحة التحكم
+    const [signedIn, setSignedIn] = useState(() => hasPosSession());
+    const [operator, setOperator] = useState(null);
     const requestIdRef = useRef(newRequestId());
 
     const salon = catalog?.salon;
@@ -78,32 +85,43 @@ function POSScreen() {
     const barberById = useMemo(() => new Map(barbers.map((barber) => [String(barber._id), barber])), [barbers]);
     const activeBarber = barberById.get(barberId) || null;
 
+    const signOut = useCallback(() => {
+        endCashierSession();
+        setCatalog(null);
+        setShift(undefined);
+        setOperator(null);
+        setSignedIn(hasPosSession());
+    }, []);
+
     const handleAuthError = useCallback((error) => {
-        if (error?.response?.status === 401) {
+        if (error?.response?.status !== 401) return false;
+        // جلسة الكاشير انتهت: نعود لشاشة الرمز. جلسة المالك: لصفحة الدخول
+        if (isCashierSession()) {
+            signOut();
+            setToast(errorMessage(error, 'انتهت الجلسة، أدخل رمزك من جديد.'));
+        } else {
             navigate('/login', { replace: true });
-            return true;
         }
-        return false;
-    }, [navigate]);
+        return true;
+    }, [navigate, signOut]);
 
     useEffect(() => {
-        if (!readPref('token', '')) {
-            navigate('/login', { replace: true });
-            return;
-        }
-        Promise.all([API.get('/pos/catalog'), API.get('/pos/shift')])
-            .then(([catalogRes, shiftRes]) => {
+        if (!signedIn) return;
+        Promise.all([posApi.get('/pos/catalog'), posApi.get('/pos/shift'), posApi.get('/pos/me')])
+            .then(([catalogRes, shiftRes, meRes]) => {
                 setCatalog(catalogRes.data);
                 setShift(shiftRes.data.shift);
+                setOperator(meRes.data);
             })
             .catch((error) => {
                 if (!handleAuthError(error)) setLoadError(errorMessage(error, 'تعذر تحميل نقطة البيع. تحقق من الاتصال.'));
             });
-    }, [navigate, handleAuthError]);
+    }, [signedIn, handleAuthError]);
+    const isCashier = operator?.role === 'cashier';
 
     useEffect(() => {
         if (!catalog || !shift || !appointmentParam || appointment?._id === appointmentParam) return;
-        API.get(`/pos/appointments/${appointmentParam}`)
+        posApi.get(`/pos/appointments/${appointmentParam}`)
             .then((res) => {
                 const booked = res.data.appointment;
                 setAppointment(booked);
@@ -123,14 +141,14 @@ function POSScreen() {
 
     const loadOpenAppointments = useCallback(() => {
         setLoadingAppointments(true);
-        API.get('/pos/appointments')
+        posApi.get('/pos/appointments')
             .then((res) => {
                 const list = res.data.appointments || [];
                 setOpenAppointments(list);
                 // أول فتح: تبويب الحجوزات إن وُجد ما ينتظر الدفع، وإلا الخدمات
                 if (firstBookingsLoad.current) {
                     firstBookingsLoad.current = false;
-                    if (list.length === 0) setMode((current) => (current === 'appointments' ? 'services' : current));
+                    if (!list.some(isAwaitingPayment)) setMode((current) => (current === 'appointments' ? 'services' : current));
                 }
             })
             .catch((error) => { if (!handleAuthError(error)) setOpenAppointments([]); })
@@ -272,7 +290,7 @@ function POSScreen() {
 
     const openInvoice = async (saleId) => {
         try {
-            const res = await API.get(`/sales/${saleId}/invoice`);
+            const res = await posApi.get(`/pos/sales/${saleId}/invoice`);
             setInvoice(res.data.invoice);
         } catch (error) {
             setToast(errorMessage(error, 'تعذر تحميل الإيصال.'));
@@ -284,10 +302,10 @@ function POSScreen() {
         setActionError('');
         try {
             if (appointment?.status === 'Booked') {
-                await API.put(`/appointments/status/${appointment._id}`, { status: 'Completed' });
+                await posApi.put(`/pos/appointments/${appointment._id}/status`, { status: 'Completed' });
                 setAppointment((current) => (current ? { ...current, status: 'Completed' } : current));
             }
-            const res = await API.post('/sales', {
+            const res = await posApi.post('/pos/sales', {
                 requestId: requestIdRef.current,
                 channel: 'pos',
                 appointmentId: appointment?._id || undefined,
@@ -333,11 +351,11 @@ function POSScreen() {
         setBusy(true);
         setActionError('');
         try {
-            const res = await API.post('/pos/shift/open', payload);
+            const res = await posApi.post('/pos/shift/open', payload);
             setShift(res.data.shift);
         } catch (error) {
             if (!handleAuthError(error)) setActionError(errorMessage(error, 'تعذر فتح الوردية.'));
-            if (error?.response?.status === 409) API.get('/pos/shift').then((res) => setShift(res.data.shift)).catch(() => {});
+            if (error?.response?.status === 409) posApi.get('/pos/shift').then((res) => setShift(res.data.shift)).catch(() => {});
         } finally {
             setBusy(false);
         }
@@ -346,7 +364,7 @@ function POSScreen() {
     const startClosing = async () => {
         setActionError('');
         try {
-            const res = await API.get('/pos/shift');
+            const res = await posApi.get('/pos/shift');
             setShift(res.data.shift);
             if (res.data.shift) setClosing(true);
         } catch (error) {
@@ -358,7 +376,7 @@ function POSScreen() {
         setBusy(true);
         setActionError('');
         try {
-            const res = await API.post('/pos/shift/close', { ...payload, closedBy: readPref('pos_cashier_name', '') });
+            const res = await posApi.post('/pos/shift/close', isCashier ? payload : { ...payload, closedBy: readPref('pos_cashier_name', '') });
             setClosing(false);
             setShift(null);
             resetSale();
@@ -371,6 +389,12 @@ function POSScreen() {
     };
 
     const goFullscreen = () => document.documentElement.requestFullscreen?.().catch(() => {});
+
+    const pendingCount = openAppointments.filter(isAwaitingPayment).length;
+
+    if (!signedIn) {
+        return <CashierLogin onSignedIn={() => { setLoadError(''); setSignedIn(true); }} />;
+    }
 
     if (loadError) {
         return (
@@ -394,7 +418,7 @@ function POSScreen() {
     if (!shift) {
         return (
             <div className="h-[100dvh] overflow-y-auto bg-slate-100" dir="rtl" style={{ fontFamily: "'IBM Plex Sans Arabic', 'Tajawal', sans-serif" }}>
-                <OpenShiftGate salon={salon} onOpen={openShift} onExit={() => navigate('/dashboard')} busy={busy} error={actionError} />
+                <OpenShiftGate salon={salon} onOpen={openShift} onExit={isCashier ? signOut : () => navigate('/dashboard')} exitLabel={isCashier ? 'خروج' : undefined} cashierName={isCashier ? operator?.name : ''} busy={busy} error={actionError} />
             </div>
         );
     }
@@ -405,15 +429,18 @@ function POSScreen() {
         <div className="flex h-[100dvh] select-none flex-col overflow-hidden bg-slate-100 text-slate-900" dir="rtl" style={{ fontFamily: "'IBM Plex Sans Arabic', 'Tajawal', sans-serif" }}>
             {/* الشريط العلوي */}
             <header className="flex h-16 shrink-0 items-center gap-3 bg-slate-900 px-4 text-white">
-                <button type="button" onClick={() => navigate('/dashboard')} className="flex h-11 w-11 items-center justify-center rounded-lg hover:bg-white/10" aria-label="العودة للوحة التحكم">
-                    <ArrowRight size={22} />
-                </button>
+                {!isCashier && (
+                    <button type="button" onClick={() => navigate('/dashboard')} className="flex h-11 w-11 items-center justify-center rounded-lg hover:bg-white/10" aria-label="العودة للوحة التحكم">
+                        <ArrowRight size={22} />
+                    </button>
+                )}
                 {salon?.logoUrl ? <img src={salon.logoUrl} alt="" className="h-9 w-9 rounded-lg bg-white object-contain p-0.5" /> : null}
                 <div className="min-w-0">
                     <p className="truncate text-base font-extrabold leading-tight">{salon?.name}</p>
                     <p className="text-xs font-semibold text-emerald-300">
                         <span className="ml-1 inline-block h-2 w-2 rounded-full bg-emerald-400" />
                         الوردية مفتوحة{shift.openedBy ? ` · ${shift.openedBy}` : ''}
+                        {isCashier && operator?.name && operator.name !== shift.openedBy ? <span className="text-slate-300"> · الكاشير: {operator.name}</span> : null}
                     </p>
                 </div>
                 <div className="mr-auto flex items-center gap-2">
@@ -423,9 +450,17 @@ function POSScreen() {
                     <button type="button" onClick={goFullscreen} className="flex h-11 w-11 items-center justify-center rounded-lg hover:bg-white/10" aria-label="ملء الشاشة">
                         <Maximize size={20} />
                     </button>
-                    <button type="button" onClick={startClosing} className="flex h-11 items-center gap-2 rounded-lg bg-white/10 px-4 text-sm font-bold hover:bg-white/20">
-                        <LockKeyhole size={18} /> إغلاق الوردية
+                    <button type="button" onClick={() => setShowShiftPanel(true)} className="flex h-11 items-center gap-2 rounded-lg bg-white/10 px-4 text-sm font-bold hover:bg-white/20">
+                        <ReceiptText size={18} /> الوردية
                     </button>
+                    <button type="button" onClick={startClosing} className="flex h-11 items-center gap-2 rounded-lg bg-white/10 px-4 text-sm font-bold hover:bg-white/20">
+                        <LockKeyhole size={18} /> <span className="hidden sm:inline">إغلاق الوردية</span>
+                    </button>
+                    {isCashier && (
+                        <button type="button" onClick={signOut} className="flex h-11 items-center gap-2 rounded-lg px-3 text-sm font-bold text-slate-300 hover:bg-white/10" aria-label="خروج الكاشير">
+                            <LogOut size={18} /> <span className="hidden md:inline">خروج</span>
+                        </button>
+                    )}
                 </div>
             </header>
 
@@ -438,8 +473,8 @@ function POSScreen() {
                                 {[['appointments', 'الحجوزات', <CalendarDays key="a" size={18} />], ['services', 'الخدمات', <Scissors key="s" size={18} />], ['products', 'المنتجات', <Package key="p" size={18} />]].map(([id, label, icon]) => (
                                     <button key={id} type="button" onClick={() => { setMode(id); setCategory(ALL); if (id === 'appointments') loadOpenAppointments(); }} className={`flex h-11 items-center gap-2 rounded-lg px-4 font-extrabold ${mode === id ? 'bg-white text-slate-900 shadow' : 'text-slate-500'}`}>
                                         {icon} {label}
-                                        {id === 'appointments' && openAppointments.length > 0 && (
-                                            <span className="min-w-[22px] rounded-full bg-emerald-600 px-1.5 text-xs font-extrabold leading-[22px] text-white">{openAppointments.length}</span>
+                                        {id === 'appointments' && pendingCount > 0 && (
+                                            <span className="min-w-[22px] rounded-full bg-emerald-600 px-1.5 text-xs font-extrabold leading-[22px] text-white">{pendingCount}</span>
                                         )}
                                     </button>
                                 ))}
@@ -480,35 +515,16 @@ function POSScreen() {
 
                     <div className="min-h-0 flex-1 overflow-y-auto p-4">
                         {mode === 'appointments' ? (
-                            openAppointments.length === 0 ? (
-                                <p className="mt-16 text-center font-bold text-slate-400">{loadingAppointments ? 'جاري التحميل...' : 'لا توجد حجوزات اليوم بانتظار الدفع.'}</p>
-                            ) : (
-                                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
-                                    {openAppointments.map((item) => {
-                                        const active = appointment?._id === item._id;
-                                        return (
-                                            <button key={item._id} type="button" onClick={() => pickAppointment(item)} className={`flex min-h-[112px] flex-col justify-between rounded-xl border-2 bg-white p-4 text-right shadow-sm transition active:scale-[0.98] ${active ? 'border-emerald-600' : 'border-transparent'}`}>
-                                                <span className="flex items-start justify-between gap-2">
-                                                    <span className="min-w-0">
-                                                        <span className="block truncate text-base font-extrabold text-slate-800">{item.childName}</span>
-                                                        <span className="block truncate text-xs font-semibold text-slate-500">{item.servicesLabel || (item.isWalkIn ? 'حلاقة مباشرة' : 'بدون خدمات محددة')}</span>
-                                                    </span>
-                                                    <span className="shrink-0 font-mono text-lg font-extrabold text-slate-900" dir="ltr">{item.timeSlot}</span>
-                                                </span>
-                                                <span className="mt-3 flex items-end justify-between gap-2">
-                                                    <span className="flex min-w-0 items-center gap-2 text-xs font-bold">
-                                                        <span className={`shrink-0 rounded-md px-2 py-1 ${item.status === 'Completed' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
-                                                            {item.status === 'Completed' ? 'اكتمل · بانتظار الدفع' : 'محجوز'}
-                                                        </span>
-                                                        <span className="truncate text-slate-500">{item.barberName}</span>
-                                                    </span>
-                                                    <span className="shrink-0 font-mono text-lg font-extrabold" style={{ color: accent }} dir="ltr">{money(Math.max(item.totalPrice - item.deposit, 0))}</span>
-                                                </span>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            )
+                            <TodayBookings
+                                appointments={openAppointments}
+                                loading={loadingAppointments}
+                                activeId={appointment?._id ? String(appointment._id) : ''}
+                                accent={accent}
+                                onCollect={pickAppointment}
+                                onReceipt={openInvoice}
+                                onChanged={loadOpenAppointments}
+                                onToast={setToast}
+                            />
                         ) : visibleItems.length === 0 ? (
                             <p className="mt-16 text-center font-bold text-slate-400">{search ? 'لا توجد نتائج.' : mode === 'services' ? 'لا توجد خدمات مفعّلة.' : 'لا توجد منتجات مفعّلة.'}</p>
                         ) : (
@@ -673,6 +689,15 @@ function POSScreen() {
             )}
 
             {paying && <PaymentModal total={amountDue} busy={busy} error={actionError} onClose={() => setPaying(false)} onComplete={checkout} />}
+
+            {showShiftPanel && (
+                <ShiftPanel
+                    onClose={() => setShowShiftPanel(false)}
+                    onReceipt={openInvoice}
+                    onChanged={() => { posApi.get('/pos/shift').then((res) => { if (res.data.shift) setShift(res.data.shift); }).catch(() => {}); loadOpenAppointments(); }}
+                    onToast={setToast}
+                />
+            )}
 
             {closing && (
                 <CloseShiftModal shift={shift} salonName={salon?.name} busy={busy} error={actionError} onClose={() => { setClosing(false); setActionError(''); }} onConfirm={closeShift} />

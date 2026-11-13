@@ -12,6 +12,7 @@ const Service = require(path.join(root, "Service"));
 const Product = require(path.join(root, "Product"));
 const Customer = require(path.join(root, "Customer"));
 const Appointment = require(path.join(root, "Appointment"));
+const Cashier = require(path.join(root, "Cashier"));
 
 const EMAIL = "preview@miqass.local";
 const PASSWORD = "Preview@1234";
@@ -30,7 +31,7 @@ const riyadhToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Riy
   if (tenant && /\?{2,}/.test(tenant.salonName || "")) {
     const filter = { tenantId: tenant._id };
     await Promise.all([Barber.deleteMany(filter), Service.deleteMany(filter), Product.deleteMany(filter),
-      Customer.deleteMany(filter), Appointment.deleteMany(filter)]);
+      Customer.deleteMany(filter), Appointment.deleteMany(filter), Cashier.deleteMany(filter)]);
     await Tenant.deleteOne({ _id: tenant._id });
     tenant = null;
     console.error("حُذفت بيانات معاينة تالفة (علامات استفهام) وسيُعاد إنشاؤها.");
@@ -69,6 +70,12 @@ const riyadhToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Riy
       { tenantId: tenant._id, phone: "0561112223", parentName: "أبو خالد", children: ["خالد"], totalVisits: 15, customerType: "VIP" },
     ]);
     console.error("تم إنشاء صالون المعاينة.");
+  }
+
+  // كاشير تجريبي لتجربة دخول نقطة البيع بالرمز
+  if (!(await Cashier.exists({ tenantId: tenant._id }))) {
+    await Cashier.create({ tenantId: tenant._id, name: "سالم", pinHash: await bcrypt.hash("1234", 10) });
+    console.error("أُضيف الكاشير التجريبي سالم (الرمز 1234).");
   }
 
   // حجوزات اليوم لتجربة تبويب الحجوزات في نقطة البيع

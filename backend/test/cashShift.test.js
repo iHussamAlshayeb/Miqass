@@ -4,6 +4,7 @@ const mongoose = require("mongoose");
 const CashShift = require("../src/models/CashShift");
 const Payment = require("../src/models/Payment");
 const Sale = require("../src/models/Sale");
+const Expense = require("../src/models/Expense");
 const { summarizeShift, openShift, closeShift } = require("../src/services/cashShiftService");
 
 const id = () => new mongoose.Types.ObjectId();
@@ -23,6 +24,7 @@ const aggregates = [
     { _id: "Paid", count: 6, total: 410.5, discount: 15, vat: 53.54 },
     { _id: "Cancelled", count: 1, total: 40, discount: 0, vat: 5.22 },
   ]],
+  [Expense, "aggregate", async () => []],
 ];
 
 test("shift summary counts collections by method and the cash expected in the drawer", async () => {
@@ -65,4 +67,22 @@ test("only one shift can be open, and amounts are validated", async () => {
   });
   await assert.rejects(openShift(tenantId, { openingCash: -5 }), /غير صالح/);
   await assert.rejects(openShift(tenantId, { openingCash: "" }), /غير صالح/);
+});
+
+test("cash paid out of the drawer is taken off the expected cash", async () => {
+  let expenseFilter = null;
+  await stub([
+    ...aggregates,
+    [Expense, "aggregate", async (pipeline) => { expenseFilter = pipeline[0].$match; return [{ _id: null, amount: 35.5, count: 2 }]; }],
+  ], async () => {
+    const shiftId = id();
+    const summary = await summarizeShift({ _id: shiftId, tenantId: id(), openingCash: 200 });
+    assert.equal(String(expenseFilter.shiftId), String(shiftId));
+    assert.equal(expenseFilter.paymentMethod, "cash");
+    assert.equal(expenseFilter.status, "Paid");
+    assert.equal(summary.cashExpenses, 35.5);
+    assert.equal(summary.cashExpensesCount, 2);
+    // 200 بداية + 230 نقد − 35.5 مصروفات
+    assert.equal(summary.expectedCash, 394.5);
+  });
 });

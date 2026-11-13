@@ -4,7 +4,7 @@ import Keypad from './Keypad';
 import { money } from '../../utils/posPricing';
 
 /** شاشة فتح الوردية: لا يبدأ البيع قبل تسجيل النقد الافتتاحي في الصندوق */
-const OpenShiftGate = ({ salon, onOpen, onExit, busy, error }) => {
+const OpenShiftGate = ({ salon, onOpen, onExit, exitLabel = 'العودة للوحة التحكم', cashierName = '', busy, error }) => {
     const [cash, setCash] = useState('');
     const [name, setName] = useState(() => {
         try { return localStorage.getItem('pos_cashier_name') || ''; } catch { return ''; }
@@ -12,7 +12,7 @@ const OpenShiftGate = ({ salon, onOpen, onExit, busy, error }) => {
 
     const submit = () => {
         try { localStorage.setItem('pos_cashier_name', name.trim()); } catch { /* تجاهل */ }
-        onOpen({ openingCash: cash === '' ? '0' : cash, openedBy: name.trim() });
+        onOpen({ openingCash: cash === '' ? '0' : cash, openedBy: cashierName || name.trim() });
     };
 
     return (
@@ -30,11 +30,13 @@ const OpenShiftGate = ({ salon, onOpen, onExit, busy, error }) => {
                         </p>
                     </div>
                     <button type="button" onClick={onExit} className="flex items-center gap-2 self-start rounded-lg px-3 py-2 text-sm font-bold text-slate-300 hover:bg-white/10">
-                        <ArrowRight size={18} /> العودة للوحة التحكم
+                        <ArrowRight size={18} /> {exitLabel}
                     </button>
                 </div>
                 <div className="flex flex-col gap-4 p-6">
-                    <label className="block">
+                    {cashierName ? (
+                        <p className="rounded-xl bg-slate-100 px-4 py-3 text-base font-bold text-slate-700">الكاشير: {cashierName}</p>
+                    ) : <label className="block">
                         <span className="text-sm font-bold text-slate-600">اسم الكاشير (اختياري)</span>
                         <input
                             value={name}
@@ -42,7 +44,7 @@ const OpenShiftGate = ({ salon, onOpen, onExit, busy, error }) => {
                             maxLength={80}
                             className="mt-1 h-12 w-full rounded-xl border border-slate-300 px-4 text-lg font-semibold outline-none focus:border-slate-900"
                         />
-                    </label>
+                    </label>}
                     <div>
                         <span className="text-sm font-bold text-slate-600">النقد الافتتاحي</span>
                         <div className="mt-1 flex h-16 items-center justify-between rounded-xl bg-slate-100 px-4">

@@ -25,11 +25,15 @@ const expenseSchema = new mongoose.Schema(
       default: "Paid",
     },
     cancelReason: { type: String, default: "", trim: true },
+    // مصروف دُفع من صندوق نقطة البيع: يُخصم من النقد المتوقع عند إغلاق الوردية
+    shiftId: { type: mongoose.Schema.Types.ObjectId, ref: "CashShift", default: null },
+    recordedBy: { type: String, default: "", trim: true },
   },
   { timestamps: true },
 );
 
 expenseSchema.index({ tenantId: 1, expenseDate: -1 }, { background: true });
+expenseSchema.index({ tenantId: 1, shiftId: 1 }, { background: true });
 expenseSchema.index(
   { tenantId: 1, category: 1, expenseDate: -1 },
   { background: true },
