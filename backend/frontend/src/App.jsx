@@ -12,6 +12,7 @@ const ForgotPasswordScreen = lazy(() => import('./pages/ForgotPasswordScreen'));
 const ResetPasswordScreen = lazy(() => import('./pages/ResetPasswordScreen'));
 const BookingScreen = lazy(() => import('./pages/BookingScreen'));
 const KioskScreen = lazy(() => import('./pages/KioskScreen'));
+const POSScreen = lazy(() => import('./pages/POSScreen'));
 const ReviewPage = lazy(() => import('./pages/ReviewPage'));
 const BarberPortal = lazy(() => import('./pages/BarberPortal'));
 const LiveQueueScreen = lazy(() => import('./pages/LiveQueueScreen'));
@@ -57,6 +58,7 @@ function App() {
           <Route path="/super-admin" element={<SuperAdminScreen />} />
           <Route path="/forgot-password" element={<ForgotPasswordScreen />} />
           <Route path="/reset-password/:token" element={<ResetPasswordScreen />} />
+          <Route path="/pos" element={<POSScreen />} />
           <Route path="/kiosk/:slug" element={<KioskScreen />} />
           <Route path="/rate/:appointmentId" element={<ReviewPage />} />
           <Route path="/barber/:slug" element={<BarberPortal />} />

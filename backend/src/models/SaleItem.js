@@ -28,6 +28,9 @@ const saleItemSchema = new mongoose.Schema(
       default: null,
     },
 
+    // الحلاق المنفذ للخدمة (لسعره الخاص وحساب عمولته)
+    barberId: { type: mongoose.Schema.Types.ObjectId, ref: "Barber", default: null },
+    barberName: { type: String, default: "", trim: true },
     name: { type: String, required: true, trim: true },
     quantity: { type: Number, required: true, min: 0.01 },
     unitPrice: { type: Number, required: true, min: 0 },
