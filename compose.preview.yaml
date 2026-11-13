@@ -1,0 +1,55 @@
+# بيئة معاينة محلية منفصلة تماماً عن النظام الحقيقي:
+# قاعدة بيانات وRedis خاصين بها، بلا مفاتيح واتساب أو دفع أو بريد أو زكاتي.
+# التشغيل: .\scripts\start-preview.ps1   الإيقاف: .\scripts\stop-preview.ps1
+name: miqass-preview
+
+services:
+  mongo:
+    image: mongo:7
+    # المبيعات تستخدم المعاملات (transactions) فتحتاج replica set حتى محلياً
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    volumes:
+      - preview_mongo:/data/db
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mongosh --quiet --eval "let ok; try { ok = rs.status().ok } catch (e) { ok = rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}).ok }; quit(ok ? 0 : 1)"
+      interval: 5s
+      timeout: 10s
+      start_period: 10s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_BASE_URL: /api
+        VITE_CANONICAL_ORIGIN: http://localhost:15100
+        VITE_ONESIGNAL_PRIMARY_ORIGIN: http://localhost:15100
+        VITE_ONESIGNAL_ALLOWED_ORIGINS: http://localhost:15100
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      MONGO_URI: mongodb://mongo:27017/miqass_preview?replicaSet=rs0&directConnection=true
+      REDIS_URL: redis://redis:6379
+      # أسرار للمعاينة فقط، لا علاقة لها بالنظام الحقيقي
+      JWT_SECRET: preview-only-jwt-secret-not-for-production
+      ENCRYPTION_KEY: preview-only-encryption-key-not-for-production
+      BACKEND_URL: http://localhost:15100
+      FRONTEND_URL: http://localhost:15100
+      DISABLE_CRON_JOBS: "true"
+      ZAKATY_ENABLED: "false"
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "127.0.0.1:15100:5000"
+
+volumes:
+  preview_mongo:

@@ -17,6 +17,9 @@ test("allowed origins and server-to-server requests pass", () => {
   assert.equal(isAllowedOrigin("https://www.miqass.app"), true);
   assert.equal(isAllowedOrigin("https://miqass.app"), true);
   assert.equal(isAllowedOrigin("http://localhost:5173"), true);
+  assert.equal(isAllowedOrigin("http://127.0.0.1:15100"), true);
+  assert.equal(isAllowedOrigin("http://127.0.0.2:15100"), false);
+  assert.equal(isAllowedOrigin("http://127.0.0.1.evil.com:80"), false);
   assert.equal(run("https://www.miqass.app").passed, true);
   assert.equal(run(undefined).passed, true);
 });

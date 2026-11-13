@@ -9,6 +9,7 @@ const Customer = require("../models/Customer");
 const Appointment = require("../models/Appointment");
 const Sale = require("../models/Sale");
 const { formatKsaDate } = require("./booking/helpers");
+const { publicLogoUrl } = require("../utils/logoImage");
 const {
   getOpenShift,
   summarizeShift,
@@ -35,7 +36,8 @@ const getCatalog = async (req, res) => {
       salon: {
         name: tenant.salonName,
         slug: tenant.slug,
-        logoUrl: tenant.branding?.logoUrl || "",
+        // نفس رابط الشعار العام في بقية النظام: لا صورة مضمّنة ولا افتراضي غير موجود
+        logoUrl: publicLogoUrl(tenant.slug, tenant.branding?.logoUrl),
         primaryColor: tenant.branding?.primaryColor || "#0f172a",
         hasTaxNumber: Boolean(tenant.taxSettings?.taxNumber),
       },

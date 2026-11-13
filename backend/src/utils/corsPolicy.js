@@ -1,6 +1,7 @@
 // سياسة المصادر المسموحة (CORS): نطاق مقص والتطوير المحلي فقط
 const ALLOWED_ORIGIN_PATTERNS = [
-  /^https?:\/\/localhost:\d+$/,
+  // الجهاز نفسه بأي من اسميه (localhost أو 127.0.0.1) للتشغيل والمعاينة المحلية
+  /^https?:\/\/(localhost|127\.0\.0\.1):\d+$/,
   /^https:\/\/(www\.)?miqass\.app$/,
 ];
 
