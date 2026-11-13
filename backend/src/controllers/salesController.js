@@ -9,8 +9,12 @@ const Service = require("../models/Service");
 const Tenant = require("../models/Tenant");
 const Product = require("../models/Product");
 const InventoryMovement = require("../models/InventoryMovement");
+const Barber = require("../models/Barber");
+const { applyBarberServicePrices } = require("../utils/servicePricing");
+const { priceLines } = require("../utils/posPricing");
 const { generateZatcaQR } = require("../utils/zatca");
 const { prepareZakatyInvoice } = require('../services/zakatyIntegration');
+const { getOpenShift } = require("../services/cashShiftService");
 
 const VAT_RATE = 0.15;
 const VALID_PAYMENT_METHODS = ["cash", "card", "transfer", "online"];
@@ -70,38 +74,48 @@ const getCustomerForSale = async ({ tenantId, customerPhone, customerName, sessi
   };
 };
 
-const saleItemFromCatalog = ({ itemType, serviceId = null, productId = null, name, quantity, unitPrice, unitCost = 0 }) => {
-  const totalAmount = toMoney(quantity * unitPrice);
+const saleItemFromCatalog = ({ itemType, serviceId = null, productId = null, barberId = null, barberName = "", name, quantity, unitPrice, unitCost = 0, discountAmount = 0, totalAmount }) => {
+  const lineTotal = toMoney(totalAmount ?? quantity * unitPrice - discountAmount);
   return {
     itemType,
     serviceId,
     productId,
+    barberId,
+    barberName,
     name,
     quantity,
     unitPrice: toMoney(unitPrice),
     unitCost: toMoney(unitCost),
-    discountAmount: 0,
+    discountAmount: toMoney(discountAmount),
     vatRate: VAT_RATE,
-    vatAmount: calculateVatInclusiveTotals(totalAmount).vatAmount,
-    totalAmount,
+    vatAmount: calculateVatInclusiveTotals(lineTotal).vatAmount,
+    totalAmount: lineTotal,
   };
 };
 
-const buildSaleItems = async (tenantId, rawItems = [], session, appointment = null) => {
-  if (!Array.isArray(rawItems) || rawItems.length > 100) {
-    const error = new Error("بنود البيع غير صالحة.");
-    error.statusCode = 400;
-    throw error;
-  }
+const badRequest = (message) => Object.assign(new Error(message), { statusCode: 400 });
+
+/**
+ * rawItems: [{ itemType: "service"|"product", serviceId|productId, quantity, barberId?, discount? }]
+ * saleDiscount: { type: "amount"|"percent", value } يُوزّع على كل البنود
+ * سعر الخدمة: سعر الحلاق الخاص إن وُجد، وإلا السعر الأساسي.
+ */
+const buildSaleItems = async (tenantId, rawItems = [], session, appointment = null, saleDiscount = null) => {
+  if (!Array.isArray(rawItems) || rawItems.length > 100) throw badRequest("بنود البيع غير صالحة.");
   const serviceIds = [];
   const productIds = [];
+  const barberIds = [];
   for (const item of rawItems) {
     const id = item?.itemType === "service" ? item.serviceId : item?.itemType === "product" ? item.productId : null;
     const quantity = Number(item?.quantity);
     if (!id || !mongoose.Types.ObjectId.isValid(id) || !Number.isInteger(quantity) || quantity <= 0 || quantity > 10000) {
-      const error = new Error("نوع البند أو كميته غير صالحة.");
-      error.statusCode = 400;
-      throw error;
+      throw badRequest("نوع البند أو كميته غير صالحة.");
+    }
+    if (item.barberId !== undefined && item.barberId !== null && item.barberId !== "") {
+      if (item.itemType !== "service" || !mongoose.Types.ObjectId.isValid(item.barberId)) {
+        throw badRequest("الحلاق المحدد غير صالح.");
+      }
+      barberIds.push(String(item.barberId));
     }
     if (item.itemType === "service") serviceIds.push(String(id));
     else productIds.push(String(id));
@@ -109,8 +123,12 @@ const buildSaleItems = async (tenantId, rawItems = [], session, appointment = nu
 
   const services = await Service.find({ _id: { $in: [...new Set(serviceIds)] }, tenantId, isActive: true }).session(session).lean();
   const products = await Product.find({ _id: { $in: [...new Set(productIds)] }, tenantId, isActive: true }).session(session).lean();
+  const barbers = barberIds.length
+    ? await Barber.find({ _id: { $in: [...new Set(barberIds)] }, tenantId, isActive: true }).select("name servicePrices").session(session).lean()
+    : [];
   const servicesById = new Map(services.map((service) => [String(service._id), service]));
   const productsById = new Map(products.map((product) => [String(product._id), product]));
+  const barbersById = new Map(barbers.map((barber) => [String(barber._id), barber]));
   const requestedProductQuantities = new Map();
   for (const item of rawItems.filter((entry) => entry.itemType === "product")) {
     const id = String(item.productId);
@@ -119,54 +137,71 @@ const buildSaleItems = async (tenantId, rawItems = [], session, appointment = nu
   for (const [id, quantity] of requestedProductQuantities) {
     const product = productsById.get(id);
     if (!product || Number(product.stockQuantity || 0) < quantity) {
-      const error = new Error(`المنتج غير متاح أو الكمية المطلوبة غير متوفرة${product ? `: ${product.name}` : ""}.`);
-      error.statusCode = 400;
-      throw error;
+      throw badRequest(`المنتج غير متاح أو الكمية المطلوبة غير متوفرة${product ? `: ${product.name}` : ""}.`);
     }
   }
 
-  const bookedItems = (appointment?.selectedServices || []).map((service) => saleItemFromCatalog({
+  // بنود الحجز المحفوظة كما هي (أسعارها حُددت وقت الحجز)
+  const bookedLines = (appointment?.selectedServices || []).map((service) => ({
     itemType: service.serviceId ? "service" : "custom",
     serviceId: service.serviceId || null,
+    barberId: appointment.barberId || null,
+    barberName: appointment.barberName || "",
     name: service.name,
     quantity: 1,
     unitPrice: Number(service.price || 0),
   }));
-  if (appointment && bookedItems.length === 0 && Number(appointment.totalPrice) > 0) {
-    bookedItems.push(saleItemFromCatalog({ itemType: "custom", name: "خدمة حلاقة", quantity: 1, unitPrice: appointment.totalPrice }));
+  if (appointment && bookedLines.length === 0 && Number(appointment.totalPrice) > 0) {
+    bookedLines.push({ itemType: "custom", name: "خدمة حلاقة", quantity: 1, unitPrice: appointment.totalPrice });
   }
 
-  const items = [...bookedItems, ...rawItems.map((item) => {
+  const requestedLines = rawItems.map((item) => {
     const quantity = Number(item.quantity);
     if (item.itemType === "service") {
       const service = servicesById.get(String(item.serviceId));
-      if (!service) {
-        const error = new Error("إحدى الخدمات غير متاحة لهذا الصالون.");
-        error.statusCode = 400;
-        throw error;
-      }
-      return saleItemFromCatalog({ itemType: "service", serviceId: service._id, name: service.name, quantity, unitPrice: service.price });
+      if (!service) throw badRequest("إحدى الخدمات غير متاحة لهذا الصالون.");
+      const barber = item.barberId ? barbersById.get(String(item.barberId)) : null;
+      if (item.barberId && !barber) throw badRequest("الحلاق المحدد غير متاح.");
+      const [priced] = applyBarberServicePrices([{ serviceId: service._id, price: service.price }], barber);
+      return {
+        itemType: "service",
+        serviceId: service._id,
+        barberId: barber?._id || null,
+        barberName: barber?.name || "",
+        name: service.name,
+        quantity,
+        unitPrice: Number(priced.price),
+        discount: item.discount,
+      };
     }
     const product = productsById.get(String(item.productId));
-    if (!product) {
-      const error = new Error("أحد المنتجات غير متاح لهذا الصالون.");
-      error.statusCode = 400;
-      throw error;
-    }
-    return saleItemFromCatalog({ itemType: "product", productId: product._id, name: product.name, quantity, unitPrice: product.salePrice, unitCost: product.costPrice });
-  })];
-  if (items.length === 0) {
-    const error = new Error("الرجاء إضافة خدمة أو منتج واحد على الأقل للبيع.");
-    error.statusCode = 400;
-    throw error;
-  }
+    if (!product) throw badRequest("أحد المنتجات غير متاح لهذا الصالون.");
+    return {
+      itemType: "product",
+      productId: product._id,
+      name: product.name,
+      quantity,
+      unitPrice: product.salePrice,
+      unitCost: product.costPrice,
+      discount: item.discount,
+    };
+  });
 
-  const totalAmount = toMoney(
-    items.reduce((sum, item) => sum + item.totalAmount, 0),
-  );
-  const discountAmount = toMoney(
-    items.reduce((sum, item) => sum + item.discountAmount, 0),
-  );
+  const lines = [...bookedLines, ...requestedLines];
+  if (lines.length === 0) throw badRequest("الرجاء إضافة خدمة أو منتج واحد على الأقل للبيع.");
+
+  const priced = priceLines(lines, saleDiscount);
+  const items = lines.map((line, index) => {
+    const { discount, ...rest } = line;
+    return saleItemFromCatalog({
+      ...rest,
+      discountAmount: priced.lines[index].discountAmount,
+      totalAmount: priced.lines[index].totalAmount,
+    });
+  });
+
+  const totalAmount = toMoney(items.reduce((sum, item) => sum + item.totalAmount, 0));
+  const discountAmount = toMoney(items.reduce((sum, item) => sum + item.discountAmount, 0));
   const { subtotal, vatAmount } = calculateVatInclusiveTotals(totalAmount);
 
   return {
@@ -240,12 +275,13 @@ const validatePayments = (payments = []) => {
   });
 };
 
-const createPaidPayments = async ({ tenantId, saleId, payments = [], session }) => {
+const createPaidPayments = async ({ tenantId, saleId, shiftId = null, payments = [], session }) => {
   if (payments.length === 0) return [];
   return Payment.insertMany(
     payments.map((payment) => ({
       tenantId,
       saleId,
+      shiftId,
       method: payment.method,
       amount: payment.amount,
       provider: payment.provider,
@@ -334,7 +370,14 @@ const createSale = async (req, res) => {
         error.statusCode = 409;
         throw error;
       }
-      const { items, totals } = await buildSaleItems(req.tenantId, req.body.items, session, appointment);
+      const openShift = await getOpenShift(req.tenantId, session);
+      // نقطة البيع لا تبيع إلا داخل وردية مفتوحة، حتى يُحسب النقد في إغلاق الصندوق
+      if (req.body.channel === "pos" && !openShift) {
+        const error = new Error("افتح الوردية أولاً قبل البيع.");
+        error.statusCode = 409;
+        throw error;
+      }
+      const { items, totals } = await buildSaleItems(req.tenantId, req.body.items, session, appointment, req.body.discount);
       if (totals.totalAmount <= 0) {
         const error = new Error("يجب أن يكون إجمالي البيع أكبر من صفر.");
         error.statusCode = 400;
@@ -375,6 +418,7 @@ const createSale = async (req, res) => {
         appointmentId,
         source: appointment ? "appointment" : "pos",
         requestId,
+        shiftId: openShift?._id || null,
         invoiceNumber: `POS-${tenant.posInvoiceCounter}`,
         customerSnapshot,
         ...totals,
@@ -397,6 +441,7 @@ const createSale = async (req, res) => {
       const payments = await createPaidPayments({
         tenantId: req.tenantId,
         saleId: sale._id,
+        shiftId: openShift?._id || null,
         payments: validPayments,
         session,
       });
@@ -471,7 +516,8 @@ const addSalePayment = async (req, res) => {
       sale.paidAmount = paidAmount;
       sale.status = getSaleStatus(sale.totalAmount, paidAmount);
       await sale.save({ session });
-      const payments = await createPaidPayments({ tenantId: req.tenantId, saleId: sale._id, payments: [payment], session });
+      const openShift = await getOpenShift(req.tenantId, session);
+      const payments = await createPaidPayments({ tenantId: req.tenantId, saleId: sale._id, shiftId: openShift?._id || null, payments: [payment], session });
       result = { sale, payments };
     });
 
@@ -609,9 +655,12 @@ const getSaleInvoice = async (req, res) => {
           name: item.name,
           qty: item.quantity,
           quantity: item.quantity,
-          price: toMoney(item.totalAmount || item.unitPrice * item.quantity),
+          price: toMoney(item.totalAmount ?? item.unitPrice * item.quantity),
           unitPrice: toMoney(item.unitPrice),
+          discountAmount: toMoney(item.discountAmount),
+          barberName: item.barberName || "",
         })),
+        discountAmount: toMoney(sale.discountAmount).toFixed(2),
         payments,
         subtotal: baseAmount.toFixed(2),
         baseAmount: baseAmount.toFixed(2),

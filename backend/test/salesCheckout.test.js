@@ -11,6 +11,8 @@ const Product = require("../src/models/Product");
 const Service = require("../src/models/Service");
 const Appointment = require("../src/models/Appointment");
 const InventoryMovement = require("../src/models/InventoryMovement");
+const CashShift = require("../src/models/CashShift");
+const Barber = require("../src/models/Barber");
 const { createSale } = require("../src/controllers/salesController");
 
 const id = () => new mongoose.Types.ObjectId();
@@ -49,6 +51,8 @@ async function withSaleMocks(values, run) {
     stub(Service, "find", () => query(values.services || []));
     stub(Appointment, "findOne", () => query(values.appointment || null));
     stub(Appointment, "updateOne", async () => { observed.linked++; return { modifiedCount: 1 }; });
+    stub(CashShift, "findOne", () => query(values.openShift || null));
+    stub(Barber, "find", () => ({ select() { return this; }, ...query(values.barbers || []) }));
     stub(InventoryMovement, "create", async (movement) => { observed.inventory.push(...movement); return movement; });
     await run(observed);
   } finally {
@@ -142,4 +146,77 @@ test("active barber slots and linked checkouts have unique index definitions", (
     keys.appointmentId === 1 && keys.tenantId === 1);
   assert.equal(checkoutIndex[1].unique, true);
   assert.deepEqual(checkoutIndex[1].partialFilterExpression.appointmentId, { $type: "objectId" });
+});
+
+test("POS sale uses the barber's own price and spreads the invoice discount across lines", async () => {
+  const tenantId = id();
+  const cut = { _id: id(), name: "قص", price: 40 };
+  const beard = { _id: id(), name: "ذقن", price: 20 };
+  const barber = { _id: id(), name: "أحمد", servicePrices: [{ serviceId: cut._id, price: 55 }] };
+  const product = { _id: id(), name: "شمع", salePrice: 30, costPrice: 10, stockQuantity: 5 };
+  const shift = { _id: id(), tenantId, status: "Open" };
+
+  await withSaleMocks({ services: [cut, beard], products: [product], barbers: [barber], openShift: shift }, async (observed) => {
+    const res = response();
+    await createSale({
+      tenantId,
+      body: {
+        requestId: "pos-discount-1",
+        channel: "pos",
+        items: [
+          { itemType: "service", serviceId: String(cut._id), quantity: 1, barberId: String(barber._id) },
+          { itemType: "service", serviceId: String(beard._id), quantity: 1, barberId: String(barber._id), discount: { type: "percent", value: 50 } },
+          { itemType: "product", productId: String(product._id), quantity: 2 },
+        ],
+        discount: { type: "amount", value: 10 },
+        payments: [{ method: "cash", amount: 115 }],
+      },
+    }, res);
+
+    assert.equal(res.code, 201, res.body?.message);
+    const [cutLine, beardLine, productLine] = observed.items;
+    assert.equal(cutLine.unitPrice, 55);
+    assert.equal(cutLine.barberName, "أحمد");
+    assert.equal(beardLine.unitPrice, 20);
+    assert.equal(productLine.barberId, null);
+
+    // 55 + (20 − 10) + 60 = 125، ثم خصم الفاتورة 10 ⇒ 115
+    assert.equal(observed.sale.totalAmount, 115);
+    assert.equal(observed.sale.discountAmount, 20);
+    assert.equal(String(observed.sale.shiftId), String(shift._id));
+    assert.equal(String(observed.payments[0].shiftId), String(shift._id));
+
+    // كل بند يحقق معادلة فاتورة Zakaty
+    for (const line of observed.items) {
+      assert.ok(Math.abs(line.quantity * line.unitPrice - line.discountAmount - line.totalAmount) < 0.011, line.name);
+    }
+    assert.equal(observed.items.reduce((sum, line) => sum + line.totalAmount, 0), 115);
+  });
+});
+
+test("POS sales are refused while no shift is open", async () => {
+  const tenantId = id();
+  const cut = { _id: id(), name: "قص", price: 40 };
+  await withSaleMocks({ services: [cut], openShift: null }, async (observed) => {
+    const res = response();
+    await createSale({
+      tenantId,
+      body: { requestId: "pos-no-shift", channel: "pos", items: [{ itemType: "service", serviceId: String(cut._id), quantity: 1 }] },
+    }, res);
+    assert.equal(res.code, 409);
+    assert.equal(observed.sale, null);
+  });
+});
+
+test("a barber that does not belong to the salon is rejected", async () => {
+  const cut = { _id: id(), name: "قص", price: 40 };
+  await withSaleMocks({ services: [cut], barbers: [], openShift: { _id: id() } }, async (observed) => {
+    const res = response();
+    await createSale({
+      tenantId: id(),
+      body: { requestId: "pos-foreign-barber", channel: "pos", items: [{ itemType: "service", serviceId: String(cut._id), quantity: 1, barberId: String(id()) }] },
+    }, res);
+    assert.equal(res.code, 400);
+    assert.equal(observed.sale, null);
+  });
 });

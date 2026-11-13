@@ -29,6 +29,8 @@ const saleSchema = new mongoose.Schema(
       default: "Draft",
     },
 
+    // الوردية التي سُجلت فيها العملية (لإغلاق الصندوق)
+    shiftId: { type: mongoose.Schema.Types.ObjectId, ref: "CashShift", default: null },
     invoiceNumber: { type: String, required: true },
     requestId: { type: String, default: undefined },
     customerSnapshot: {
@@ -64,6 +66,7 @@ const saleSchema = new mongoose.Schema(
 );
 
 saleSchema.index({ tenantId: 1, createdAt: -1 }, { background: true });
+saleSchema.index({ tenantId: 1, shiftId: 1 }, { background: true });
 saleSchema.index({ tenantId: 1, invoiceNumber: 1 }, { unique: true });
 saleSchema.index(
   { tenantId: 1, requestId: 1 },

@@ -352,8 +352,13 @@ const SalesTab = ({ services = [], checkoutAppointment = null, onClearCheckout, 
                     <div>
                         <h2 className="text-xl font-black text-slate-800">نقطة البيع POS</h2>
                     </div>
-                    <div className="bg-emerald-50 text-emerald-700 px-4 py-2 rounded-lg font-black text-sm border border-emerald-100">
-                        الإجمالي: {toMoney(totalAmount)} ر.س
+                    <div className="flex flex-wrap items-center gap-2">
+                        <a href="/pos" className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-black text-white hover:bg-slate-700">
+                            فتح شاشة نقطة البيع
+                        </a>
+                        <div className="bg-emerald-50 text-emerald-700 px-4 py-2 rounded-lg font-black text-sm border border-emerald-100">
+                            الإجمالي: {toMoney(totalAmount)} ر.س
+                        </div>
                     </div>
                 </div>
 

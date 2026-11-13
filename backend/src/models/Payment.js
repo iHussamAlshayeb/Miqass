@@ -13,6 +13,8 @@ const paymentSchema = new mongoose.Schema(
       required: true,
     },
 
+    // الوردية التي سُجلت فيها العملية (لإغلاق الصندوق)
+    shiftId: { type: mongoose.Schema.Types.ObjectId, ref: "CashShift", default: null },
     method: {
       type: String,
       enum: ["cash", "card", "transfer", "online"],
@@ -32,6 +34,7 @@ const paymentSchema = new mongoose.Schema(
 );
 
 paymentSchema.index({ tenantId: 1, saleId: 1 }, { background: true });
+paymentSchema.index({ tenantId: 1, shiftId: 1 }, { background: true });
 paymentSchema.index({ tenantId: 1, createdAt: -1 }, { background: true });
 paymentSchema.index({ tenantId: 1, method: 1, createdAt: -1 }, { background: true });
 

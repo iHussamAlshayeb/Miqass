@@ -223,6 +223,14 @@ const ReceiptContent = ({ invoice, invoiceNumber, formatCurrency, baseAmount, va
                         <tr key={idx} style={{ borderBottom: '1px dashed #ccc' }}>
                             <td style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'right', fontWeight: 'bold', verticalAlign: 'top' }}>
                                 {srv.name}
+                                {srv.barberName && (
+                                    <div style={{ fontSize: fs.small, fontWeight: 'normal' }}>الحلاق: {srv.barberName}</div>
+                                )}
+                                {Number(srv.discountAmount) > 0 && (
+                                    <div style={{ fontSize: fs.small, fontWeight: 'normal' }}>
+                                        خصم {formatCurrency(srv.discountAmount)} من {formatCurrency(srv.unitPrice * (srv.qty || 1))}
+                                    </div>
+                                )}
                             </td>
                             {!isNarrow && (
                                 <td style={{ border: '1px solid #000', padding: '2px', textAlign: 'center', fontFamily: 'monospace', verticalAlign: 'top' }}>
@@ -239,6 +247,12 @@ const ReceiptContent = ({ invoice, invoiceNumber, formatCurrency, baseAmount, va
 
             {/* ─── الإجماليات ─── */}
             <div style={{ width: '100%', border: '1px solid #000', overflow: 'hidden', fontSize: fs.normal, marginBottom: '10px' }}>
+                {Number(invoice?.discountAmount) > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 4px', borderBottom: '1px dashed #000' }}>
+                        <span>إجمالي الخصم</span>
+                        <span style={{ fontFamily: 'monospace' }}>-{formatCurrency(invoice.discountAmount)}</span>
+                    </div>
+                )}
                 <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 4px', borderBottom: '1px dashed #000' }}>
                     <span>المبلغ الأساسي</span>
                     <span style={{ fontFamily: 'monospace' }}>{formatCurrency(baseAmount)}</span>

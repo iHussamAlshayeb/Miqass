@@ -14,6 +14,9 @@ const {
   sendPasswordResetEmail,
 } = require("../utils/emailService");
 
+// مسارات الواجهة التي لا يجوز أن تكون رابط صالون
+const RESERVED_SLUGS = new Set(["pos", "login", "register", "dashboard", "payment", "super-admin", "forgot-password", "reset-password", "kiosk", "rate", "barber", "tv", "maintenance", "api"]);
+
 const MIN_PASSWORD_LENGTH = 8;
 const MAX_PASSWORD_LENGTH = 72; // حد bcrypt الفعلي
 const GENERIC_LOGIN_ERROR = "البريد الإلكتروني أو كلمة المرور غير صحيحة.";
@@ -116,6 +119,9 @@ const registerTenant = async (req, res) => {
     }
     if (!isValidNewPassword(password)) {
       return res.status(400).json({ message: PASSWORD_RULE_MESSAGE });
+    }
+    if (RESERVED_SLUGS.has(slug)) {
+      return res.status(400).json({ message: "رابط الصالون محجوز للنظام، اختر رابطاً آخر." });
     }
 
     const existingTenant = await Tenant.findOne({
