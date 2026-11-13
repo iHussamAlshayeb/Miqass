@@ -5,6 +5,9 @@ const Product = require("../models/Product");
 const Barber = require("../models/Barber");
 const Tenant = require("../models/Tenant");
 const CashShift = require("../models/CashShift");
+const Customer = require("../models/Customer");
+const Appointment = require("../models/Appointment");
+const Sale = require("../models/Sale");
 const {
   getOpenShift,
   summarizeShift,
@@ -105,4 +108,90 @@ const getShift = async (req, res) => {
   }
 };
 
-module.exports = { getCatalog, getCurrentShift, postOpenShift, postCloseShift, listShifts, getShift };
+// أسماء افتراضية تُحفظ للعميل بلا اسم؛ لا نعرضها كاسم حقيقي
+const PLACEHOLDER_NAMES = new Set(["عميل قيم", "عميل نقدي", ""]);
+
+// صيغ الرقم المحتملة: كما كُتب، وبصفر بدل 966، وبصفر قبل 5
+const phoneCandidates = (digits) => {
+  const set = new Set([digits]);
+  if (digits.startsWith("966")) set.add(`0${digits.slice(3)}`);
+  if (digits.startsWith("5")) set.add(`0${digits}`);
+  return [...set];
+};
+
+/** البحث عن عميل بأول أرقام جواله أثناء الكتابة في نقطة البيع */
+const searchCustomers = async (req, res) => {
+  try {
+    const digits = String(req.query.q || "").replace(/\D/g, "").slice(0, 15);
+    if (digits.length < 3) return res.json({ customers: [] });
+    // الأرقام فقط في النمط، فلا حاجة لتهريب رموز التعابير النمطية
+    const customers = await Customer.find({
+      tenantId: req.tenantId,
+      $or: phoneCandidates(digits).map((candidate) => ({ phone: { $regex: `^${candidate}` } })),
+    })
+      .select("phone parentName children totalVisits lastVisitDate customerType")
+      .sort({ lastVisitDate: -1 })
+      .limit(6)
+      .lean();
+    return res.json({
+      customers: customers.map((customer) => ({
+        _id: customer._id,
+        phone: customer.phone,
+        name: PLACEHOLDER_NAMES.has(String(customer.parentName || "").trim()) ? "" : customer.parentName,
+        children: (customer.children || []).filter(Boolean).slice(0, 8),
+        totalVisits: Number(customer.totalVisits || 0),
+        lastVisitDate: customer.lastVisitDate || null,
+        customerType: customer.customerType || "New",
+      })),
+    });
+  } catch (error) {
+    return sendError(res, error, "تعذر البحث عن العميل.");
+  }
+};
+
+/** بيانات حجز مكتمل لتحصيل حسابه من نقطة البيع: خدماته بأسعار الحجز والعربون المدفوع */
+const getCheckoutAppointment = async (req, res) => {
+  try {
+    const { appointmentId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(appointmentId)) return res.status(404).json({ message: "الحجز غير موجود." });
+    const appointment = await Appointment.findOne({ _id: appointmentId, tenantId: req.tenantId })
+      .populate("customerId", "phone parentName")
+      .lean();
+    if (!appointment) return res.status(404).json({ message: "الحجز غير موجود." });
+    const linkedSale = appointment.saleId
+      ? { _id: appointment.saleId }
+      : await Sale.findOne({ tenantId: req.tenantId, appointmentId: appointment._id }).select("_id").lean();
+    if (linkedSale) {
+      return res.status(409).json({ message: "تم تحصيل حساب هذا الحجز مسبقاً.", saleId: linkedSale._id, code: "ALREADY_CHECKED_OUT" });
+    }
+    if (appointment.status !== "Completed") {
+      return res.status(409).json({ message: "أكمل الحجز أولاً من مواعيد اليوم، ثم حصّل الحساب.", code: "NOT_COMPLETED" });
+    }
+    const services = (appointment.selectedServices || []).map((service) => ({
+      serviceId: service.serviceId ? String(service.serviceId) : "",
+      name: service.name,
+      price: Number(service.price || 0),
+    }));
+    // نفس ما يفعله الخادم عند البيع: حجز بلا خدمات محددة وله سعر يُحتسب "خدمة حلاقة"
+    if (services.length === 0 && Number(appointment.totalPrice) > 0) {
+      services.push({ serviceId: "", name: "خدمة حلاقة", price: Number(appointment.totalPrice) });
+    }
+    return res.json({
+      appointment: {
+        _id: appointment._id,
+        childName: appointment.childName,
+        customerPhone: appointment.customerId?.phone || "",
+        date: appointment.date,
+        timeSlot: appointment.timeSlot,
+        barberId: appointment.barberId ? String(appointment.barberId) : "",
+        barberName: appointment.barberName || "",
+        services,
+        deposit: appointment.payment?.status === "Paid" ? Number(appointment.payment.amount || 0) : 0,
+      },
+    });
+  } catch (error) {
+    return sendError(res, error, "تعذر تحميل الحجز.");
+  }
+};
+
+module.exports = { getCatalog, getCurrentShift, postOpenShift, postCloseShift, listShifts, getShift, searchCustomers, getCheckoutAppointment };

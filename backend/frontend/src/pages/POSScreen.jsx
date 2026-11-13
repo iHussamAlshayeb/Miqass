@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
     ArrowRight, Maximize, Minus, Plus, Trash2, Percent, Scissors, Package, Search,
-    UserRound, LockKeyhole, Printer, CheckCircle2, ScanBarcode, X,
+    UserRound, LockKeyhole, Printer, CheckCircle2, ScanBarcode, X, CalendarDays,
 } from 'lucide-react';
 import API from '../services/api';
 import { getBarberServicePrice } from '../utils/servicePricing';
@@ -13,6 +13,7 @@ import CloseShiftModal from '../components/pos/CloseShiftModal';
 import { methodLabel, printShiftReport } from '../components/pos/posShared';
 import DiscountSheet from '../components/pos/DiscountSheet';
 import InvoiceModal from '../components/dashboard/InvoiceModal';
+import CustomerLookup from '../components/pos/CustomerLookup';
 
 const ALL = '__all__';
 const newRequestId = () => (window.crypto?.randomUUID?.() || `pos-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -37,6 +38,8 @@ const Tile = ({ title, price, sub, accent, disabled, onClick }) => (
 
 function POSScreen() {
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
+    const appointmentParam = searchParams.get('appointment') || '';
     const [catalog, setCatalog] = useState(null);
     const [shift, setShift] = useState(undefined);
     const [loadError, setLoadError] = useState('');
@@ -51,6 +54,8 @@ function POSScreen() {
     const [cart, setCart] = useState([]);
     const [saleDiscount, setSaleDiscount] = useState(null);
     const [customer, setCustomer] = useState({ name: '', phone: '' });
+    // حجز مكتمل يُحصّل حسابه: خدماته تدخل الفاتورة بأسعار الحجز ويُخصم عربونه
+    const [appointment, setAppointment] = useState(null);
     const [showCustomer, setShowCustomer] = useState(false);
     const [discountTarget, setDiscountTarget] = useState(null);
     const [barberTarget, setBarberTarget] = useState(null);
@@ -92,6 +97,26 @@ function POSScreen() {
     }, [navigate, handleAuthError]);
 
     useEffect(() => {
+        if (!catalog || !shift || !appointmentParam || appointment?._id === appointmentParam) return;
+        API.get(`/pos/appointments/${appointmentParam}`)
+            .then((res) => {
+                const booked = res.data.appointment;
+                setAppointment(booked);
+                setCustomer({ name: booked.childName || '', phone: booked.customerPhone || '' });
+                setCart(booked.services.map((service, index) => ({
+                    key: `booked-${index}`, booked: true, itemType: 'service', refId: service.serviceId, name: service.name,
+                    unitPrice: Number(service.price || 0), quantity: 1, barberId: booked.barberId, barberName: booked.barberName, discount: null,
+                })));
+                setSaleDiscount(null);
+            })
+            .catch((error) => {
+                if (handleAuthError(error)) return;
+                setToast(errorMessage(error, 'تعذر تحميل الحجز.'));
+                setSearchParams({}, { replace: true });
+            });
+    }, [catalog, shift, appointmentParam, appointment, handleAuthError, setSearchParams]);
+
+    useEffect(() => {
         if (!toast) return undefined;
         const timer = setTimeout(() => setToast(''), 2500);
         return () => clearTimeout(timer);
@@ -118,6 +143,8 @@ function POSScreen() {
     }, [catalog, mode, category, search]);
 
     const priced = useMemo(() => priceCart(cart, saleDiscount), [cart, saleDiscount]);
+    const deposit = Number(appointment?.deposit || 0);
+    const amountDue = Math.max(Math.round((priced.total - deposit) * 100) / 100, 0);
     const itemCount = cart.reduce((sum, line) => sum + line.quantity, 0);
 
     const addService = (service) => {
@@ -150,7 +177,7 @@ function POSScreen() {
     }, []);
 
     const changeQty = (key, delta) => setCart((lines) => lines.flatMap((line) => {
-        if (line.key !== key) return [line];
+        if (line.key !== key || line.booked) return [line];
         const quantity = line.quantity + delta;
         if (quantity <= 0) return [];
         if (line.itemType === 'product') {
@@ -199,6 +226,8 @@ function POSScreen() {
     }, [catalog, shift, addProduct]);
 
     const resetSale = () => {
+        if (appointment || appointmentParam) setSearchParams({}, { replace: true });
+        setAppointment(null);
         setCart([]);
         setSaleDiscount(null);
         setCustomer({ name: '', phone: '' });
@@ -225,10 +254,12 @@ function POSScreen() {
             const res = await API.post('/sales', {
                 requestId: requestIdRef.current,
                 channel: 'pos',
+                appointmentId: appointment?._id || undefined,
                 customerName: customer.name.trim(),
                 customerPhone: customer.phone.trim(),
                 discount: saleDiscount,
-                items: cart.map((line) => ({
+                // خدمات الحجز يضيفها الخادم من الحجز نفسه؛ نرسل الإضافات فقط
+                items: cart.filter((line) => !line.booked).map((line) => ({
                     itemType: line.itemType,
                     ...(line.itemType === 'service' ? { serviceId: line.refId } : { productId: line.refId }),
                     quantity: line.quantity,
@@ -422,20 +453,34 @@ function POSScreen() {
                     <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
                         <h2 className="text-lg font-extrabold">الفاتورة <span className="text-sm font-bold text-slate-400">({itemCount})</span></h2>
                         <div className="flex gap-1">
-                            <button type="button" onClick={() => setShowCustomer((value) => !value)} className={`flex h-10 items-center gap-1.5 rounded-lg px-3 text-sm font-bold ${customer.name || customer.phone ? 'bg-sky-50 text-sky-700' : 'text-slate-500 hover:bg-slate-100'}`}>
-                                <UserRound size={18} /> {customer.name || 'عميل'}
-                            </button>
+                            {!appointment && (
+                                <button type="button" onClick={() => setShowCustomer((value) => !value)} className={`flex h-10 max-w-[170px] items-center gap-1.5 rounded-lg px-3 text-sm font-bold ${customer.name || customer.phone ? 'bg-sky-50 text-sky-700' : 'text-slate-500 hover:bg-slate-100'}`}>
+                                    <UserRound size={18} className="shrink-0" /> <span className="truncate">{customer.name || customer.phone || 'عميل'}</span>
+                                </button>
+                            )}
                             {cart.length > 0 && (
                                 <button type="button" onClick={resetSale} className="flex h-10 items-center rounded-lg px-3 text-sm font-bold text-red-600 hover:bg-red-50">إفراغ</button>
                             )}
                         </div>
                     </div>
 
-                    {showCustomer && (
-                        <div className="grid grid-cols-2 gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3">
-                            <input value={customer.name} onChange={(event) => setCustomer({ ...customer, name: event.target.value })} maxLength={100} placeholder="اسم العميل" className="h-11 rounded-lg border border-slate-200 px-3 font-semibold outline-none focus:border-slate-900" />
-                            <input value={customer.phone} onChange={(event) => setCustomer({ ...customer, phone: event.target.value.replace(/[^\d+]/g, '') })} inputMode="tel" maxLength={15} placeholder="05xxxxxxxx" dir="ltr" className="h-11 rounded-lg border border-slate-200 px-3 text-right font-mono outline-none focus:border-slate-900" />
+                    {appointment && (
+                        <div className="flex items-center gap-3 border-b border-emerald-100 bg-emerald-50 px-4 py-3">
+                            <CalendarDays size={20} className="shrink-0 text-emerald-700" />
+                            <div className="min-w-0 flex-1">
+                                <p className="truncate font-bold text-emerald-900">حجز {appointment.childName}</p>
+                                <p className="truncate text-xs font-semibold text-emerald-700">{appointment.timeSlot} · {appointment.barberName}</p>
+                            </div>
+                            <button type="button" onClick={resetSale} className="flex h-10 w-10 items-center justify-center rounded-lg text-emerald-800 hover:bg-emerald-100" aria-label="إلغاء تحصيل الحجز"><X size={18} /></button>
                         </div>
+                    )}
+
+                    {showCustomer && !appointment && (
+                        <CustomerLookup
+                            customer={customer}
+                            onChange={setCustomer}
+                            onDone={() => setShowCustomer(false)}
+                        />
                     )}
 
                     <div className="min-h-0 flex-1 overflow-y-auto">
@@ -450,14 +495,18 @@ function POSScreen() {
                                 <div className="flex items-start justify-between gap-2">
                                     <div className="min-w-0">
                                         <p className="truncate font-bold text-slate-800">{line.name}</p>
-                                        <p className="font-mono text-xs text-slate-400" dir="ltr">{money(line.unitPrice)} × {line.quantity}</p>
+                                        {line.booked ? (
+                                            <p className="text-xs font-bold text-emerald-700">من الحجز{line.barberName ? ` · ${line.barberName}` : ''}</p>
+                                        ) : (
+                                            <p className="font-mono text-xs text-slate-400" dir="ltr">{money(line.unitPrice)} × {line.quantity}</p>
+                                        )}
                                     </div>
                                     <div className="text-left">
                                         <p className="font-mono text-base font-extrabold" dir="ltr">{money(line.netAmount)}</p>
                                         {line.discountAmount > 0 && <p className="font-mono text-xs text-slate-400 line-through" dir="ltr">{money(line.grossAmount)}</p>}
                                     </div>
                                 </div>
-                                <div className="mt-2 flex items-center gap-1.5">
+                                {!line.booked && <div className="mt-2 flex items-center gap-1.5">
                                     <div className="flex items-center rounded-lg border border-slate-200">
                                         <button type="button" onClick={() => changeQty(line.key, -1)} className="flex h-10 w-10 items-center justify-center text-slate-600" aria-label="إنقاص">{line.quantity === 1 ? <Trash2 size={17} className="text-red-500" /> : <Minus size={17} />}</button>
                                         <span className="w-7 text-center font-mono font-bold">{line.quantity}</span>
@@ -472,7 +521,7 @@ function POSScreen() {
                                     <button type="button" onClick={() => setDiscountTarget(line.key)} className={`mr-auto flex h-10 items-center gap-1 rounded-lg border px-2.5 text-sm font-bold ${line.discount ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-slate-200 text-slate-500'}`}>
                                         <Percent size={15} /> {line.discount ? (line.discount.type === 'percent' ? `${line.discount.value}%` : money(line.discountAmount)) : 'خصم'}
                                     </button>
-                                </div>
+                                </div>}
                             </div>
                         ))}
                     </div>
@@ -486,17 +535,23 @@ function POSScreen() {
                                 {priced.saleDiscount > 0 && <span className="font-mono" dir="ltr">-{money(priced.saleDiscount)}</span>}
                             </button>
                             <div className="flex justify-between text-slate-400"><span>منها ضريبة 15%</span><span className="font-mono" dir="ltr">{money(priced.vat)}</span></div>
+                            {deposit > 0 && <div className="flex justify-between text-emerald-700"><span>العربون المدفوع مسبقاً</span><span className="font-mono" dir="ltr">-{money(deposit)}</span></div>}
                         </div>
                         {actionError && !paying && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{actionError}</p>}
                         <button
                             type="button"
-                            disabled={!cart.length || priced.total <= 0}
-                            onClick={() => { setActionError(''); setPaying(true); }}
+                            disabled={!cart.length || priced.total <= 0 || busy}
+                            onClick={() => {
+                                setActionError('');
+                                // حجز مدفوع بالكامل بالعربون: يُغلق دون دفعة جديدة
+                                if (amountDue <= 0) checkout([], {});
+                                else setPaying(true);
+                            }}
                             className="mt-3 flex h-16 w-full items-center justify-between rounded-xl px-5 text-white shadow-lg transition active:scale-[0.98] disabled:bg-slate-300 disabled:shadow-none"
                             style={{ backgroundColor: cart.length ? '#059669' : undefined }}
                         >
-                            <span className="text-xl font-extrabold">الدفع</span>
-                            <span className="font-mono text-2xl font-extrabold" dir="ltr">{money(priced.total)}</span>
+                            <span className="text-xl font-extrabold">{amountDue <= 0 && cart.length ? 'إتمام' : 'الدفع'}</span>
+                            <span className="font-mono text-2xl font-extrabold" dir="ltr">{money(amountDue)}</span>
                         </button>
                     </div>
                 </aside>
@@ -537,7 +592,7 @@ function POSScreen() {
                 />
             )}
 
-            {paying && <PaymentModal total={priced.total} busy={busy} error={actionError} onClose={() => setPaying(false)} onComplete={checkout} />}
+            {paying && <PaymentModal total={amountDue} busy={busy} error={actionError} onClose={() => setPaying(false)} onComplete={checkout} />}
 
             {closing && (
                 <CloseShiftModal shift={shift} salonName={salon?.name} busy={busy} error={actionError} onClose={() => { setClosing(false); setActionError(''); }} onConfirm={closeShift} />

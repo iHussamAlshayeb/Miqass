@@ -35,7 +35,8 @@ const navSections = [
     {
         title: 'الإدارة المالية',
         items: [
-            { id: 'sales', label: 'نقطة البيع', icon: Receipt },
+            { id: 'pos', label: 'نقطة البيع', icon: ScanBarcode, href: '/pos' },
+            { id: 'sales', label: 'سجل المبيعات', icon: Receipt },
             { id: 'products', label: 'المنتجات والمخزون', icon: Package },
             { id: 'expenses', label: 'المصروفات', icon: WalletCards },
         ],
@@ -83,6 +84,12 @@ const Sidebar = ({
                 requiredPlan: 'Premium',
                 icon: 'Premium',
             });
+            return;
+        }
+
+        // نقطة البيع شاشة مستقلة باللمس وليست تبويباً داخل اللوحة
+        if (item.href) {
+            window.location.assign(item.href);
             return;
         }
 
@@ -228,14 +235,6 @@ const Sidebar = ({
                         <div className="tour-link mt-4 rounded-lg border border-slate-200 bg-white p-3">
                             <p className="mb-3 text-xs font-black text-slate-500">روابط سريعة</p>
                             <div className="space-y-2">
-                                <a
-                                    href="/pos"
-                                    title="شاشة كاملة للبيع باللمس، مع الورديات وإغلاق الصندوق"
-                                    className="flex h-10 w-full items-center justify-between rounded-lg bg-emerald-600 px-3 text-xs font-black text-white hover:bg-emerald-700"
-                                >
-                                    <span>شاشة نقطة البيع</span>
-                                    <ScanBarcode size={15} />
-                                </a>
                                 <button
                                     type="button"
                                     onClick={() => copyLink(`https://www.miqass.app/${slug}`, 'تم نسخ رابط الحجز للعملاء.')}

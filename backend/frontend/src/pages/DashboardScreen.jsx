@@ -42,8 +42,8 @@ const pageMeta = {
         description: 'بحث ومراجعة كل الحجوزات القادمة والسابقة.',
     },
     sales: {
-        title: 'نقطة البيع',
-        description: 'بيع الخدمات والمنتجات وتسجيل الدفعات.',
+        title: 'سجل المبيعات',
+        description: 'كل فواتير البيع: عرضها وطباعتها، تسديد المتبقي، والإرسال إلى Zakaty.',
     },
     products: {
         title: 'المنتجات والمخزون',
@@ -79,8 +79,6 @@ const DashboardScreen = () => {
     const navigate = useNavigate();
 
     const [activeTab, setActiveTab] = useState('statistics');
-    const [checkoutAppointment, setCheckoutAppointment] = useState(null);
-    const clearCheckout = useCallback(() => setCheckoutAppointment(null), []);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [selectedDate, setSelectedDate] = useState(getLocalDate());
     const [isLoading, setIsLoading] = useState(true);
@@ -317,13 +315,12 @@ const DashboardScreen = () => {
     const activePage = pageMeta[activeTab] || pageMeta.statistics;
     const dashboardLink = slug ? `https://www.miqass.app/${slug}` : '';
     const handleSetActiveTab = (tab) => {
-        setCheckoutAppointment(null);
         setActiveTab(tab);
         setIsSidebarOpen(false);
     };
+    // تحصيل حساب الحجز يتم من شاشة نقطة البيع، وتُحمّل خدماته وعربونه تلقائياً
     const openAppointmentCheckout = (appointment) => {
-        setCheckoutAppointment(appointment);
-        setActiveTab('sales');
+        navigate(`/pos?appointment=${appointment._id}`);
     };
 
     if (isLoading && !appointments.length && !salonName) {
@@ -472,7 +469,7 @@ const DashboardScreen = () => {
                         {activeTab === 'statistics' && <StatisticsTab />}
                         {activeTab === 'appointments' && <DailyTab selectedDate={selectedDate} setSelectedDate={setSelectedDate} isLoading={isLoading} appointments={appointments} handleStatusChange={handleStatusChange} handleSingleWhatsApp={handleSingleWhatsApp} whatsappSettings={whatsappSettings} reviewEnabled={Boolean(settings?.enableGoogleReviews && settings?.googleReviewLink)} refreshAppointments={fetchAppointments} onOpenCheckout={openAppointmentCheckout} />}
                         {activeTab === 'all' && <AllTab isLoading={isLoading} allAppointments={allAppointments} exportToExcel={exportToExcel} handleStatusChange={handleStatusChange} />}
-                        {activeTab === 'sales' && <SalesTab services={services} checkoutAppointment={checkoutAppointment} onClearCheckout={clearCheckout} onSaleSaved={() => fetchAppointments(true)} />}
+                        {activeTab === 'sales' && <SalesTab />}
                         {activeTab === 'products' && <ProductsTab />}
                         {activeTab === 'expenses' && <ExpensesTab />}
                         {activeTab === 'reviews' && <ReviewsTab reviews={reviews} isLoading={isLoading} />}

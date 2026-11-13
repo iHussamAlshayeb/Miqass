@@ -249,7 +249,7 @@ const DailyTab = ({
                                             className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-sm font-black text-white hover:bg-emerald-700"
                                         >
                                             <ShoppingCart size={16} />
-                                            نقطة البيع
+                                            تحصيل الحساب
                                         </button>
                                         <button
                                             type="button"

@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Banknote, ClipboardCheck, ReceiptText, RefreshCw, Save, Search, Trash2, X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Banknote, ClipboardCheck, ReceiptText, RefreshCw } from 'lucide-react';
 import API from '../../services/api';
 import InvoiceModal from './InvoiceModal';
 
@@ -36,53 +36,21 @@ const getStatusClass = (status) => {
     return 'bg-amber-50 text-amber-700';
 };
 
-const SalesTab = ({ services = [], checkoutAppointment = null, onClearCheckout, onSaleSaved = () => {} }) => {
-    const [items, setItems] = useState([]);
-    const [products, setProducts] = useState([]);
-    const [customerName, setCustomerName] = useState('');
-    const [customerPhone, setCustomerPhone] = useState('');
-    const [paymentMethod, setPaymentMethod] = useState('cash');
-    const [paymentAmount, setPaymentAmount] = useState('');
-    const [isPaymentAmountManual, setIsPaymentAmountManual] = useState(false);
-    const [productSearch, setProductSearch] = useState('');
-    const requestIdRef = useRef(null);
+// سجل المبيعات: عرض الفواتير وطباعتها، تسديد المتبقي، والإرسال إلى Zakaty.
+// البيع نفسه يتم من شاشة نقطة البيع باللمس (/pos).
+const SalesTab = () => {
     const [sales, setSales] = useState([]);
-    const [isSaving, setIsSaving] = useState(false);
     const [isLoadingSales, setIsLoadingSales] = useState(false);
-    const [isCheckingCheckout, setIsCheckingCheckout] = useState(false);
-    const [isCheckoutReady, setIsCheckoutReady] = useState(true);
     const [payingSaleId, setPayingSaleId] = useState(null);
     const [paymentDrafts, setPaymentDrafts] = useState({});
     const [invoiceData, setInvoiceData] = useState(null);
     const [zakatyCheck, setZakatyCheck] = useState(null);
     const [message, setMessage] = useState('');
 
-    const totalAmount = useMemo(
-        () => items.reduce((sum, item) => sum + Number(item.unitPrice || 0) * Number(item.quantity || 0), 0),
-        [items],
-    );
-    const depositAmount = checkoutAppointment?.payment?.status === 'Paid'
-        ? Number(checkoutAppointment.payment.amount || 0) : 0;
-    const remainingAmount = Math.max(totalAmount - depositAmount, 0);
-    const visibleProducts = useMemo(() => products.filter((product) =>
-        [product.name, product.sku, product.barcode].some((value) =>
-            String(value || '').toLowerCase().includes(productSearch.trim().toLowerCase()))),
-    [products, productSearch]);
-
-    useEffect(() => {
-        if (!isPaymentAmountManual) {
-            setPaymentAmount(remainingAmount ? String(toMoney(remainingAmount)) : '');
-        }
-    }, [isPaymentAmountManual, remainingAmount]);
-
-    useEffect(() => {
-        requestIdRef.current = null;
-    }, [items, customerName, customerPhone, paymentMethod, paymentAmount]);
-
     const fetchSales = async () => {
         setIsLoadingSales(true);
         try {
-            const res = await API.get('/sales?limit=10');
+            const res = await API.get('/sales?limit=50');
             setSales(res.data.sales || []);
         } catch (error) {
             console.error('Sales fetch error:', error);
@@ -91,65 +59,9 @@ const SalesTab = ({ services = [], checkoutAppointment = null, onClearCheckout, 
         }
     };
 
-    const fetchProducts = async () => {
-        try {
-            const res = await API.get('/products');
-            setProducts(res.data.products || []);
-        } catch (error) {
-            console.error('Products fetch error:', error);
-        }
-    };
-
     useEffect(() => {
         fetchSales();
-        fetchProducts();
     }, []);
-
-    useEffect(() => {
-        if (!checkoutAppointment?._id) {
-            setIsCheckoutReady(true);
-            return undefined;
-        }
-        let cancelled = false;
-        setItems([]);
-        setIsCheckingCheckout(true);
-        setIsCheckoutReady(false);
-        API.get('/sales', { params: { appointmentId: checkoutAppointment._id, limit: 1 } })
-            .then((res) => {
-                if (cancelled) return;
-                if (res.data.sales?.length) {
-                    setItems([]);
-                    setMessage('هذا الحجز مرتبط بعملية بيع مسبقاً. يمكنك مراجعتها أو تسديد المتبقي من سجل المبيعات.');
-                    onClearCheckout();
-                    fetchSales();
-                    return;
-                }
-                const bookedServices = checkoutAppointment.selectedServices || [];
-                const bookedItems = bookedServices.map((service, index) => ({
-                    key: `booked-${checkoutAppointment._id}-${index}`,
-                    itemType: 'service',
-                    serviceId: service.serviceId,
-                    name: service.name,
-                    unitPrice: Number(service.price || 0),
-                    quantity: 1,
-                    booked: true,
-                }));
-                if (!bookedItems.length && Number(checkoutAppointment.totalPrice) > 0) {
-                    bookedItems.push({ key: `booked-${checkoutAppointment._id}`, itemType: 'service', name: 'خدمة حلاقة', unitPrice: Number(checkoutAppointment.totalPrice), quantity: 1, booked: true });
-                }
-                setItems(bookedItems);
-                setCustomerName(checkoutAppointment.childName || '');
-                setCustomerPhone(checkoutAppointment.customerPhone || '');
-                setIsPaymentAmountManual(false);
-                setIsCheckoutReady(true);
-                setMessage('');
-            })
-            .catch(() => {
-                if (!cancelled) setMessage('تعذر التحقق من عملية البيع المرتبطة بالحجز. حاول مرة أخرى.');
-            })
-            .finally(() => { if (!cancelled) setIsCheckingCheckout(false); });
-        return () => { cancelled = true; };
-    }, [checkoutAppointment, onClearCheckout]);
 
     const getPaymentDraft = (sale) => paymentDrafts[sale._id] || {
         method: 'cash',
@@ -165,119 +77,6 @@ const SalesTab = ({ services = [], checkoutAppointment = null, onClearCheckout, 
                 ...patch,
             },
         }));
-    };
-
-    const addProductItem = (product) => {
-        const productId = product._id || product.id;
-        if (!productId || Number(product.stockQuantity || 0) <= 0) return;
-
-        setMessage('');
-        setItems((prev) => {
-            const existing = prev.find((item) => item.itemType === 'product' && item.productId === productId);
-            if (existing) {
-                const nextQuantity = Math.min(Number(existing.quantity || 1) + 1, Number(product.stockQuantity || 0));
-                return prev.map((item) =>
-                    item.key === existing.key
-                        ? { ...item, quantity: nextQuantity }
-                        : item,
-                );
-            }
-
-            return [
-                ...prev,
-                {
-                    key: `product-${productId}-${Date.now()}`,
-                    itemType: 'product',
-                    productId,
-                    name: product.name,
-                    quantity: 1,
-                    unitPrice: Number(product.salePrice || 0),
-                    stockQuantity: Number(product.stockQuantity || 0),
-                },
-            ];
-        });
-    };
-
-    const addServiceItem = (service) => {
-        const serviceId = service._id || service.id;
-        if (!serviceId) return;
-        setMessage('');
-        setItems((prev) => {
-            const existing = prev.find((item) => item.itemType === 'service' && item.serviceId === serviceId && !item.booked);
-            if (existing) return prev.map((item) => item.key === existing.key ? { ...item, quantity: item.quantity + 1 } : item);
-            return [...prev, { key: `service-${serviceId}`, itemType: 'service', serviceId, name: service.name, quantity: 1, unitPrice: Number(service.price || 0) }];
-        });
-    };
-
-    const updateQuantity = (key, quantity) => {
-        const item = items.find((currentItem) => currentItem.key === key);
-        if (item?.booked) return;
-        const maxQuantity = item?.itemType === 'product' ? Math.max(Number(item.stockQuantity || 1), 1) : 10000;
-        const cleanQuantity = Math.min(Math.max(Math.floor(Number(quantity)) || 1, 1), maxQuantity);
-        setItems((prev) =>
-            prev.map((item) => (item.key === key ? { ...item, quantity: cleanQuantity } : item)),
-        );
-    };
-
-    const removeItem = (key) => {
-        setItems((prev) => prev.filter((item) => item.key !== key || item.booked));
-    };
-
-    const resetSaleForm = () => {
-        setItems([]);
-        setCustomerName('');
-        setCustomerPhone('');
-        setPaymentMethod('cash');
-        setPaymentAmount('');
-        setIsPaymentAmountManual(false);
-        requestIdRef.current = null;
-        onClearCheckout();
-    };
-
-    const createSale = async () => {
-        if (items.length === 0) {
-            setMessage('أضف خدمة أو منتجاً قبل حفظ البيع.');
-            return;
-        }
-
-        setIsSaving(true);
-        setMessage('');
-
-        try {
-            const cleanPaymentAmount = paymentAmount === '' ? totalAmount : Number(paymentAmount);
-            if (!Number.isFinite(cleanPaymentAmount) || cleanPaymentAmount < 0 || cleanPaymentAmount > remainingAmount) {
-                setMessage('مبلغ الدفع يجب أن يكون بين صفر والمبلغ المتبقي.');
-                return;
-            }
-            if (!requestIdRef.current) requestIdRef.current = crypto.randomUUID();
-            const payload = {
-                source: 'pos',
-                requestId: requestIdRef.current,
-                appointmentId: checkoutAppointment?._id || null,
-                customerName: customerName.trim(),
-                customerPhone: customerPhone.replace(/\D/g, ''),
-                items: items.filter((item) => !item.booked).map((item) => ({
-                    itemType: item.itemType,
-                    serviceId: item.serviceId,
-                    productId: item.productId,
-                    quantity: Number(item.quantity),
-                })),
-                payments: cleanPaymentAmount > 0
-                    ? [{ method: paymentMethod, amount: cleanPaymentAmount }]
-                    : [],
-            };
-
-            const res = await API.post('/sales', payload);
-            setMessage(res.data.message || 'تم حفظ البيع.');
-            resetSaleForm();
-            fetchProducts();
-            fetchSales();
-            onSaleSaved();
-        } catch (error) {
-            setMessage(error.response?.data?.message || 'حدث خطأ أثناء حفظ البيع.');
-        } finally {
-            setIsSaving(false);
-        }
     };
 
     const addPaymentToSale = async (sale) => {
@@ -347,186 +146,15 @@ const SalesTab = ({ services = [], checkoutAppointment = null, onClearCheckout, 
 
     return (
         <div className="space-y-6">
-            <div className="bg-white p-4 sm:p-5 rounded-lg shadow-sm border border-slate-100">
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-6">
-                    <div>
-                        <h2 className="text-xl font-black text-slate-800">نقطة البيع POS</h2>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                        <a href="/pos" className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-black text-white hover:bg-slate-700">
-                            فتح شاشة نقطة البيع
-                        </a>
-                        <div className="bg-emerald-50 text-emerald-700 px-4 py-2 rounded-lg font-black text-sm border border-emerald-100">
-                            الإجمالي: {toMoney(totalAmount)} ر.س
-                        </div>
-                    </div>
-                </div>
-
-                {checkoutAppointment && (
-                    <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-900">
-                        <span>حجز {checkoutAppointment.childName} · {checkoutAppointment.date} · {checkoutAppointment.timeSlot}</span>
-                        <button type="button" onClick={resetSaleForm} className="inline-flex items-center gap-1 text-emerald-800 hover:text-red-600"><X size={16} /> إغلاق</button>
-                    </div>
-                )}
-
-                <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-                    <div className="xl:col-span-2 space-y-6">
-                        <section>
-                            <h3 className="text-sm font-black text-slate-700 mb-3">الخدمات</h3>
-                            {services.length === 0 ? (
-                                <div className="bg-slate-50 border border-slate-100 rounded-lg p-4 text-sm font-bold text-slate-400">لا توجد خدمات متاحة.</div>
-                            ) : (
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    {services.map((service) => (
-                                        <button key={service._id || service.id} type="button" onClick={() => addServiceItem(service)} className="text-right bg-slate-50 border border-slate-100 hover:border-emerald-200 hover:bg-emerald-50 rounded-lg p-4 transition-colors">
-                                            <div className="font-black text-slate-800">{service.name}</div>
-                                            <div className="text-xs font-bold text-slate-500 mt-1">{toMoney(service.price)} ر.س</div>
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-                        </section>
-                        <section>
-                            <h3 className="text-sm font-black text-slate-700 mb-3">المنتجات</h3>
-                            <div className="relative mb-3">
-                                <Search size={17} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                                <input value={productSearch} onChange={(e) => setProductSearch(e.target.value)} placeholder="ابحث بالاسم أو SKU أو الباركود" className="w-full bg-slate-50 border border-slate-100 rounded-lg py-3 pr-10 pl-4 font-bold outline-none focus:border-emerald-300" />
-                            </div>
-                            {products.length === 0 ? (
-                                <div className="bg-slate-50 border border-slate-100 rounded-lg p-4 text-sm font-bold text-slate-400">
-                                    لا توجد منتجات متاحة للبيع. أضف المنتجات من تبويب المنتجات والمخزون.
-                                </div>
-                            ) : (
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    {visibleProducts.map((product) => {
-                                        const isOutOfStock = Number(product.stockQuantity || 0) <= 0;
-
-                                        return (
-                                            <button
-                                                key={product._id || product.id || product.name}
-                                                type="button"
-                                                disabled={isOutOfStock}
-                                                onClick={() => addProductItem(product)}
-                                                className="text-right bg-slate-50 border border-slate-100 hover:border-emerald-200 hover:bg-emerald-50 rounded-lg p-4 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
-                                            >
-                                                <div className="font-black text-slate-800">{product.name}</div>
-                                                <div className="text-xs font-bold text-slate-400 mt-1">
-                                                    {toMoney(product.salePrice)} ر.س · المتاح {product.stockQuantity}
-                                                </div>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </section>
-
-                        <section>
-                            <h3 className="text-sm font-black text-slate-700 mb-3">بنود البيع</h3>
-                            {items.length === 0 ? (
-                                <div className="bg-slate-50 border border-dashed border-slate-200 rounded-lg p-8 text-center text-slate-400 font-bold">
-                                    لم تتم إضافة أي بنود بعد.
-                                </div>
-                            ) : (
-                                <div className="space-y-3">
-                                    {items.map((item) => (
-                                        <div key={item.key} className="bg-white border border-slate-100 rounded-lg p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-sm">
-                                            <div>
-                                                <div className="font-black text-slate-800">{item.name}</div>
-                                                <div className="text-xs font-bold text-slate-400">
-                                                    {toMoney(item.unitPrice)} ر.س للوحدة
-                                                    {item.booked ? ' · الخدمة المحجوزة' : item.itemType === 'product' ? ` · المتاح ${item.stockQuantity}` : ' · خدمة إضافية'}
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                {item.booked ? <span className="w-20 text-center font-black">1</span> : <input
-                                                    type="number" min="1" max={item.itemType === 'product' ? item.stockQuantity : 10000}
-                                                    value={item.quantity}
-                                                    onChange={(e) => updateQuantity(item.key, e.target.value)}
-                                                    className="w-20 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2 text-center font-black outline-none focus:border-blue-300"
-                                                />}
-                                                <span className="min-w-24 text-left font-black text-slate-800">{toMoney(item.unitPrice * item.quantity)} ر.س</span>
-                                                {!item.booked && <button
-                                                    type="button"
-                                                    onClick={() => removeItem(item.key)}
-                                                    className="inline-flex items-center justify-center gap-2 bg-red-50 text-red-600 px-3 py-2 rounded-lg font-black hover:bg-red-100"
-                                                >
-                                                    <Trash2 size={14} />
-                                                    حذف
-                                                </button>}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </section>
-                    </div>
-
-                    <aside className="bg-slate-50 border border-slate-100 rounded-lg p-5 space-y-4 h-fit">
-                        <h3 className="text-sm font-black text-slate-700">الدفع والعميل</h3>
-                        <input
-                            value={customerName}
-                            onChange={(e) => setCustomerName(e.target.value)}
-                            readOnly={Boolean(checkoutAppointment)}
-                            placeholder="اسم العميل اختياري"
-                            className="w-full bg-white border border-slate-100 rounded-lg px-4 py-3 font-bold outline-none focus:border-blue-300"
-                        />
-                        <input
-                            value={customerPhone}
-                            onChange={(e) => setCustomerPhone(e.target.value.replace(/\D/g, ''))}
-                            readOnly={Boolean(checkoutAppointment)}
-                            placeholder="رقم الجوال اختياري"
-                            dir="ltr"
-                            className="w-full bg-white border border-slate-100 rounded-lg px-4 py-3 font-bold outline-none focus:border-blue-300"
-                        />
-                        <select
-                            value={paymentMethod}
-                            onChange={(e) => setPaymentMethod(e.target.value)}
-                            className="w-full bg-white border border-slate-100 rounded-lg px-4 py-3 font-black outline-none focus:border-blue-300"
-                        >
-                            {Object.entries(paymentMethodLabels).map(([value, label]) => (
-                                <option key={value} value={value}>{label}</option>
-                            ))}
-                        </select>
-                        <input
-                            type="number"
-                            min="0"
-                            value={paymentAmount}
-                            onChange={(e) => {
-                                setIsPaymentAmountManual(true);
-                                setPaymentAmount(e.target.value);
-                            }}
-                            placeholder="المبلغ المدفوع"
-                            className="w-full bg-white border border-slate-100 rounded-lg px-4 py-3 font-bold outline-none focus:border-blue-300"
-                        />
-                        {checkoutAppointment && (
-                            <div className="border-t border-slate-200 pt-3 text-sm font-bold text-slate-700 space-y-1">
-                                <div className="flex justify-between"><span>العربون المدفوع</span><span>{toMoney(depositAmount)} ر.س</span></div>
-                                <div className="flex justify-between font-black"><span>المتبقي</span><span>{toMoney(remainingAmount)} ر.س</span></div>
-                            </div>
-                        )}
-
-                        <button
-                            type="button"
-                            onClick={createSale}
-                            disabled={isSaving || isCheckingCheckout || !isCheckoutReady || items.length === 0}
-                            className="inline-flex w-full items-center justify-center gap-2 bg-emerald-600 text-white py-4 rounded-lg font-black hover:bg-emerald-700 disabled:bg-emerald-300 disabled:cursor-not-allowed active:scale-95 transition-all"
-                        >
-                            <Save size={16} />
-                            {isSaving ? 'جاري الحفظ...' : 'حفظ البيع'}
-                        </button>
-
-                        {message && (
-                            <div className="bg-white border border-slate-100 rounded-lg p-3 text-sm font-bold text-slate-600">
-                                {message}
-                            </div>
-                        )}
-                    </aside>
-                </div>
-            </div>
-
+            {message && (
+                <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700">{message}</div>
+            )}
             <div className="bg-white p-4 sm:p-5 rounded-lg shadow-sm border border-slate-100">
                 <div className="flex items-center justify-between mb-5">
-                    <h3 className="text-lg font-black text-slate-800">آخر المبيعات</h3>
+                    <div>
+                        <h3 className="text-lg font-black text-slate-800">آخر المبيعات</h3>
+                        <p className="mt-0.5 text-xs font-bold text-slate-500">البيع يتم من «نقطة البيع» في القائمة، والفواتير تظهر هنا.</p>
+                    </div>
                     <button
                         type="button"
                         onClick={fetchSales}
