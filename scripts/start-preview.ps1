@@ -21,7 +21,8 @@ if (-not $healthy) {
   throw "Preview did not become healthy within four minutes."
 }
 
-Get-Content -Raw -LiteralPath "scripts\preview-seed.js" | docker compose -f compose.preview.yaml exec -T app node -
+# The seed file is mounted into the container; do not pipe it through PowerShell (it turns Arabic text into "?")
+docker compose -f compose.preview.yaml exec -T app node scripts/preview-seed.js
 if ($LASTEXITCODE -ne 0) { throw "Seeding the preview data failed." }
 
 Write-Host ""

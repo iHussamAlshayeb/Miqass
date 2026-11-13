@@ -52,6 +52,10 @@ services:
         condition: service_started
     ports:
       - "127.0.0.1:15100:5000"
+    # سكربت البيانات التجريبية يُقرأ داخل الحاوية كملف كما هو (UTF-8)؛
+    # تمريره عبر أنبوب PowerShell كان يحوّل الحروف العربية إلى "?"
+    volumes:
+      - ./scripts/preview-seed.js:/app/scripts/preview-seed.js:ro
 
 volumes:
   preview_mongo:

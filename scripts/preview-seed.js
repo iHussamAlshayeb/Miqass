@@ -1,6 +1,7 @@
 // يُشغَّل داخل حاوية المعاينة فقط (scripts/start-preview.ps1):
 // ينشئ صالوناً تجريبياً بالباقة المميزة مع حلاقين وخدمات ومنتجات وعملاء وحجوزات اليوم.
 // آمن للتكرار: لا يكرر الصالون، ويضيف حجوزات اليوم إن لم توجد.
+// يُشغَّل كملف داخل الحاوية (node scripts/preview-seed.js) وليس عبر أنبوب، حفاظاً على العربية.
 const path = require("path");
 const bcrypt = require("bcryptjs");
 const mongoose = require("mongoose");
@@ -25,6 +26,15 @@ const riyadhToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Riy
   await mongoose.connect(process.env.MONGO_URI);
 
   let tenant = await Tenant.findOne({ slug: SLUG });
+  // بيانات أُنشئت سابقاً بنسخة كانت تُحوّل العربية إلى "?": تُحذف ويُعاد إنشاؤها
+  if (tenant && /\?{2,}/.test(tenant.salonName || "")) {
+    const filter = { tenantId: tenant._id };
+    await Promise.all([Barber.deleteMany(filter), Service.deleteMany(filter), Product.deleteMany(filter),
+      Customer.deleteMany(filter), Appointment.deleteMany(filter)]);
+    await Tenant.deleteOne({ _id: tenant._id });
+    tenant = null;
+    console.error("حُذفت بيانات معاينة تالفة (علامات استفهام) وسيُعاد إنشاؤها.");
+  }
   if (!tenant) {
     tenant = await Tenant.create({
       salonName: "صالون المعاينة",
