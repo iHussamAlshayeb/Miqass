@@ -8,12 +8,19 @@ const write = (key, value) => { try { if (value) localStorage.setItem(key, value
 
 export const POS_TOKEN_KEY = "pos_token";
 export const POS_SLUG_KEY = "pos_salon_slug";
+export const POS_DEVICE_KEY = "pos_device_token";
 
 export const hasPosSession = () => Boolean(read(POS_TOKEN_KEY) || read("token"));
 export const isCashierSession = () => Boolean(read(POS_TOKEN_KEY));
 export const savedSalonSlug = () => read(POS_SLUG_KEY);
-export const startCashierSession = (token, slug) => { write(POS_TOKEN_KEY, token); write(POS_SLUG_KEY, slug); };
+export const startCashierSession = (token) => write(POS_TOKEN_KEY, token);
 export const endCashierSession = () => write(POS_TOKEN_KEY, "");
+// توكن الجهاز المفعّل: يبقى على الجهاز ولا يُعرض للمستخدم
+export const deviceToken = () => read(POS_DEVICE_KEY);
+export const thisDeviceId = () => read("pos_device_id");
+export const saveDeviceToken = (token, id = "") => { write(POS_DEVICE_KEY, token); write("pos_device_id", id); };
+export const forgetDevice = () => { write(POS_DEVICE_KEY, ""); write("pos_device_id", ""); write(POS_TOKEN_KEY, ""); };
+export const isDeviceNotActivated = (error) => error?.response?.data?.code === "POS_DEVICE_NOT_ACTIVATED";
 
 posApi.interceptors.request.use((req) => {
   const token = read(POS_TOKEN_KEY) || read("token");

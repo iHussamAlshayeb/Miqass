@@ -4,7 +4,7 @@ import {
     ArrowRight, Maximize, Minus, Plus, Trash2, Percent, Scissors, Package, Search,
     UserRound, LockKeyhole, Printer, CheckCircle2, ScanBarcode, X, CalendarDays, RefreshCw, ReceiptText, LogOut,
 } from 'lucide-react';
-import posApi, { endCashierSession, hasPosSession, isCashierSession } from '../services/posApi';
+import posApi, { endCashierSession, forgetDevice, hasPosSession, isCashierSession, isDeviceNotActivated } from '../services/posApi';
 import CashierLogin from '../components/pos/CashierLogin';
 import TodayBookings from '../components/pos/TodayBookings';
 import ShiftPanel from '../components/pos/ShiftPanel';
@@ -97,6 +97,7 @@ function POSScreen() {
         if (error?.response?.status !== 401) return false;
         // جلسة الكاشير انتهت: نعود لشاشة الرمز. جلسة المالك: لصفحة الدخول
         if (isCashierSession()) {
+            if (isDeviceNotActivated(error)) forgetDevice();
             signOut();
             setToast(errorMessage(error, 'انتهت الجلسة، أدخل رمزك من جديد.'));
         } else {

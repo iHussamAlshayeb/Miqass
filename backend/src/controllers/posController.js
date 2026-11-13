@@ -12,6 +12,8 @@ const { formatKsaDate } = require("./booking/helpers");
 const { publicLogoUrl } = require("../utils/logoImage");
 const Cashier = require("../models/Cashier");
 const Expense = require("../models/Expense");
+const PosDevice = require("../models/PosDevice");
+const { sha256, newDeviceToken, newActivationCode, normalizeActivationCode, safeEqualHex, isWeakPin } = require("../utils/posDevice");
 const { signPosToken } = require("../utils/posAuth");
 const { hashPin, isValidPin, normalizePinInput } = require("../utils/barberPin");
 const bcrypt = require("bcryptjs");
@@ -328,15 +330,33 @@ const LOGIN_MAX_FAILURES = 10;
 const LOGIN_LOCK_MS = 15 * 60 * 1000;
 
 /** دخول الكاشير برابط الصالون ورمزه */
+const DEVICE_MAX_FAILURES = 5;
+const ACTIVATION_CODE_TTL_MS = 10 * 60 * 1000;
+const ACTIVATION_MAX_FAILURES = 5;
+const MAX_POS_DEVICES = 10;
+const deviceNotActivated = (res) => res.status(403).json({
+  message: "هذا الجهاز غير مفعّل لنقطة البيع. فعّله من لوحة التحكم: الإعدادات ← الكاشير.",
+  code: "POS_DEVICE_NOT_ACTIVATED",
+});
+
+/**
+ * دخول الكاشير: يلزم توكن جهاز مفعّل + رمز الكاشير.
+ * الصالون يُعرف من الجهاز نفسه، فلا يكفي رابط الصالون مع تخمين الرمز من أي مكان.
+ */
 const posLogin = async (req, res) => {
   try {
-    const slug = String(req.body?.slug || "").toLowerCase().trim();
+    const deviceToken = typeof req.body?.deviceToken === "string" ? req.body.deviceToken.trim() : "";
     const pin = normalizePinInput(req.body?.pin);
-    if (!slug || !isValidPin(pin)) return res.status(400).json({ message: "اكتب رابط الصالون ورمز الكاشير (4 إلى 8 أرقام)." });
+    if (!deviceToken || deviceToken.length > 100) return deviceNotActivated(res);
+    if (!isValidPin(pin)) return res.status(400).json({ message: "اكتب رمز الكاشير (4 إلى 8 أرقام)." });
 
-    const tenant = await Tenant.findOne({ slug }).select("salonName deletedAt posLoginFailures posLoginLockedUntil").lean();
-    if (!tenant || tenant.deletedAt) return res.status(404).json({ message: "الصالون غير موجود." });
-    if (tenant.posLoginLockedUntil && new Date(tenant.posLoginLockedUntil) > new Date()) {
+    const device = await PosDevice.findOne({ tokenHash: sha256(deviceToken), revokedAt: null }).lean();
+    if (!device) return deviceNotActivated(res);
+    const tenant = await Tenant.findById(device.tenantId).select("salonName slug deletedAt posLoginFailures posLoginLockedUntil").lean();
+    if (!tenant || tenant.deletedAt) return deviceNotActivated(res);
+
+    const now = new Date();
+    if ((device.lockedUntil && new Date(device.lockedUntil) > now) || (tenant.posLoginLockedUntil && new Date(tenant.posLoginLockedUntil) > now)) {
       return res.status(429).json({ message: "محاولات خاطئة كثيرة. حاول بعد 15 دقيقة." });
     }
 
@@ -347,26 +367,149 @@ const posLogin = async (req, res) => {
       if (await bcrypt.compare(pin, cashier.pinHash)) { matched = cashier; break; }
     }
     if (!matched) {
-      const failures = Number(tenant.posLoginFailures || 0) + 1;
-      await Tenant.updateOne(
-        { _id: tenant._id },
-        failures >= LOGIN_MAX_FAILURES
-          ? { $set: { posLoginFailures: 0, posLoginLockedUntil: new Date(Date.now() + LOGIN_LOCK_MS) } }
-          : { $set: { posLoginFailures: failures } },
-      );
-      return res.status(401).json({ message: "رمز الكاشير غير صحيح." });
+      const deviceFailures = Number(device.loginFailures || 0) + 1;
+      const tenantFailures = Number(tenant.posLoginFailures || 0) + 1;
+      const lockUntil = new Date(Date.now() + LOGIN_LOCK_MS);
+      await Promise.all([
+        PosDevice.updateOne({ _id: device._id }, deviceFailures >= DEVICE_MAX_FAILURES
+          ? { $set: { loginFailures: 0, lockedUntil: lockUntil } }
+          : { $set: { loginFailures: deviceFailures } }),
+        Tenant.updateOne({ _id: tenant._id }, tenantFailures >= LOGIN_MAX_FAILURES
+          ? { $set: { posLoginFailures: 0, posLoginLockedUntil: lockUntil } }
+          : { $set: { posLoginFailures: tenantFailures } }),
+      ]);
+      const left = DEVICE_MAX_FAILURES - deviceFailures;
+      return res.status(401).json({
+        message: left > 0 && left <= 2 ? `رمز الكاشير غير صحيح. بقيت ${left} محاولة قبل القفل المؤقت.` : "رمز الكاشير غير صحيح.",
+      });
     }
     await Promise.all([
       Tenant.updateOne({ _id: tenant._id }, { $set: { posLoginFailures: 0, posLoginLockedUntil: null } }),
-      Cashier.updateOne({ _id: matched._id }, { $set: { lastLoginAt: new Date() } }),
+      PosDevice.updateOne({ _id: device._id }, { $set: { loginFailures: 0, lockedUntil: null, lastSeenAt: now } }),
+      Cashier.updateOne({ _id: matched._id }, { $set: { lastLoginAt: now } }),
     ]);
     return res.json({
-      token: signPosToken({ tenantId: tenant._id, cashierId: matched._id }),
+      token: signPosToken({ tenantId: tenant._id, cashierId: matched._id, deviceId: device._id }),
       cashier: { name: matched.name },
       salonName: tenant.salonName,
+      deviceName: device.name,
     });
   } catch (error) {
     return sendError(res, error, "تعذر تسجيل الدخول.");
+  }
+};
+
+/** حالة الجهاز لشاشة الدخول: مفعّل (واسم الصالون) أو يحتاج تفعيل */
+const posDeviceStatus = async (req, res) => {
+  try {
+    const deviceToken = typeof req.body?.deviceToken === "string" ? req.body.deviceToken.trim() : "";
+    if (!deviceToken || deviceToken.length > 100) return res.json({ activated: false });
+    const device = await PosDevice.findOne({ tokenHash: sha256(deviceToken), revokedAt: null }).select("tenantId name").lean();
+    if (!device) return res.json({ activated: false });
+    const tenant = await Tenant.findById(device.tenantId).select("salonName deletedAt").lean();
+    if (!tenant || tenant.deletedAt) return res.json({ activated: false });
+    return res.json({ activated: true, salonName: tenant.salonName, deviceName: device.name });
+  } catch (error) {
+    return sendError(res, error, "تعذر التحقق من الجهاز.");
+  }
+};
+
+const createDevice = async (tenantId, name) => {
+  if ((await PosDevice.countDocuments({ tenantId, revokedAt: null })) >= MAX_POS_DEVICES) {
+    throw Object.assign(new Error(`الحد الأقصى ${MAX_POS_DEVICES} أجهزة. ألغِ جهازاً قديماً أولاً.`), { statusCode: 400 });
+  }
+  const token = newDeviceToken();
+  const device = await PosDevice.create({
+    tenantId,
+    name: String(name || "").trim().slice(0, 60) || "جهاز نقطة البيع",
+    tokenHash: sha256(token),
+    lastSeenAt: new Date(),
+  });
+  return { token, device };
+};
+
+const presentDevice = (device) => ({
+  _id: device._id, name: device.name, createdAt: device.createdAt, lastSeenAt: device.lastSeenAt || null,
+});
+
+/** المالك يفعّل الجهاز الذي يستخدمه الآن (مسجل دخول بحسابه) */
+const activateThisDevice = async (req, res) => {
+  try {
+    const { token, device } = await createDevice(req.tenantId, req.body?.name);
+    return res.status(201).json({ deviceToken: token, device: presentDevice(device) });
+  } catch (error) {
+    return sendError(res, error, "تعذر تفعيل الجهاز.");
+  }
+};
+
+/** رمز تفعيل لمرة واحدة لجهاز آخر، صالح 10 دقائق */
+const createActivationCode = async (req, res) => {
+  try {
+    const code = newActivationCode();
+    const expiresAt = new Date(Date.now() + ACTIVATION_CODE_TTL_MS);
+    await Tenant.updateOne({ _id: req.tenantId }, {
+      $set: { posActivationCodeHash: sha256(code), posActivationCodeExpiresAt: expiresAt, posActivationFailures: 0 },
+    });
+    return res.json({ code, expiresAt });
+  } catch (error) {
+    return sendError(res, error, "تعذر إنشاء رمز التفعيل.");
+  }
+};
+
+/** جهاز جديد يُفعَّل برابط الصالون + رمز التفعيل؛ الرمز يُستهلك مرة واحدة */
+const activateWithCode = async (req, res) => {
+  try {
+    const slug = typeof req.body?.slug === "string" ? req.body.slug.toLowerCase().trim() : "";
+    const code = normalizeActivationCode(req.body?.code);
+    const invalid = () => res.status(400).json({ message: "رمز التفعيل غير صحيح أو منتهي. اطلب رمزاً جديداً من لوحة التحكم." });
+    if (!slug || code.length !== 8) return invalid();
+
+    const tenant = await Tenant.findOne({ slug }).select("+posActivationCodeHash posActivationCodeExpiresAt posActivationFailures deletedAt").lean();
+    if (!tenant || tenant.deletedAt || !tenant.posActivationCodeHash || !tenant.posActivationCodeExpiresAt
+      || new Date(tenant.posActivationCodeExpiresAt) <= new Date()) return invalid();
+
+    if (!safeEqualHex(sha256(code), tenant.posActivationCodeHash)) {
+      const failures = Number(tenant.posActivationFailures || 0) + 1;
+      // بعد 5 محاولات خاطئة يُلغى الرمز كلياً
+      await Tenant.updateOne({ _id: tenant._id }, failures >= ACTIVATION_MAX_FAILURES
+        ? { $set: { posActivationCodeHash: "", posActivationCodeExpiresAt: null, posActivationFailures: 0 } }
+        : { $set: { posActivationFailures: failures } });
+      return invalid();
+    }
+    // استهلاك ذري: لو استُخدم الرمز في نفس اللحظة من جهاز آخر لا يُفعَّل الثاني
+    const consumed = await Tenant.updateOne(
+      { _id: tenant._id, posActivationCodeHash: tenant.posActivationCodeHash },
+      { $set: { posActivationCodeHash: "", posActivationCodeExpiresAt: null, posActivationFailures: 0 } },
+    );
+    if (!consumed.modifiedCount) return invalid();
+    const { token, device } = await createDevice(tenant._id, req.body?.name);
+    return res.status(201).json({ deviceToken: token, device: presentDevice(device) });
+  } catch (error) {
+    return sendError(res, error, "تعذر تفعيل الجهاز.");
+  }
+};
+
+const listDevices = async (req, res) => {
+  try {
+    const devices = await PosDevice.find({ tenantId: req.tenantId, revokedAt: null }).sort({ createdAt: 1 }).lean();
+    return res.json({ devices: devices.map(presentDevice) });
+  } catch (error) {
+    return sendError(res, error, "تعذر تحميل الأجهزة.");
+  }
+};
+
+/** إلغاء جهاز: يتوقف دخول الكاشير منه وتنتهي جلساته المفتوحة فوراً */
+const revokeDevice = async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.deviceId)) return res.status(404).json({ message: "الجهاز غير موجود." });
+    const result = await PosDevice.updateOne(
+      { _id: req.params.deviceId, tenantId: req.tenantId, revokedAt: null },
+      { $set: { revokedAt: new Date() } },
+    );
+    if (!result.matchedCount) return res.status(404).json({ message: "الجهاز غير موجود." });
+    return res.json({ revoked: true });
+  } catch (error) {
+    return sendError(res, error, "تعذر إلغاء الجهاز.");
   }
 };
 
@@ -377,6 +520,8 @@ const posMe = (req, res) => res.json({ role: req.posRole || "owner", name: req.c
 const presentCashier = (cashier) => ({
   _id: cashier._id, name: cashier.name, isActive: cashier.isActive !== false, lastLoginAt: cashier.lastLoginAt || null,
 });
+
+const WEAK_PIN_MESSAGE = "الرمز سهل التخمين (مثل 1234 أو 1111). اختر رمزاً آخر، ويُفضّل 6 أرقام.";
 
 const assertUniquePin = async (tenantId, pin, exceptId = null) => {
   const others = await Cashier.find({ tenantId, ...(exceptId ? { _id: { $ne: exceptId } } : {}) }).select("+pinHash").lean();
@@ -403,6 +548,7 @@ const createCashier = async (req, res) => {
     const pin = normalizePinInput(req.body?.pin);
     if (!name) return res.status(400).json({ message: "اكتب اسم الكاشير." });
     if (!isValidPin(pin)) return res.status(400).json({ message: "رمز الكاشير من 4 إلى 8 أرقام." });
+    if (isWeakPin(pin)) return res.status(400).json({ message: WEAK_PIN_MESSAGE });
     if ((await Cashier.countDocuments({ tenantId: req.tenantId })) >= 20) {
       return res.status(400).json({ message: "الحد الأقصى 20 كاشيراً." });
     }
@@ -428,6 +574,7 @@ const updateCashier = async (req, res) => {
     const pin = normalizePinInput(req.body?.pin);
     if (pin) {
       if (!isValidPin(pin)) return res.status(400).json({ message: "رمز الكاشير من 4 إلى 8 أرقام." });
+      if (isWeakPin(pin)) return res.status(400).json({ message: WEAK_PIN_MESSAGE });
       await assertUniquePin(req.tenantId, pin, req.params.cashierId);
       update.pinHash = await hashPin(pin);
     }
@@ -457,4 +604,4 @@ const deleteCashier = async (req, res) => {
 
 module.exports = {
   listTodayAppointments, updateAppointmentStatusFromPos, sendAppointmentReminder, listShiftSales, listShiftExpenses,
-  createDrawerExpense, posLogin, posMe, listCashiers, createCashier, updateCashier, deleteCashier, getCatalog, getCurrentShift, postOpenShift, postCloseShift, listShifts, getShift, searchCustomers, getCheckoutAppointment };
+  createDrawerExpense, posLogin, posDeviceStatus, activateThisDevice, createActivationCode, activateWithCode, listDevices, revokeDevice, posMe, listCashiers, createCashier, updateCashier, deleteCashier, getCatalog, getCurrentShift, postOpenShift, postCloseShift, listShifts, getShift, searchCustomers, getCheckoutAppointment };

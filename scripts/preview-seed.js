@@ -74,8 +74,8 @@ const riyadhToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Riy
 
   // كاشير تجريبي لتجربة دخول نقطة البيع بالرمز
   if (!(await Cashier.exists({ tenantId: tenant._id }))) {
-    await Cashier.create({ tenantId: tenant._id, name: "سالم", pinHash: await bcrypt.hash("1234", 10) });
-    console.error("أُضيف الكاشير التجريبي سالم (الرمز 1234).");
+    await Cashier.create({ tenantId: tenant._id, name: "سالم", pinHash: await bcrypt.hash("4826", 10) });
+    console.error("أُضيف الكاشير التجريبي سالم (الرمز 4826).");
   }
 
   // حجوزات اليوم لتجربة تبويب الحجوزات في نقطة البيع

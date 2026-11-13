@@ -19,6 +19,12 @@ const {
   listShiftExpenses,
   createDrawerExpense,
   posLogin,
+  posDeviceStatus,
+  activateThisDevice,
+  createActivationCode,
+  activateWithCode,
+  listDevices,
+  revokeDevice,
   posMe,
   listCashiers,
   createCashier,
@@ -36,11 +42,25 @@ const posLoginLimiter = rateLimit({
   message: { message: "محاولات دخول كثيرة. حاول بعد 15 دقيقة." },
 });
 
-// دخول الكاشير برمزه
+const posActivationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "محاولات تفعيل كثيرة. حاول بعد 15 دقيقة." },
+});
+
+// دخول الكاشير: من جهاز مفعّل فقط + رمزه
 router.post("/login", posLoginLimiter, posLogin);
+router.post("/device/status", rateLimit({ windowMs: 15 * 60 * 1000, max: 120, standardHeaders: true, legacyHeaders: false }), posDeviceStatus);
+router.post("/device/activate", posActivationLimiter, activateWithCode);
 
 // للمالك فقط: إدارة الكاشيرين وسجل الورديات السابقة
 router.get("/cashiers", protect, listCashiers);
+router.get("/devices", protect, listDevices);
+router.post("/devices", protect, activateThisDevice);
+router.post("/devices/activation-code", protect, createActivationCode);
+router.delete("/devices/:deviceId", protect, revokeDevice);
 router.post("/cashiers", protect, createCashier);
 router.put("/cashiers/:cashierId", protect, updateCashier);
 router.delete("/cashiers/:cashierId", protect, deleteCashier);

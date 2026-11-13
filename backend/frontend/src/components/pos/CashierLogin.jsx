@@ -1,16 +1,54 @@
-import React, { useState } from 'react';
-import { KeyRound, LogIn } from 'lucide-react';
-import posApi, { savedSalonSlug, startCashierSession } from '../../services/posApi';
+import React, { useEffect, useState } from 'react';
+import { KeyRound, LogIn, MonitorSmartphone, ShieldCheck } from 'lucide-react';
+import posApi, {
+    deviceToken, forgetDevice, isDeviceNotActivated, savedSalonSlug, saveDeviceToken, startCashierSession, POS_SLUG_KEY,
+} from '../../services/posApi';
 
 const PIN_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'back'];
+const shell = "flex min-h-[100dvh] items-center justify-center bg-slate-100 p-4";
+const font = { fontFamily: "'IBM Plex Sans Arabic', 'Tajawal', sans-serif" };
+const cleanSlug = (value) => value.trim().toLowerCase().replace(/^.*miqass\.app\//, '').replace(/\/.*$/, '');
 
-/** دخول الكاشير برمزه؛ رابط الصالون يُحفظ على الجهاز فلا يُكتب إلا أول مرة */
+/** تفعيل الجهاز مرة واحدة برمز من لوحة التحكم، ثم دخول الكاشير برمزه */
 const CashierLogin = ({ onSignedIn }) => {
+    // checking | activate | pin
+    const [stage, setStage] = useState(() => (deviceToken() ? 'checking' : 'activate'));
+    const [device, setDevice] = useState(null);
     const [slug, setSlug] = useState(() => savedSalonSlug());
+    const [code, setCode] = useState('');
+    const [deviceName, setDeviceName] = useState('');
     const [pin, setPin] = useState('');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
-    const [editingSlug, setEditingSlug] = useState(() => !savedSalonSlug());
+
+    useEffect(() => {
+        if (stage !== 'checking') return;
+        posApi.post('/pos/device/status', { deviceToken: deviceToken() })
+            .then((res) => {
+                if (res.data.activated) { setDevice(res.data); setStage('pin'); }
+                else { forgetDevice(); setStage('activate'); }
+            })
+            .catch(() => { setDevice(null); setStage('pin'); });
+    }, [stage]);
+
+    const activate = async (event) => {
+        event.preventDefault();
+        const salon = cleanSlug(slug);
+        if (!salon || code.replace(/[\s-]/g, '').length !== 8) { setError('اكتب رابط الصالون ورمز التفعيل (8 خانات).'); return; }
+        setBusy(true);
+        setError('');
+        try {
+            const res = await posApi.post('/pos/device/activate', { slug: salon, code, name: deviceName.trim() });
+            saveDeviceToken(res.data.deviceToken, res.data.device?._id);
+            try { localStorage.setItem(POS_SLUG_KEY, salon); } catch { /* تجاهل */ }
+            setCode('');
+            setStage('checking');
+        } catch (err) {
+            setError(err?.response?.data?.message || 'تعذر التفعيل. تحقق من الاتصال.');
+        } finally {
+            setBusy(false);
+        }
+    };
 
     const press = (key) => {
         setError('');
@@ -19,46 +57,74 @@ const CashierLogin = ({ onSignedIn }) => {
         else setPin((value) => (value.length < 8 ? value + key : value));
     };
 
-    const submit = async (event) => {
+    const signIn = async (event) => {
         event?.preventDefault();
-        const cleanSlug = slug.trim().toLowerCase().replace(/^.*miqass\.app\//, '').replace(/\/.*$/, '');
-        if (!cleanSlug) { setError('اكتب رابط الصالون.'); setEditingSlug(true); return; }
         if (pin.length < 4) { setError('اكتب رمزك (4 أرقام على الأقل).'); return; }
         setBusy(true);
         setError('');
         try {
-            const res = await posApi.post('/pos/login', { slug: cleanSlug, pin });
-            startCashierSession(res.data.token, cleanSlug);
+            const res = await posApi.post('/pos/login', { deviceToken: deviceToken(), pin });
+            startCashierSession(res.data.token);
             onSignedIn(res.data);
         } catch (err) {
             setPin('');
+            if (isDeviceNotActivated(err)) { forgetDevice(); setStage('activate'); }
             setError(err?.response?.data?.message || 'تعذر الدخول. تحقق من الاتصال.');
         } finally {
             setBusy(false);
         }
     };
 
-    return (
-        <div className="flex min-h-[100dvh] items-center justify-center bg-slate-100 p-4" dir="rtl" style={{ fontFamily: "'IBM Plex Sans Arabic', 'Tajawal', sans-serif" }}>
-            <form onSubmit={submit} className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
-                <div className="mb-5 flex items-center gap-3">
-                    <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-900 text-white"><KeyRound size={22} /></span>
-                    <div>
-                        <h1 className="text-xl font-extrabold text-slate-900">دخول الكاشير</h1>
-                        <p className="text-sm font-semibold text-slate-500">نقطة البيع فقط</p>
-                    </div>
-                </div>
+    if (stage === 'checking') {
+        return <div className={shell} dir="rtl" style={font}><p className="rounded-xl bg-white px-5 py-4 font-bold text-slate-600 shadow">جاري التحقق من الجهاز...</p></div>;
+    }
 
-                {editingSlug ? (
-                    <label className="mb-4 block">
+    if (stage === 'activate') {
+        return (
+            <div className={shell} dir="rtl" style={font}>
+                <form onSubmit={activate} className="w-full max-w-sm space-y-4 rounded-2xl bg-white p-6 shadow-xl">
+                    <div className="flex items-center gap-3">
+                        <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-900 text-white"><MonitorSmartphone size={22} /></span>
+                        <div>
+                            <h1 className="text-xl font-extrabold text-slate-900">تفعيل جهاز نقطة البيع</h1>
+                            <p className="text-sm font-semibold text-slate-500">مرة واحدة لكل جهاز</p>
+                        </div>
+                    </div>
+                    <p className="rounded-lg bg-slate-50 p-3 text-sm font-semibold leading-6 text-slate-600">
+                        من لوحة التحكم: الإعدادات ← الكاشير ← <b>رمز تفعيل جهاز</b>. الرمز صالح 10 دقائق ولمرة واحدة.
+                    </p>
+                    <label className="block">
                         <span className="mb-1 block text-sm font-bold text-slate-600">رابط الصالون</span>
                         <input value={slug} onChange={(event) => setSlug(event.target.value)} placeholder="مثال: balloon" dir="ltr" autoCapitalize="off" className="h-12 w-full rounded-xl border border-slate-200 px-3 text-left font-mono font-semibold outline-none focus:border-slate-900" />
                     </label>
-                ) : (
-                    <button type="button" onClick={() => setEditingSlug(true)} className="mb-4 flex w-full items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-sm font-bold text-slate-600">
-                        <span>الصالون</span><span className="font-mono" dir="ltr">{slug}</span>
+                    <label className="block">
+                        <span className="mb-1 block text-sm font-bold text-slate-600">رمز التفعيل</span>
+                        <input value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} placeholder="XXXX-XXXX" dir="ltr" autoCapitalize="characters" autoComplete="off" maxLength={9} className="h-14 w-full rounded-xl border border-slate-200 px-3 text-center font-mono text-2xl font-bold tracking-[0.3em] outline-none focus:border-slate-900" />
+                    </label>
+                    <label className="block">
+                        <span className="mb-1 block text-sm font-bold text-slate-600">اسم الجهاز (اختياري)</span>
+                        <input value={deviceName} onChange={(event) => setDeviceName(event.target.value)} maxLength={60} placeholder="مثال: الكاونتر" className="h-12 w-full rounded-xl border border-slate-200 px-3 font-semibold outline-none focus:border-slate-900" />
+                    </label>
+                    {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{error}</p>}
+                    <button type="submit" disabled={busy} className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 text-lg font-extrabold text-white disabled:opacity-60">
+                        <ShieldCheck size={20} /> {busy ? 'جاري التفعيل...' : 'تفعيل الجهاز'}
                     </button>
-                )}
+                    <a href="/login" className="block text-center text-sm font-bold text-slate-400 hover:text-slate-600">دخول المالك للوحة التحكم</a>
+                </form>
+            </div>
+        );
+    }
+
+    return (
+        <div className={shell} dir="rtl" style={font}>
+            <form onSubmit={signIn} className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+                <div className="mb-5 flex items-center gap-3">
+                    <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-900 text-white"><KeyRound size={22} /></span>
+                    <div className="min-w-0">
+                        <h1 className="text-xl font-extrabold text-slate-900">دخول الكاشير</h1>
+                        <p className="truncate text-sm font-semibold text-slate-500">{device?.salonName || 'نقطة البيع'}{device?.deviceName ? ` · ${device.deviceName}` : ''}</p>
+                    </div>
+                </div>
 
                 <div className="mb-4 flex h-14 items-center justify-center gap-3 rounded-xl border border-slate-200 bg-slate-50" aria-label="الرمز">
                     {Array.from({ length: Math.max(4, pin.length) }).map((_, index) => (

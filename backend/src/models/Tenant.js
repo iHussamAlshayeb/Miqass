@@ -35,6 +35,10 @@ const tenantSchema = new mongoose.Schema(
     // محاولات دخول الكاشير الخاطئة: قفل مؤقت بعد التكرار
     posLoginFailures: { type: Number, default: 0 },
     posLoginLockedUntil: { type: Date, default: null },
+    // رمز تفعيل جهاز نقطة بيع لمرة واحدة (بصمته فقط) وصلاحيته ومحاولاته الخاطئة
+    posActivationCodeHash: { type: String, default: "", select: false },
+    posActivationCodeExpiresAt: { type: Date, default: null },
+    posActivationFailures: { type: Number, default: 0 },
 
     // الحذف المؤقت: يُحذف الصالون نهائياً بعد deletionInfo.purgeAfter
     deletedAt: { type: Date, default: null },
