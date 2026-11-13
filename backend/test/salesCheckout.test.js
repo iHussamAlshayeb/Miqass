@@ -156,13 +156,14 @@ test("POS sale uses the barber's own price and spreads the invoice discount acro
   const product = { _id: id(), name: "شمع", salePrice: 30, costPrice: 10, stockQuantity: 5 };
   const shift = { _id: id(), tenantId, status: "Open" };
 
-  await withSaleMocks({ services: [cut, beard], products: [product], barbers: [barber], openShift: shift }, async (observed) => {
+  await withSaleMocks({ services: [cut, beard], products: [product], barbers: [barber], openShift: shift, customer: { _id: id(), phone: "0551234567", parentName: "سعد" } }, async (observed) => {
     const res = response();
     await createSale({
       tenantId,
       body: {
         requestId: "pos-discount-1",
         channel: "pos",
+        customerPhone: "0551234567",
         items: [
           { itemType: "service", serviceId: String(cut._id), quantity: 1, barberId: String(barber._id) },
           { itemType: "service", serviceId: String(beard._id), quantity: 1, barberId: String(barber._id), discount: { type: "percent", value: 50 } },
@@ -201,7 +202,7 @@ test("POS sales are refused while no shift is open", async () => {
     const res = response();
     await createSale({
       tenantId,
-      body: { requestId: "pos-no-shift", channel: "pos", items: [{ itemType: "service", serviceId: String(cut._id), quantity: 1 }] },
+      body: { requestId: "pos-no-shift", channel: "pos", customerPhone: "0551234567", items: [{ itemType: "service", serviceId: String(cut._id), quantity: 1 }] },
     }, res);
     assert.equal(res.code, 409);
     assert.equal(observed.sale, null);
@@ -210,13 +211,50 @@ test("POS sales are refused while no shift is open", async () => {
 
 test("a barber that does not belong to the salon is rejected", async () => {
   const cut = { _id: id(), name: "قص", price: 40 };
-  await withSaleMocks({ services: [cut], barbers: [], openShift: { _id: id() } }, async (observed) => {
+  await withSaleMocks({ services: [cut], barbers: [], openShift: { _id: id() }, customer: { _id: id(), phone: "0551234567" } }, async (observed) => {
     const res = response();
     await createSale({
       tenantId: id(),
-      body: { requestId: "pos-foreign-barber", channel: "pos", items: [{ itemType: "service", serviceId: String(cut._id), quantity: 1, barberId: String(id()) }] },
+      body: { requestId: "pos-foreign-barber", channel: "pos", customerPhone: "0551234567", items: [{ itemType: "service", serviceId: String(cut._id), quantity: 1, barberId: String(id()) }] },
     }, res);
     assert.equal(res.code, 400);
     assert.equal(observed.sale, null);
+  });
+});
+
+test("a POS invoice must be linked to a customer", async () => {
+  const cut = { _id: id(), name: "قص", price: 40 };
+  for (const customerPhone of [undefined, "", "12345", "0612345678"]) {
+    await withSaleMocks({ services: [cut], openShift: { _id: id() } }, async (observed) => {
+      const res = response();
+      await createSale({
+        tenantId: id(),
+        body: { requestId: `pos-no-customer-${customerPhone}`, channel: "pos", customerPhone, items: [{ itemType: "service", serviceId: String(cut._id), quantity: 1 }], payments: [{ method: "cash", amount: 40 }] },
+      }, res);
+      assert.equal(res.code, 400, String(customerPhone));
+      assert.match(res.body.message, /عميل/);
+      assert.equal(observed.sale, null);
+    });
+  }
+});
+
+test("the customer phone is saved in one format whatever way it was typed", async () => {
+  const cut = { _id: id(), name: "قص", price: 40 };
+  let lookedUp = null;
+  await withSaleMocks({ services: [cut], openShift: { _id: id() } }, async (observed) => {
+    const original = Customer.findOne;
+    Customer.findOne = (filter) => { lookedUp = filter.phone; return query({ _id: id(), phone: filter.phone, parentName: "سعد" }); };
+    try {
+      const res = response();
+      await createSale({
+        tenantId: id(),
+        body: { requestId: "pos-phone-format", channel: "pos", customerPhone: "+966 55 123 4567", items: [{ itemType: "service", serviceId: String(cut._id), quantity: 1 }], payments: [{ method: "cash", amount: 40 }] },
+      }, res);
+      assert.equal(res.code, 201, res.body?.message);
+      assert.equal(lookedUp, "0551234567");
+      assert.equal(observed.sale.customerSnapshot.phone, "0551234567");
+    } finally {
+      Customer.findOne = original;
+    }
   });
 });

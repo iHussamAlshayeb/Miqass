@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
     ArrowRight, Maximize, Minus, Plus, Trash2, Percent, Scissors, Package, Search,
-    UserRound, LockKeyhole, Printer, CheckCircle2, ScanBarcode, X, CalendarDays,
+    UserRound, LockKeyhole, Printer, CheckCircle2, ScanBarcode, X, CalendarDays, RefreshCw,
 } from 'lucide-react';
 import API from '../services/api';
 import { getBarberServicePrice } from '../utils/servicePricing';
@@ -14,6 +14,7 @@ import { methodLabel, printShiftReport } from '../components/pos/posShared';
 import DiscountSheet from '../components/pos/DiscountSheet';
 import InvoiceModal from '../components/dashboard/InvoiceModal';
 import CustomerLookup from '../components/pos/CustomerLookup';
+import { normalizeSaudiMobile } from '../utils/saudiMobile';
 
 const ALL = '__all__';
 const newRequestId = () => (window.crypto?.randomUUID?.() || `pos-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -46,7 +47,8 @@ function POSScreen() {
     const [busy, setBusy] = useState(false);
     const [actionError, setActionError] = useState('');
 
-    const [mode, setMode] = useState('services');
+    const [mode, setMode] = useState('appointments');
+    const firstBookingsLoad = useRef(true);
     const [category, setCategory] = useState(ALL);
     const [search, setSearch] = useState('');
     const [barberId, setBarberId] = useState(() => readPref('pos_barber', ''));
@@ -56,6 +58,9 @@ function POSScreen() {
     const [customer, setCustomer] = useState({ name: '', phone: '' });
     // حجز مكتمل يُحصّل حسابه: خدماته تدخل الفاتورة بأسعار الحجز ويُخصم عربونه
     const [appointment, setAppointment] = useState(null);
+    // حجوزات اليوم التي لم يُحصّل حسابها
+    const [openAppointments, setOpenAppointments] = useState([]);
+    const [loadingAppointments, setLoadingAppointments] = useState(false);
     const [showCustomer, setShowCustomer] = useState(false);
     const [discountTarget, setDiscountTarget] = useState(null);
     const [barberTarget, setBarberTarget] = useState(null);
@@ -116,6 +121,31 @@ function POSScreen() {
             });
     }, [catalog, shift, appointmentParam, appointment, handleAuthError, setSearchParams]);
 
+    const loadOpenAppointments = useCallback(() => {
+        setLoadingAppointments(true);
+        API.get('/pos/appointments')
+            .then((res) => {
+                const list = res.data.appointments || [];
+                setOpenAppointments(list);
+                // أول فتح: تبويب الحجوزات إن وُجد ما ينتظر الدفع، وإلا الخدمات
+                if (firstBookingsLoad.current) {
+                    firstBookingsLoad.current = false;
+                    if (list.length === 0) setMode((current) => (current === 'appointments' ? 'services' : current));
+                }
+            })
+            .catch((error) => { if (!handleAuthError(error)) setOpenAppointments([]); })
+            .finally(() => setLoadingAppointments(false));
+    }, [handleAuthError]);
+
+    useEffect(() => {
+        if (catalog && shift) loadOpenAppointments();
+    }, [catalog, shift, loadOpenAppointments]);
+
+    const pickAppointment = (item) => {
+        resetSale();
+        setSearchParams({ appointment: String(item._id) }, { replace: true });
+    };
+
     useEffect(() => {
         if (!toast) return undefined;
         const timer = setTimeout(() => setToast(''), 2500);
@@ -145,6 +175,8 @@ function POSScreen() {
     const priced = useMemo(() => priceCart(cart, saleDiscount), [cart, saleDiscount]);
     const deposit = Number(appointment?.deposit || 0);
     const amountDue = Math.max(Math.round((priced.total - deposit) * 100) / 100, 0);
+    // كل فاتورة مرتبطة بعميل: الحجز يحدده، وإلا رقم جوال صحيح
+    const hasCustomer = Boolean(appointment) || Boolean(normalizeSaudiMobile(customer.phone));
     const itemCount = cart.reduce((sum, line) => sum + line.quantity, 0);
 
     const addService = (service) => {
@@ -251,12 +283,16 @@ function POSScreen() {
         setBusy(true);
         setActionError('');
         try {
+            if (appointment?.status === 'Booked') {
+                await API.put(`/appointments/status/${appointment._id}`, { status: 'Completed' });
+                setAppointment((current) => (current ? { ...current, status: 'Completed' } : current));
+            }
             const res = await API.post('/sales', {
                 requestId: requestIdRef.current,
                 channel: 'pos',
                 appointmentId: appointment?._id || undefined,
                 customerName: customer.name.trim(),
-                customerPhone: customer.phone.trim(),
+                customerPhone: normalizeSaudiMobile(customer.phone) || customer.phone.trim(),
                 discount: saleDiscount,
                 // خدمات الحجز يضيفها الخادم من الحجز نفسه؛ نرسل الإضافات فقط
                 items: cart.filter((line) => !line.booked).map((line) => ({
@@ -280,6 +316,7 @@ function POSScreen() {
                 }),
             }));
             if (autoPrint) openInvoice(sale._id);
+            loadOpenAppointments();
         } catch (error) {
             if (handleAuthError(error)) return;
             if (error?.response?.status === 409 && /الوردية/.test(error.response.data?.message || '')) {
@@ -397,18 +434,26 @@ function POSScreen() {
                 <main className="flex min-w-0 flex-1 flex-col">
                     <div className="space-y-3 border-b border-slate-200 bg-white px-4 py-3">
                         <div className="flex flex-wrap gap-2">
-                            <div className="grid shrink-0 grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
-                                {[['services', 'الخدمات', <Scissors key="s" size={18} />], ['products', 'المنتجات', <Package key="p" size={18} />]].map(([id, label, icon]) => (
-                                    <button key={id} type="button" onClick={() => { setMode(id); setCategory(ALL); }} className={`flex h-11 items-center gap-2 rounded-lg px-4 font-extrabold ${mode === id ? 'bg-white text-slate-900 shadow' : 'text-slate-500'}`}>
+                            <div className="grid shrink-0 grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1">
+                                {[['appointments', 'الحجوزات', <CalendarDays key="a" size={18} />], ['services', 'الخدمات', <Scissors key="s" size={18} />], ['products', 'المنتجات', <Package key="p" size={18} />]].map(([id, label, icon]) => (
+                                    <button key={id} type="button" onClick={() => { setMode(id); setCategory(ALL); if (id === 'appointments') loadOpenAppointments(); }} className={`flex h-11 items-center gap-2 rounded-lg px-4 font-extrabold ${mode === id ? 'bg-white text-slate-900 shadow' : 'text-slate-500'}`}>
                                         {icon} {label}
+                                        {id === 'appointments' && openAppointments.length > 0 && (
+                                            <span className="min-w-[22px] rounded-full bg-emerald-600 px-1.5 text-xs font-extrabold leading-[22px] text-white">{openAppointments.length}</span>
+                                        )}
                                     </button>
                                 ))}
                             </div>
-                            <label className="flex h-[52px] min-w-[240px] flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 focus-within:border-slate-900">
+                            {mode !== 'appointments' && <label className="flex h-[52px] min-w-[240px] flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 focus-within:border-slate-900">
                                 <Search size={20} className="text-slate-400" />
                                 <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={mode === 'products' ? 'ابحث بالاسم أو الباركود' : 'ابحث عن خدمة'} className="h-full min-w-0 flex-1 bg-transparent text-base font-semibold outline-none" />
                                 {search && <button type="button" onClick={() => setSearch('')} className="p-1 text-slate-400" aria-label="مسح"><X size={18} /></button>}
-                            </label>
+                            </label>}
+                            {mode === 'appointments' && (
+                                <button type="button" onClick={loadOpenAppointments} className="mr-auto flex h-[52px] items-center gap-2 rounded-xl border border-slate-200 px-4 font-bold text-slate-600">
+                                    <RefreshCw size={18} className={loadingAppointments ? 'animate-spin' : ''} /> تحديث
+                                </button>
+                            )}
                         </div>
                         {mode === 'services' && barbers.length > 0 && (
                             <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
@@ -422,7 +467,7 @@ function POSScreen() {
                                 ))}
                             </div>
                         )}
-                        {categories.length > 1 && (
+                        {mode !== 'appointments' && categories.length > 1 && (
                             <div className="flex gap-2 overflow-x-auto pb-0.5">
                                 {[ALL, ...categories].map((name) => (
                                     <button key={name} type="button" onClick={() => setCategory(name)} className={`h-9 shrink-0 rounded-lg px-3 text-sm font-bold ${category === name ? 'bg-slate-200 text-slate-900' : 'text-slate-500'}`}>
@@ -434,7 +479,37 @@ function POSScreen() {
                     </div>
 
                     <div className="min-h-0 flex-1 overflow-y-auto p-4">
-                        {visibleItems.length === 0 ? (
+                        {mode === 'appointments' ? (
+                            openAppointments.length === 0 ? (
+                                <p className="mt-16 text-center font-bold text-slate-400">{loadingAppointments ? 'جاري التحميل...' : 'لا توجد حجوزات اليوم بانتظار الدفع.'}</p>
+                            ) : (
+                                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
+                                    {openAppointments.map((item) => {
+                                        const active = appointment?._id === item._id;
+                                        return (
+                                            <button key={item._id} type="button" onClick={() => pickAppointment(item)} className={`flex min-h-[112px] flex-col justify-between rounded-xl border-2 bg-white p-4 text-right shadow-sm transition active:scale-[0.98] ${active ? 'border-emerald-600' : 'border-transparent'}`}>
+                                                <span className="flex items-start justify-between gap-2">
+                                                    <span className="min-w-0">
+                                                        <span className="block truncate text-base font-extrabold text-slate-800">{item.childName}</span>
+                                                        <span className="block truncate text-xs font-semibold text-slate-500">{item.servicesLabel || (item.isWalkIn ? 'حلاقة مباشرة' : 'بدون خدمات محددة')}</span>
+                                                    </span>
+                                                    <span className="shrink-0 font-mono text-lg font-extrabold text-slate-900" dir="ltr">{item.timeSlot}</span>
+                                                </span>
+                                                <span className="mt-3 flex items-end justify-between gap-2">
+                                                    <span className="flex min-w-0 items-center gap-2 text-xs font-bold">
+                                                        <span className={`shrink-0 rounded-md px-2 py-1 ${item.status === 'Completed' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                                                            {item.status === 'Completed' ? 'اكتمل · بانتظار الدفع' : 'محجوز'}
+                                                        </span>
+                                                        <span className="truncate text-slate-500">{item.barberName}</span>
+                                                    </span>
+                                                    <span className="shrink-0 font-mono text-lg font-extrabold" style={{ color: accent }} dir="ltr">{money(Math.max(item.totalPrice - item.deposit, 0))}</span>
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )
+                        ) : visibleItems.length === 0 ? (
                             <p className="mt-16 text-center font-bold text-slate-400">{search ? 'لا توجد نتائج.' : mode === 'services' ? 'لا توجد خدمات مفعّلة.' : 'لا توجد منتجات مفعّلة.'}</p>
                         ) : (
                             <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-4">
@@ -454,8 +529,8 @@ function POSScreen() {
                         <h2 className="text-lg font-extrabold">الفاتورة <span className="text-sm font-bold text-slate-400">({itemCount})</span></h2>
                         <div className="flex gap-1">
                             {!appointment && (
-                                <button type="button" onClick={() => setShowCustomer((value) => !value)} className={`flex h-10 max-w-[170px] items-center gap-1.5 rounded-lg px-3 text-sm font-bold ${customer.name || customer.phone ? 'bg-sky-50 text-sky-700' : 'text-slate-500 hover:bg-slate-100'}`}>
-                                    <UserRound size={18} className="shrink-0" /> <span className="truncate">{customer.name || customer.phone || 'عميل'}</span>
+                                <button type="button" onClick={() => setShowCustomer((value) => !value)} className={`flex h-10 max-w-[170px] items-center gap-1.5 rounded-lg px-3 text-sm font-bold ${hasCustomer ? 'bg-sky-50 text-sky-700' : 'border border-dashed border-amber-300 text-amber-700'}`}>
+                                    <UserRound size={18} className="shrink-0" /> <span className="truncate">{hasCustomer ? (customer.name || customer.phone) : 'اختر العميل'}</span>
                                 </button>
                             )}
                             {cart.length > 0 && (
@@ -469,7 +544,7 @@ function POSScreen() {
                             <CalendarDays size={20} className="shrink-0 text-emerald-700" />
                             <div className="min-w-0 flex-1">
                                 <p className="truncate font-bold text-emerald-900">حجز {appointment.childName}</p>
-                                <p className="truncate text-xs font-semibold text-emerald-700">{appointment.timeSlot} · {appointment.barberName}</p>
+                                <p className="truncate text-xs font-semibold text-emerald-700">{appointment.timeSlot} · {appointment.barberName}{appointment.status === 'Booked' ? ' · يُسجل مكتملاً عند الدفع' : ''}</p>
                             </div>
                             <button type="button" onClick={resetSale} className="flex h-10 w-10 items-center justify-center rounded-lg text-emerald-800 hover:bg-emerald-100" aria-label="إلغاء تحصيل الحجز"><X size={18} /></button>
                         </div>
@@ -543,6 +618,11 @@ function POSScreen() {
                             disabled={!cart.length || priced.total <= 0 || busy}
                             onClick={() => {
                                 setActionError('');
+                                if (!hasCustomer) {
+                                    setShowCustomer(true);
+                                    setToast('اربط الفاتورة بعميل: اكتب رقم جواله أولاً.');
+                                    return;
+                                }
                                 // حجز مدفوع بالكامل بالعربون: يُغلق دون دفعة جديدة
                                 if (amountDue <= 0) checkout([], {});
                                 else setPaying(true);
@@ -550,7 +630,7 @@ function POSScreen() {
                             className="mt-3 flex h-16 w-full items-center justify-between rounded-xl px-5 text-white shadow-lg transition active:scale-[0.98] disabled:bg-slate-300 disabled:shadow-none"
                             style={{ backgroundColor: cart.length ? '#059669' : undefined }}
                         >
-                            <span className="text-xl font-extrabold">{amountDue <= 0 && cart.length ? 'إتمام' : 'الدفع'}</span>
+                            <span className="text-xl font-extrabold">{cart.length && !hasCustomer ? 'اختر العميل' : amountDue <= 0 && cart.length ? 'إتمام' : 'الدفع'}</span>
                             <span className="font-mono text-2xl font-extrabold" dir="ltr">{money(amountDue)}</span>
                         </button>
                     </div>

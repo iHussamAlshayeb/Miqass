@@ -9,6 +9,7 @@ const {
   getShift,
   searchCustomers,
   getCheckoutAppointment,
+  listOpenAppointments,
 } = require("../controllers/posController");
 
 const router = express.Router();
@@ -21,6 +22,7 @@ router.post("/shift/close", postCloseShift);
 router.get("/shifts", listShifts);
 router.get("/shifts/:shiftId", getShift);
 router.get("/customers", searchCustomers);
+router.get("/appointments", listOpenAppointments);
 router.get("/appointments/:appointmentId", getCheckoutAppointment);
 
 module.exports = router;

@@ -64,12 +64,39 @@ test("a completed appointment returns its booked services and paid deposit", asy
   assert.equal(a.deposit, 20);
 });
 
-test("appointments that are not completed or already checked out are refused", async (t) => {
-  stubAppointment(t, { _id: id(), status: "Booked", selectedServices: [] });
-  const notDone = makeRes();
-  await getCheckoutAppointment({ tenantId: "t1", params: { appointmentId: String(id()) } }, notDone);
-  assert.equal(notDone.statusCode, 409);
-  assert.equal(notDone.body.code, "NOT_COMPLETED");
+test("a booked appointment can be checked out, a cancelled one cannot", async (t) => {
+  stubAppointment(t, { _id: id(), status: "Booked", selectedServices: [{ serviceId: id(), name: "قص", price: 40 }] });
+  const booked = makeRes();
+  await getCheckoutAppointment({ tenantId: "t1", params: { appointmentId: String(id()) } }, booked);
+  assert.equal(booked.statusCode, 200);
+  assert.equal(booked.body.appointment.status, "Booked");
+
+  Appointment.findOne = () => ({ populate: () => ({ lean: async () => ({ _id: id(), status: "Cancelled", selectedServices: [] }) }) });
+  const cancelled = makeRes();
+  await getCheckoutAppointment({ tenantId: "t1", params: { appointmentId: String(id()) } }, cancelled);
+  assert.equal(cancelled.statusCode, 409);
+  assert.equal(cancelled.body.code, "NOT_CHECKOUTABLE");
+});
+
+test("today's open bookings list only unpaid booked or completed appointments of this salon", async (t) => {
+  const { listOpenAppointments } = require("../src/controllers/posController");
+  let filter = null;
+  stub(t, Appointment, "find", (query) => { filter = query; return { populate: () => ({ select: () => ({ sort: () => ({ limit: () => ({ lean: async () => [
+    { _id: id(), childName: "سعد", timeSlot: "18:00", barberName: "ماجد", status: "Completed", customerId: { phone: "0551234567" },
+      selectedServices: [{ name: "قص شعر" }, { name: "حلاقة ذقن" }], totalPrice: 75, payment: { status: "Paid", amount: 20 } },
+    { _id: id(), childName: "زائر", timeSlot: "18:30", barberName: "محمود", status: "Booked", bookingSource: "kiosk_walk_in", selectedServices: [], totalPrice: 0 },
+  ] }) }) }) }) }; });
+  const res = makeRes();
+  await listOpenAppointments({ tenantId: "t1" }, res);
+  assert.equal(filter.tenantId, "t1");
+  assert.deepEqual(filter.status.$in, ["Booked", "Completed"]);
+  assert.equal(filter.saleId, null, "already checked out bookings are hidden");
+  assert.match(filter.date, /^\d{4}-\d{2}-\d{2}$/);
+  const [first, walkIn] = res.body.appointments;
+  assert.equal(first.servicesLabel, "قص شعر، حلاقة ذقن");
+  assert.equal(first.deposit, 20);
+  assert.equal(first.customerPhone, "0551234567");
+  assert.equal(walkIn.isWalkIn, true);
 });
 
 test("an appointment that already has a sale is refused with the sale id", async (t) => {

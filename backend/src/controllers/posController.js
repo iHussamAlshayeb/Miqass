@@ -8,6 +8,7 @@ const CashShift = require("../models/CashShift");
 const Customer = require("../models/Customer");
 const Appointment = require("../models/Appointment");
 const Sale = require("../models/Sale");
+const { formatKsaDate } = require("./booking/helpers");
 const {
   getOpenShift,
   summarizeShift,
@@ -164,8 +165,9 @@ const getCheckoutAppointment = async (req, res) => {
     if (linkedSale) {
       return res.status(409).json({ message: "تم تحصيل حساب هذا الحجز مسبقاً.", saleId: linkedSale._id, code: "ALREADY_CHECKED_OUT" });
     }
-    if (appointment.status !== "Completed") {
-      return res.status(409).json({ message: "أكمل الحجز أولاً من مواعيد اليوم، ثم حصّل الحساب.", code: "NOT_COMPLETED" });
+    // المحجوز يُحصّل أيضاً: تكمله نقطة البيع قبل الدفع
+    if (!["Booked", "Completed"].includes(appointment.status)) {
+      return res.status(409).json({ message: "هذا الحجز ملغي أو غير قابل للتحصيل.", code: "NOT_CHECKOUTABLE" });
     }
     const services = (appointment.selectedServices || []).map((service) => ({
       serviceId: service.serviceId ? String(service.serviceId) : "",
@@ -185,6 +187,7 @@ const getCheckoutAppointment = async (req, res) => {
         timeSlot: appointment.timeSlot,
         barberId: appointment.barberId ? String(appointment.barberId) : "",
         barberName: appointment.barberName || "",
+        status: appointment.status,
         services,
         deposit: appointment.payment?.status === "Paid" ? Number(appointment.payment.amount || 0) : 0,
       },
@@ -194,4 +197,37 @@ const getCheckoutAppointment = async (req, res) => {
   }
 };
 
-module.exports = { getCatalog, getCurrentShift, postOpenShift, postCloseShift, listShifts, getShift, searchCustomers, getCheckoutAppointment };
+/** حجوزات اليوم التي لم يُحصّل حسابها بعد، لتظهر في نقطة البيع */
+const listOpenAppointments = async (req, res) => {
+  try {
+    const appointments = await Appointment.find({
+      tenantId: req.tenantId,
+      date: formatKsaDate(),
+      status: { $in: ["Booked", "Completed"] },
+      saleId: null,
+    })
+      .populate("customerId", "phone")
+      .select("childName timeSlot barberName status selectedServices.name totalPrice payment.status payment.amount bookingSource isWalkIn customerId")
+      .sort({ timeSlot: 1 })
+      .limit(200)
+      .lean();
+    return res.json({
+      appointments: appointments.map((appointment) => ({
+        _id: appointment._id,
+        childName: appointment.childName,
+        customerPhone: appointment.customerId?.phone || "",
+        timeSlot: appointment.timeSlot,
+        barberName: appointment.barberName || "",
+        status: appointment.status,
+        isWalkIn: Boolean(appointment.isWalkIn || appointment.bookingSource === "kiosk_walk_in"),
+        servicesLabel: (appointment.selectedServices || []).map((service) => service.name).filter(Boolean).join("، "),
+        totalPrice: Number(appointment.totalPrice || 0),
+        deposit: appointment.payment?.status === "Paid" ? Number(appointment.payment.amount || 0) : 0,
+      })),
+    });
+  } catch (error) {
+    return sendError(res, error, "تعذر تحميل حجوزات اليوم.");
+  }
+};
+
+module.exports = { listOpenAppointments, getCatalog, getCurrentShift, postOpenShift, postCloseShift, listShifts, getShift, searchCustomers, getCheckoutAppointment };

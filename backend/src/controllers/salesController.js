@@ -15,6 +15,7 @@ const { priceLines } = require("../utils/posPricing");
 const { generateZatcaQR } = require("../utils/zatca");
 const { prepareZakatyInvoice } = require('../services/zakatyIntegration');
 const { getOpenShift } = require("../services/cashShiftService");
+const { normalizeSaudiMobile } = require("../utils/saudiMobile");
 
 const VAT_RATE = 0.15;
 const VALID_PAYMENT_METHODS = ["cash", "card", "transfer", "online"];
@@ -42,7 +43,8 @@ const mapSale = (sale, items = [], payments = []) => ({
 });
 
 const getCustomerForSale = async ({ tenantId, customerPhone, customerName, session }) => {
-  const cleanPhone = String(customerPhone || "").replace(/\D/g, "");
+  // صيغة واحدة للجوال (05XXXXXXXX) حتى لا يتكرر العميل بصيغ مختلفة
+  const cleanPhone = normalizeSaudiMobile(customerPhone) || String(customerPhone || "").replace(/\D/g, "");
   const cleanName = String(customerName || "").trim();
 
   if (!cleanPhone) {
@@ -372,6 +374,12 @@ const createSale = async (req, res) => {
       }
       const openShift = await getOpenShift(req.tenantId, session);
       // نقطة البيع لا تبيع إلا داخل وردية مفتوحة، حتى يُحسب النقد في إغلاق الصندوق
+      // فاتورة نقطة البيع لا بد أن ترتبط بعميل: الحجز يحدده، وإلا رقم جوال صحيح
+      if (req.body.channel === "pos" && !appointment && !normalizeSaudiMobile(req.body.customerPhone)) {
+        const error = new Error("اربط الفاتورة بعميل: أدخل رقم جوال صحيح يبدأ بـ 05.");
+        error.statusCode = 400;
+        throw error;
+      }
       if (req.body.channel === "pos" && !openShift) {
         const error = new Error("افتح الوردية أولاً قبل البيع.");
         error.statusCode = 409;
