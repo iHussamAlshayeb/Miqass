@@ -4,7 +4,7 @@ import {
     ArrowRight, Maximize, Minus, Plus, Trash2, Percent, Scissors, Package, Search,
     UserRound, LockKeyhole, Printer, CheckCircle2, ScanBarcode, X, CalendarDays, RefreshCw, ReceiptText, LogOut,
 } from 'lucide-react';
-import posApi, { endCashierSession, forgetDevice, hasPosSession, isCashierSession, isDeviceNotActivated } from '../services/posApi';
+import posApi, { endCashierSession, forgetDevice, hasPosSession, isCashierSession, isDeviceNotActivated, reportInstalledApp } from '../services/posApi';
 import CashierLogin from '../components/pos/CashierLogin';
 import TodayBookings from '../components/pos/TodayBookings';
 import ShiftPanel from '../components/pos/ShiftPanel';
@@ -120,6 +120,9 @@ function POSScreen() {
             if (title && previous[1]) title.setAttribute('content', previous[1]);
         };
     }, []);
+
+    // التطبيق المثبّت يبلغ عن نفسه مرة واحدة، فتكتمل خطوة "التثبيت" في دليل المالك
+    useEffect(() => { reportInstalledApp(); }, [signedIn]);
 
     useEffect(() => {
         if (!signedIn) return;

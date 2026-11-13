@@ -408,6 +408,10 @@ const posDeviceStatus = async (req, res) => {
     if (!device) return res.json({ activated: false });
     const tenant = await Tenant.findById(device.tenantId).select("salonName deletedAt").lean();
     if (!tenant || tenant.deletedAt) return res.json({ activated: false });
+    // الجهاز فتح نقطة البيع كتطبيق مثبّت: خطوة "التثبيت" في دليل الإعداد اكتملت
+    if (req.body?.installed === true) {
+      await PosDevice.updateOne({ _id: device._id, installedAt: null }, { $set: { installedAt: new Date() } });
+    }
     return res.json({ activated: true, salonName: tenant.salonName, deviceName: device.name });
   } catch (error) {
     return sendError(res, error, "تعذر التحقق من الجهاز.");
@@ -486,6 +490,39 @@ const activateWithCode = async (req, res) => {
     return res.status(201).json({ deviceToken: token, device: presentDevice(device) });
   } catch (error) {
     return sendError(res, error, "تعذر تفعيل الجهاز.");
+  }
+};
+
+/** خطوات دليل إعداد نقطة البيع، تُستنتج من البيانات الفعلية وليس من نقرات المالك */
+const getSetupStatus = async (req, res) => {
+  try {
+    const [tenant, cashiers, devices, installed, signedIn] = await Promise.all([
+      Tenant.findById(req.tenantId).select("posSetupGuideDismissedAt").lean(),
+      Cashier.countDocuments({ tenantId: req.tenantId, isActive: true }),
+      PosDevice.countDocuments({ tenantId: req.tenantId, revokedAt: null }),
+      PosDevice.exists({ tenantId: req.tenantId, revokedAt: null, installedAt: { $ne: null } }),
+      Cashier.exists({ tenantId: req.tenantId, lastLoginAt: { $ne: null } }),
+    ]);
+    return res.json({
+      dismissed: Boolean(tenant?.posSetupGuideDismissedAt),
+      steps: {
+        cashier: cashiers > 0,
+        device: devices > 0,
+        installed: Boolean(installed),
+        signedIn: Boolean(signedIn),
+      },
+    });
+  } catch (error) {
+    return sendError(res, error, "تعذر تحميل حالة الإعداد.");
+  }
+};
+
+const dismissSetupGuide = async (req, res) => {
+  try {
+    await Tenant.updateOne({ _id: req.tenantId }, { $set: { posSetupGuideDismissedAt: new Date() } });
+    return res.json({ dismissed: true });
+  } catch (error) {
+    return sendError(res, error, "تعذر حفظ التغيير.");
   }
 };
 
@@ -604,4 +641,4 @@ const deleteCashier = async (req, res) => {
 
 module.exports = {
   listTodayAppointments, updateAppointmentStatusFromPos, sendAppointmentReminder, listShiftSales, listShiftExpenses,
-  createDrawerExpense, posLogin, posDeviceStatus, activateThisDevice, createActivationCode, activateWithCode, listDevices, revokeDevice, posMe, listCashiers, createCashier, updateCashier, deleteCashier, getCatalog, getCurrentShift, postOpenShift, postCloseShift, listShifts, getShift, searchCustomers, getCheckoutAppointment };
+  createDrawerExpense, posLogin, posDeviceStatus, getSetupStatus, dismissSetupGuide, activateThisDevice, createActivationCode, activateWithCode, listDevices, revokeDevice, posMe, listCashiers, createCashier, updateCashier, deleteCashier, getCatalog, getCurrentShift, postOpenShift, postCloseShift, listShifts, getShift, searchCustomers, getCheckoutAppointment };

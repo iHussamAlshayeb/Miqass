@@ -20,6 +20,8 @@ const {
   createDrawerExpense,
   posLogin,
   posDeviceStatus,
+  getSetupStatus,
+  dismissSetupGuide,
   activateThisDevice,
   createActivationCode,
   activateWithCode,
@@ -58,6 +60,8 @@ router.post("/device/activate", posActivationLimiter, activateWithCode);
 // للمالك فقط: إدارة الكاشيرين وسجل الورديات السابقة
 router.get("/cashiers", protect, listCashiers);
 router.get("/devices", protect, listDevices);
+router.get("/setup-status", protect, getSetupStatus);
+router.post("/setup-status/dismiss", protect, dismissSetupGuide);
 router.post("/devices", protect, activateThisDevice);
 router.post("/devices/activation-code", protect, createActivationCode);
 router.delete("/devices/:deviceId", protect, revokeDevice);

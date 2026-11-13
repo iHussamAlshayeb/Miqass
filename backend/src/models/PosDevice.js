@@ -8,6 +8,8 @@ const posDeviceSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true, maxlength: 60 },
     tokenHash: { type: String, required: true, select: false },
     lastSeenAt: { type: Date, default: null },
+    // أول مرة فُتحت نقطة البيع من الجهاز كتطبيق مثبّت على الشاشة الرئيسية
+    installedAt: { type: Date, default: null },
     revokedAt: { type: Date, default: null },
     // محاولات رمز خاطئة من هذا الجهاز
     loginFailures: { type: Number, default: 0 },

@@ -20,6 +20,24 @@ export const deviceToken = () => read(POS_DEVICE_KEY);
 export const thisDeviceId = () => read("pos_device_id");
 export const saveDeviceToken = (token, id = "") => { write(POS_DEVICE_KEY, token); write("pos_device_id", id); };
 export const forgetDevice = () => { write(POS_DEVICE_KEY, ""); write("pos_device_id", ""); write(POS_TOKEN_KEY, ""); };
+/** هل فُتحت نقطة البيع كتطبيق مثبّت على الشاشة الرئيسية؟ */
+export const isInstalledApp = () => {
+  try {
+    return window.matchMedia?.("(display-mode: standalone)").matches || window.navigator.standalone === true;
+  } catch {
+    return false;
+  }
+};
+
+/** يبلغ الخادم مرة واحدة أن الجهاز المفعّل ثبّت نقطة البيع (لخطوة التثبيت في دليل الإعداد) */
+export const reportInstalledApp = () => {
+  const token = read(POS_DEVICE_KEY);
+  if (!token || !isInstalledApp() || read("pos_install_reported") === token.slice(0, 12)) return;
+  posApi.post("/pos/device/status", { deviceToken: token, installed: true })
+    .then((res) => { if (res.data?.activated) write("pos_install_reported", token.slice(0, 12)); })
+    .catch(() => {});
+};
+
 export const isDeviceNotActivated = (error) => error?.response?.data?.code === "POS_DEVICE_NOT_ACTIVATED";
 
 posApi.interceptors.request.use((req) => {

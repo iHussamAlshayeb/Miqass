@@ -220,3 +220,15 @@ test("a drawer expense needs an open shift and is tied to it", async (t) => {
   assert.equal(String(created.shiftId), String(shiftId));
   assert.equal(created.recordedBy, "سالم");
 });
+
+test("the POS setup guide reads each step from real data", async (t) => {
+  const { getSetupStatus } = require("../src/controllers/posController");
+  stub(t, Tenant, "findById", () => lean({ posSetupGuideDismissedAt: null }));
+  stub(t, Cashier, "countDocuments", async () => 1);
+  stub(t, PosDevice, "countDocuments", async () => 1);
+  stub(t, PosDevice, "exists", async () => null);
+  stub(t, Cashier, "exists", async () => null);
+  const res = makeRes();
+  await getSetupStatus({ tenantId: id() }, res);
+  assert.deepEqual(res.body, { dismissed: false, steps: { cashier: true, device: true, installed: false, signedIn: false } });
+});

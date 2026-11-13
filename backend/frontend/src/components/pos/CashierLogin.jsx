@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { KeyRound, LogIn, MonitorSmartphone, ShieldCheck } from 'lucide-react';
 import posApi, {
-    deviceToken, forgetDevice, isDeviceNotActivated, savedSalonSlug, saveDeviceToken, startCashierSession, POS_SLUG_KEY,
+    deviceToken, forgetDevice, isDeviceNotActivated, reportInstalledApp, savedSalonSlug, saveDeviceToken, startCashierSession, POS_SLUG_KEY,
 } from '../../services/posApi';
 
 const PIN_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'back'];
@@ -40,6 +40,7 @@ const CashierLogin = ({ onSignedIn }) => {
         try {
             const res = await posApi.post('/pos/device/activate', { slug: salon, code, name: deviceName.trim() });
             saveDeviceToken(res.data.deviceToken, res.data.device?._id);
+            reportInstalledApp();
             try { localStorage.setItem(POS_SLUG_KEY, salon); } catch { /* تجاهل */ }
             setCode('');
             setStage('checking');

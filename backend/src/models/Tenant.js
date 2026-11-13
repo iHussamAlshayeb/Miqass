@@ -39,6 +39,8 @@ const tenantSchema = new mongoose.Schema(
     posActivationCodeHash: { type: String, default: "", select: false },
     posActivationCodeExpiresAt: { type: Date, default: null },
     posActivationFailures: { type: Number, default: 0 },
+    // دليل إعداد نقطة البيع في لوحة التحكم: أخفاه المالك نهائياً
+    posSetupGuideDismissedAt: { type: Date, default: null },
 
     // الحذف المؤقت: يُحذف الصالون نهائياً بعد deletionInfo.purgeAfter
     deletedAt: { type: Date, default: null },

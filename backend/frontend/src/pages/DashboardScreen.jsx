@@ -4,6 +4,7 @@ import API from '../services/api';
 import { disconnectOneSignal } from '../services/onesignal';
 import * as XLSX from 'xlsx';
 import TourGuide from '../components/dashboard/TourGuide';
+import PosSetupGuide from '../components/dashboard/PosSetupGuide';
 import {
     BadgePercent,
     ExternalLink,
@@ -79,6 +80,7 @@ const DashboardScreen = () => {
     const navigate = useNavigate();
 
     const [activeTab, setActiveTab] = useState('statistics');
+    const [settingsPage, setSettingsPage] = useState(undefined);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [selectedDate, setSelectedDate] = useState(getLocalDate());
     const [isLoading, setIsLoading] = useState(true);
@@ -315,6 +317,7 @@ const DashboardScreen = () => {
     const activePage = pageMeta[activeTab] || pageMeta.statistics;
     const dashboardLink = slug ? `https://www.miqass.app/${slug}` : '';
     const handleSetActiveTab = (tab) => {
+        setSettingsPage(undefined);
         setActiveTab(tab);
         setIsSidebarOpen(false);
     };
@@ -466,6 +469,9 @@ const DashboardScreen = () => {
                     <main className="mx-auto w-full max-w-screen-2xl flex-1 px-4 py-4 sm:px-6 lg:px-8 lg:py-6">
                         <PushNotificationPrompt tenantId={tenantId} />
 
+                        {activeTab === 'statistics' && (
+                            <PosSetupGuide onOpenCashierSettings={() => { setSettingsPage('cashiers'); setActiveTab('settings'); window.scrollTo({ top: 0 }); }} />
+                        )}
                         {activeTab === 'statistics' && <StatisticsTab />}
                         {activeTab === 'appointments' && <DailyTab selectedDate={selectedDate} setSelectedDate={setSelectedDate} isLoading={isLoading} appointments={appointments} handleStatusChange={handleStatusChange} handleSingleWhatsApp={handleSingleWhatsApp} whatsappSettings={whatsappSettings} reviewEnabled={Boolean(settings?.enableGoogleReviews && settings?.googleReviewLink)} refreshAppointments={fetchAppointments} onOpenCheckout={openAppointmentCheckout} />}
                         {activeTab === 'all' && <AllTab isLoading={isLoading} allAppointments={allAppointments} exportToExcel={exportToExcel} handleStatusChange={handleStatusChange} />}
@@ -477,8 +483,8 @@ const DashboardScreen = () => {
                         {activeTab === 'broadcasts' && <BroadcastsTab tenantId={tenantId} />}
                         {(activeTab === 'settings' || activeTab === 'billing') &&
                             <SettingsTab
-                                key={activeTab}
-                                initialPage={activeTab === 'billing' ? 'plan' : undefined}
+                                key={`${activeTab}-${settingsPage || ''}`}
+                                initialPage={activeTab === 'billing' ? 'plan' : settingsPage}
                                 slug={slug} tenantId={tenantId} campaignCredits={campaignCredits} promoBanner={promoBanner}
                                 salonName={salonName} setSalonName={setSalonName}
                                 ownerName={ownerName} setOwnerName={setOwnerName}
