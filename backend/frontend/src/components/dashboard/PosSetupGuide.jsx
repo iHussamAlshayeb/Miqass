@@ -89,9 +89,9 @@ const PosSetupGuide = ({ onOpenCashierSettings }) => {
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white"><Sparkles size={20} /></span>
                 <div className="min-w-0 flex-1">
                     <p className="text-xs font-black text-emerald-700">جديد في مِقَص</p>
-                    <h2 className="text-lg font-black text-slate-900">نقطة البيع صارت للكاشير، ولوحة التحكم لك</h2>
+                    <h2 className="text-lg font-black text-slate-900">تمت إضافة ميزة جديدة لنقطة البيع</h2>
                     <p className="mt-1 text-sm font-bold leading-6 text-slate-500">
-                        الكاشير يدخل نقطة البيع برمزه من جهاز الصالون: الحجوزات، التحصيل، الوردية، ومصروفات الصندوق. وأنت تبقى على لوحة التحكم للإدارة والتقارير.
+                        دخول برمز لنقطة البيع من جهاز الصالون، مع حجوزات اليوم والتحصيل والوردية ومصروفات الصندوق. أكمل الخطوات التالية لتفعيلها.
                     </p>
                     <div className="mt-3 flex items-center gap-3">
                         <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
