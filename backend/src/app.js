@@ -143,6 +143,25 @@ app.use(
   }),
 );
 
+// نقطة البيع تُثبَّت كتطبيق مستقل يفتح على /pos مباشرة (وليس لوحة التحكم)،
+// لذلك تُرسل صفحتها بملف manifest خاص بها قبل تحميل أي JavaScript.
+const renderPosShell = (html) => html
+  .replace('href="/manifest.json"', 'href="/manifest-pos.json"')
+  .replace('<meta name="theme-color" content="#F0F9FF" />', '<meta name="theme-color" content="#0f172a" />')
+  .replace('<meta name="apple-mobile-web-app-title" content="مِقَص" />', '<meta name="apple-mobile-web-app-title" content="نقطة البيع" />')
+  .replace('<meta name="application-name" content="مِقَص" />', '<meta name="application-name" content="نقطة البيع" />')
+  .replace(/<title>[^<]*<\/title>/, "<title>نقطة البيع - مِقَص</title>");
+
+app.get(["/pos", "/pos/"], async (req, res, next) => {
+  try {
+    const html = await fs.readFile(frontendIndexPath, "utf8");
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.type("html").send(renderPosShell(html));
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/:slug", async (req, res, next) => {
   try {
     const tenant = await Tenant.findOne({

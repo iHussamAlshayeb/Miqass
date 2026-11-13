@@ -106,6 +106,21 @@ function POSScreen() {
         return true;
     }, [navigate, signOut]);
 
+    // "إضافة للشاشة الرئيسية" من هنا يثبّت نقطة البيع نفسها وليس لوحة التحكم،
+    // حتى لو وصل المستخدم لهذه الصفحة من داخل لوحة التحكم
+    useEffect(() => {
+        const link = document.querySelector('link[rel="manifest"]');
+        const title = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+        if (!link) return undefined;
+        const previous = [link.getAttribute('href'), title?.getAttribute('content')];
+        link.setAttribute('href', '/manifest-pos.json');
+        title?.setAttribute('content', 'نقطة البيع');
+        return () => {
+            link.setAttribute('href', previous[0] || '/manifest.json');
+            if (title && previous[1]) title.setAttribute('content', previous[1]);
+        };
+    }, []);
+
     useEffect(() => {
         if (!signedIn) return;
         Promise.all([posApi.get('/pos/catalog'), posApi.get('/pos/shift'), posApi.get('/pos/me')])
