@@ -9,6 +9,7 @@ const Customer = require("../models/Customer");
 const Appointment = require("../models/Appointment");
 const Sale = require("../models/Sale");
 const { formatKsaDate } = require("./booking/helpers");
+const { applyBarberServicePrices } = require("../utils/servicePricing");
 const { publicLogoUrl } = require("../utils/logoImage");
 const Cashier = require("../models/Cashier");
 const Expense = require("../models/Expense");
@@ -243,6 +244,90 @@ const listTodayAppointments = async (req, res) => {
     });
   } catch (error) {
     return sendError(res, error, "تعذر تحميل مواعيد اليوم.");
+  }
+};
+
+const MAX_BOOKED_SERVICES = 20;
+const roundMoney = (value) => Math.round(Number(value || 0) * 100) / 100;
+
+/**
+ * تعديل خدمات حجز من نقطة البيع (العميل غيّر طلبه) قبل تحصيل حسابه.
+ * الأسعار بسعر حلاق الحجز إن كان له سعر خاص، ويُحفظ أثر كل تعديل في الحجز.
+ */
+const updateAppointmentServicesFromPos = async (req, res) => {
+  try {
+    const { appointmentId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(appointmentId)) return res.status(404).json({ message: "الحجز غير موجود." });
+    const serviceIds = Array.isArray(req.body?.serviceIds) ? req.body.serviceIds.map(String) : null;
+    if (!serviceIds || serviceIds.length === 0) return res.status(400).json({ message: "اختر خدمة واحدة على الأقل للحجز." });
+    if (serviceIds.length > MAX_BOOKED_SERVICES || serviceIds.some((id) => !mongoose.Types.ObjectId.isValid(id))) {
+      return res.status(400).json({ message: "خدمات غير صالحة." });
+    }
+
+    const appointment = await Appointment.findOne({ _id: appointmentId, tenantId: req.tenantId })
+      .select("status saleId barberId selectedServices totalPrice totalDuration payment")
+      .lean();
+    if (!appointment) return res.status(404).json({ message: "الحجز غير موجود." });
+    if (!["Booked", "Completed"].includes(appointment.status)) {
+      return res.status(409).json({ message: "لا يمكن تعديل خدمات حجز ملغي." });
+    }
+    const paid = appointment.saleId || await Sale.exists({ tenantId: req.tenantId, appointmentId: appointment._id });
+    if (paid) return res.status(409).json({ message: "تم تحصيل حساب هذا الحجز؛ لا يمكن تعديل خدماته.", code: "ALREADY_CHECKED_OUT" });
+
+    const [services, barber] = await Promise.all([
+      Service.find({ _id: { $in: [...new Set(serviceIds)] }, tenantId: req.tenantId, isActive: true }).select("name price duration").lean(),
+      appointment.barberId
+        ? Barber.findOne({ _id: appointment.barberId, tenantId: req.tenantId }).select("servicePrices").lean()
+        : null,
+    ]);
+    const byId = new Map(services.map((service) => [String(service._id), service]));
+    if (serviceIds.some((id) => !byId.has(id))) return res.status(400).json({ message: "إحدى الخدمات غير متاحة." });
+
+    const selectedServices = applyBarberServicePrices(
+      serviceIds.map((id) => {
+        const service = byId.get(id);
+        return { serviceId: service._id, name: service.name, price: roundMoney(service.price), duration: Number(service.duration || 0) };
+      }),
+      barber,
+    ).map((service) => ({ ...service, price: roundMoney(service.price) }));
+    const totalPrice = roundMoney(selectedServices.reduce((sum, service) => sum + service.price, 0));
+    const deposit = appointment.payment?.status === "Paid" ? roundMoney(appointment.payment.amount) : 0;
+    if (totalPrice < deposit) {
+      return res.status(400).json({ message: `مجموع الخدمات (${totalPrice.toFixed(2)}) أقل من العربون المدفوع (${deposit.toFixed(2)}).` });
+    }
+    const totalDuration = selectedServices.reduce((sum, service) => sum + (service.duration || 0), 0) || appointment.totalDuration || 30;
+
+    const updated = await Appointment.findOneAndUpdate(
+      // لا يُعدَّل إن تم تحصيله في نفس اللحظة من جهاز آخر
+      { _id: appointment._id, tenantId: req.tenantId, saleId: null, status: { $in: ["Booked", "Completed"] } },
+      {
+        $set: { selectedServices, totalPrice, totalDuration },
+        $push: {
+          serviceChanges: {
+            $each: [{
+              at: new Date(),
+              by: req.cashier?.name || "المالك",
+              from: (appointment.selectedServices || []).map((service) => service.name),
+              to: selectedServices.map((service) => service.name),
+              fromTotal: roundMoney(appointment.totalPrice),
+              toTotal: totalPrice,
+            }],
+            $slice: -20,
+          },
+        },
+      },
+      { returnDocument: "after" },
+    ).lean();
+    if (!updated) return res.status(409).json({ message: "تغيرت حالة الحجز؛ أعد فتحه.", code: "ALREADY_CHECKED_OUT" });
+
+    return res.json({
+      services: updated.selectedServices.map((service) => ({
+        serviceId: String(service.serviceId), name: service.name, price: Number(service.price || 0),
+      })),
+      totalPrice: updated.totalPrice,
+    });
+  } catch (error) {
+    return sendError(res, error, "تعذر تعديل خدمات الحجز.");
   }
 };
 
@@ -640,5 +725,5 @@ const deleteCashier = async (req, res) => {
 };
 
 module.exports = {
-  listTodayAppointments, updateAppointmentStatusFromPos, sendAppointmentReminder, listShiftSales, listShiftExpenses,
+  listTodayAppointments, updateAppointmentStatusFromPos, updateAppointmentServicesFromPos, sendAppointmentReminder, listShiftSales, listShiftExpenses,
   createDrawerExpense, posLogin, posDeviceStatus, getSetupStatus, dismissSetupGuide, activateThisDevice, createActivationCode, activateWithCode, listDevices, revokeDevice, posMe, listCashiers, createCashier, updateCashier, deleteCashier, getCatalog, getCurrentShift, postOpenShift, postCloseShift, listShifts, getShift, searchCustomers, getCheckoutAppointment };

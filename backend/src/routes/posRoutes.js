@@ -14,6 +14,7 @@ const {
   getCheckoutAppointment,
   listTodayAppointments,
   updateAppointmentStatusFromPos,
+  updateAppointmentServicesFromPos,
   sendAppointmentReminder,
   listShiftSales,
   listShiftExpenses,
@@ -85,6 +86,8 @@ router.get("/customers", searchCustomers);
 router.get("/appointments", listTodayAppointments);
 router.get("/appointments/:appointmentId", getCheckoutAppointment);
 router.put("/appointments/:appointmentId/status", updateAppointmentStatusFromPos);
+// العميل غيّر طلبه: تعديل خدمات الحجز قبل التحصيل
+router.put("/appointments/:appointmentId/services", updateAppointmentServicesFromPos);
 router.post("/appointments/:appointmentId/reminder", sendAppointmentReminder);
 router.post("/sales", createSale);
 router.get("/sales/:saleId/invoice", getSaleInvoice);

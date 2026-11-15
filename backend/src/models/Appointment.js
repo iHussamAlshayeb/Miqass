@@ -80,6 +80,18 @@ const appointmentSchema = new mongoose.Schema(
       default: false,
     },
     reviewRequestLockUntil: { type: Date, default: null },
+    // تعديلات خدمات الحجز من نقطة البيع عند تغيير العميل طلبه (للمراجعة)
+    serviceChanges: [
+      {
+        _id: false,
+        at: { type: Date, default: Date.now },
+        by: { type: String, default: "" },
+        from: [String],
+        to: [String],
+        fromTotal: Number,
+        toTotal: Number,
+      },
+    ],
     invoiceNumber: {
       type: String,
     },

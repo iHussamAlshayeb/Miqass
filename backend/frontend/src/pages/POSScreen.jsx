@@ -23,7 +23,8 @@ const ALL = '__all__';
 const newRequestId = () => (window.crypto?.randomUUID?.() || `pos-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 const readPref = (key, fallback) => { try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; } };
 const writePref = (key, value) => { try { localStorage.setItem(key, value); } catch { /* تجاهل */ } };
-const errorMessage = (error, fallback) => error?.response?.data?.message || fallback;
+// أخطاء الخادم برسالته، وأخطاء التحقق المحلية برسالتها، وانقطاع الشبكة بالرسالة الافتراضية
+const errorMessage = (error, fallback) => error?.response?.data?.message || (error?.isAxiosError ? '' : error?.message) || fallback;
 
 const Tile = ({ title, price, sub, accent, disabled, onClick }) => (
     <button
@@ -67,6 +68,9 @@ function POSScreen() {
     const [showCustomer, setShowCustomer] = useState(false);
     const [discountTarget, setDiscountTarget] = useState(null);
     const [barberTarget, setBarberTarget] = useState(null);
+    // تعديل خدمات الحجز: مفتاح البند المراد تغييره، أو 'add' لإضافة خدمة للحجز
+    const [swapTarget, setSwapTarget] = useState(null);
+    const [swapSearch, setSwapSearch] = useState('');
     const [paying, setPaying] = useState(false);
     const [closing, setClosing] = useState(false);
     const [completed, setCompleted] = useState(null);
@@ -245,6 +249,31 @@ function POSScreen() {
         });
     }, []);
 
+    // خدمات الحجز: العميل غيّر طلبه. تُحسب بسعر حلاق الحجز، وتُحفظ في الحجز عند الدفع
+    const bookingBarber = appointment?.barberId ? barberById.get(String(appointment.barberId)) : null;
+    const bookedLines = cart.filter((line) => line.booked);
+    const bookingEdited = Boolean(appointment) && (
+        bookedLines.length !== (appointment.services || []).length
+        || bookedLines.some((line, index) => line.refId !== String(appointment.services[index]?.serviceId || ''))
+    );
+    const pickBookedService = (service) => {
+        const next = {
+            booked: true, edited: true, itemType: 'service', refId: String(service._id), name: service.name,
+            unitPrice: getBarberServicePrice(service, bookingBarber), quantity: 1,
+            barberId: appointment?.barberId || '', barberName: appointment?.barberName || '', discount: null,
+        };
+        setCart((lines) => (swapTarget === 'add'
+            ? [...lines.filter((line) => line.booked), { ...next, key: `booked-${Date.now()}` }, ...lines.filter((line) => !line.booked)]
+            : lines.map((line) => (line.key === swapTarget ? { ...line, ...next } : line))));
+        setSwapTarget(null);
+        setSwapSearch('');
+    };
+    const removeBookedLine = (key) => setCart((lines) => lines.filter((line) => line.key !== key));
+    const swapChoices = useMemo(() => {
+        const term = swapSearch.trim().toLowerCase();
+        return (catalog?.services || []).filter((service) => !term || String(service.name || '').toLowerCase().includes(term));
+    }, [catalog, swapSearch]);
+
     const changeQty = (key, delta) => setCart((lines) => lines.flatMap((line) => {
         if (line.key !== key || line.booked) return [line];
         const quantity = line.quantity + delta;
@@ -320,6 +349,12 @@ function POSScreen() {
         setBusy(true);
         setActionError('');
         try {
+            if (bookingEdited) {
+                if (bookedLines.length === 0) throw new Error('اختر خدمة واحدة على الأقل للحجز.');
+                if (bookedLines.some((line) => !line.refId)) throw new Error('غيّر "خدمة حلاقة" إلى خدمة من القائمة أولاً.');
+                const res = await posApi.put(`/pos/appointments/${appointment._id}/services`, { serviceIds: bookedLines.map((line) => line.refId) });
+                setAppointment((current) => (current ? { ...current, services: res.data.services } : current));
+            }
             if (appointment?.status === 'Booked') {
                 await posApi.put(`/pos/appointments/${appointment._id}/status`, { status: 'Completed' });
                 setAppointment((current) => (current ? { ...current, status: 'Completed' } : current));
@@ -579,8 +614,13 @@ function POSScreen() {
                             <CalendarDays size={20} className="shrink-0 text-emerald-700" />
                             <div className="min-w-0 flex-1">
                                 <p className="truncate font-bold text-emerald-900">حجز {appointment.childName}</p>
-                                <p className="truncate text-xs font-semibold text-emerald-700">{appointment.timeSlot} · {appointment.barberName}{appointment.status === 'Booked' ? ' · يُسجل مكتملاً عند الدفع' : ''}</p>
+                                <p className="truncate text-xs font-semibold text-emerald-700">
+                                    {bookingEdited ? 'عدّلت خدمات الحجز · تُحفظ عند الدفع' : `${appointment.timeSlot} · ${appointment.barberName}${appointment.status === 'Booked' ? ' · يُسجل مكتملاً عند الدفع' : ''}`}
+                                </p>
                             </div>
+                            <button type="button" onClick={() => setSwapTarget('add')} className="flex h-10 shrink-0 items-center gap-1 rounded-lg border border-emerald-200 bg-white px-2.5 text-sm font-bold text-emerald-800 hover:bg-emerald-100">
+                                <Plus size={16} /> خدمة
+                            </button>
                             <button type="button" onClick={resetSale} className="flex h-10 w-10 items-center justify-center rounded-lg text-emerald-800 hover:bg-emerald-100" aria-label="إلغاء تحصيل الحجز"><X size={18} /></button>
                         </div>
                     )}
@@ -606,7 +646,7 @@ function POSScreen() {
                                     <div className="min-w-0">
                                         <p className="truncate font-bold text-slate-800">{line.name}</p>
                                         {line.booked ? (
-                                            <p className="text-xs font-bold text-emerald-700">من الحجز{line.barberName ? ` · ${line.barberName}` : ''}</p>
+                                            <p className="text-xs font-bold text-emerald-700">{line.edited ? 'معدّلة في الحجز' : 'من الحجز'}{line.barberName ? ` · ${line.barberName}` : ''}</p>
                                         ) : (
                                             <p className="font-mono text-xs text-slate-400" dir="ltr">{money(line.unitPrice)} × {line.quantity}</p>
                                         )}
@@ -616,6 +656,18 @@ function POSScreen() {
                                         {line.discountAmount > 0 && <p className="font-mono text-xs text-slate-400 line-through" dir="ltr">{money(line.grossAmount)}</p>}
                                     </div>
                                 </div>
+                                {line.booked && (
+                                    <div className="mt-2 flex items-center gap-1.5">
+                                        <button type="button" onClick={() => setSwapTarget(line.key)} className="flex h-10 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-sm font-bold text-slate-700 hover:bg-slate-50">
+                                            <RefreshCw size={15} /> تغيير الخدمة
+                                        </button>
+                                        {bookedLines.length > 1 && (
+                                            <button type="button" onClick={() => removeBookedLine(line.key)} className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-red-500 hover:bg-red-50" aria-label="حذف الخدمة من الحجز">
+                                                <Trash2 size={16} />
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
                                 {!line.booked && <div className="mt-2 flex items-center gap-1.5">
                                     <div className="flex items-center rounded-lg border border-slate-200">
                                         <button type="button" onClick={() => changeQty(line.key, -1)} className="flex h-10 w-10 items-center justify-center text-slate-600" aria-label="إنقاص">{line.quantity === 1 ? <Trash2 size={17} className="text-red-500" /> : <Minus size={17} />}</button>
@@ -671,6 +723,42 @@ function POSScreen() {
                     </div>
                 </aside>
             </div>
+
+            {swapTarget && (
+                <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/60 p-4 sm:items-center" onClick={() => setSwapTarget(null)}>
+                    <div className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-2xl bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+                        <div className="mb-3 flex items-start justify-between gap-3">
+                            <div>
+                                <h3 className="text-xl font-extrabold">{swapTarget === 'add' ? 'إضافة خدمة للحجز' : 'تغيير الخدمة'}</h3>
+                                <p className="text-sm font-semibold text-slate-500">
+                                    {swapTarget === 'add' ? '' : `بدلاً من: ${cart.find((line) => line.key === swapTarget)?.name || ''} · `}
+                                    {appointment?.barberName ? `بأسعار ${appointment.barberName}` : 'بالسعر الأساسي'}
+                                </p>
+                            </div>
+                            <button type="button" onClick={() => setSwapTarget(null)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="إغلاق"><X size={22} /></button>
+                        </div>
+                        <label className="mb-3 flex h-12 items-center gap-2 rounded-xl border border-slate-200 px-3">
+                            <Search size={18} className="text-slate-400" />
+                            <input value={swapSearch} onChange={(event) => setSwapSearch(event.target.value)} placeholder="ابحث عن خدمة" className="h-full flex-1 bg-transparent font-semibold outline-none" />
+                        </label>
+                        <div className="grid min-h-0 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">
+                            {swapChoices.map((service) => {
+                                const current = cart.find((line) => line.key === swapTarget)?.refId === String(service._id);
+                                return (
+                                    <button key={service._id} type="button" disabled={current} onClick={() => pickBookedService(service)} className={`flex h-16 items-center justify-between gap-2 rounded-xl border-2 px-4 text-right ${current ? 'border-slate-900 bg-slate-50 opacity-60' : 'border-slate-200 hover:border-slate-400'}`}>
+                                        <span className="min-w-0">
+                                            <span className="block truncate font-bold text-slate-800">{service.name}</span>
+                                            {service.duration ? <span className="text-xs font-semibold text-slate-400">{service.duration} د</span> : null}
+                                        </span>
+                                        <span className="shrink-0 font-mono text-sm font-extrabold text-slate-700" dir="ltr">{money(getBarberServicePrice(service, bookingBarber))}</span>
+                                    </button>
+                                );
+                            })}
+                            {swapChoices.length === 0 && <p className="col-span-full py-8 text-center font-bold text-slate-400">لا توجد خدمة بهذا الاسم.</p>}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {barberTarget && (
                 <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/60 p-4 sm:items-center" onClick={() => setBarberTarget(null)}>
