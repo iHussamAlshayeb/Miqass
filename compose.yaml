@@ -21,9 +21,6 @@ services:
       FRONTEND_URL: https://www.miqass.app
       ZAKATY_BASE_URL: https://zakat.ihussam.dev
       DISABLE_CRON_JOBS: ${MIQASS_DISABLE_CRON_JOBS:-false}
-      # inline: الخادم يرسل الواتساب بنفسه (الافتراضي). queue: خدمة whatsapp ترسل.
-      # للتبديل: أضف MIQASS_WHATSAPP_DELIVERY=queue في ملف .env بجانب هذا الملف ثم شغّل start-local.ps1
-      WHATSAPP_DELIVERY: ${MIQASS_WHATSAPP_DELIVERY:-inline}
     ports:
       - "127.0.0.1:15000:5000"
     restart: unless-stopped
@@ -40,7 +37,9 @@ services:
       retries: 3
 
   # خدمة رسائل واتساب المستقلة: نفس الكود، عملية منفصلة بلا منافذ خارجية.
-  # في وضع inline تبقى في الاستعداد ولا ترسل شيئاً، فلا تتكرر رسالة أبداً.
+  # وضع الإرسال يُضبط في Miqass.env (يقرؤه app وwhatsapp معاً فلا يختلفان):
+  #   MIQASS_WHATSAPP_DELIVERY=queue  ← خدمة whatsapp ترسل
+  #   بدون السطر أو inline            ← الخادم يرسل والخدمة في الاستعداد (لا تتكرر رسالة)
   whatsapp:
     image: miqass-local-app
     build: *app-build
@@ -54,7 +53,6 @@ services:
       BACKEND_URL: https://www.miqass.app
       FRONTEND_URL: https://www.miqass.app
       DISABLE_CRON_JOBS: ${MIQASS_DISABLE_CRON_JOBS:-false}
-      WHATSAPP_DELIVERY: ${MIQASS_WHATSAPP_DELIVERY:-inline}
       WHATSAPP_SERVICE_PORT: 5100
     restart: unless-stopped
     stop_grace_period: 30s

@@ -49,10 +49,8 @@ if ($Public) {
 
 docker compose --profile public ps
 Write-Host "Miqass is healthy at http://127.0.0.1:15000" -ForegroundColor Green
-$whatsappMode = if ($env:MIQASS_WHATSAPP_DELIVERY) { $env:MIQASS_WHATSAPP_DELIVERY } else {
-  $line = if (Test-Path -LiteralPath ".env") { Select-String -Path ".env" -Pattern '^\s*MIQASS_WHATSAPP_DELIVERY\s*=\s*(\S+)' | Select-Object -First 1 } else { $null }
-  if ($line) { $line.Matches[0].Groups[1].Value } else { "inline" }
-}
+$line = Select-String -Path "Miqass.env" -Pattern '^\s*MIQASS_WHATSAPP_DELIVERY\s*=\s*(\S+)' | Select-Object -First 1
+$whatsappMode = if ($line) { $line.Matches[0].Groups[1].Value.Trim().ToLower() } else { "inline" }
 if ($whatsappMode -eq "queue") {
   Write-Host "WhatsApp: sent by the separate whatsapp service (queue mode)." -ForegroundColor Green
 } else {

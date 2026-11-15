@@ -18,7 +18,7 @@ const okResponse = { data: { success: true, data: { msgId: 777 } } };
 const httpError = (status, message) => Object.assign(new Error(message), { response: { status, data: { message } } });
 
 test("only one side ever runs the WhatsApp jobs: the app in inline mode, the service in queue mode", async () => {
-  await withEnv({ WHATSAPP_DELIVERY: undefined, MIQASS_ROLE: undefined }, () => {
+  await withEnv({ WHATSAPP_DELIVERY: undefined, MIQASS_WHATSAPP_DELIVERY: undefined, MIQASS_ROLE: undefined }, () => {
     assert.equal(outbox.shouldRunWhatsappJobs(), true);
     assert.equal(outbox.shouldEnqueue(), false);
   });
@@ -32,6 +32,20 @@ test("only one side ever runs the WhatsApp jobs: the app in inline mode, the ser
   await withEnv({ WHATSAPP_DELIVERY: "queue", MIQASS_ROLE: "whatsapp" }, () => {
     assert.equal(outbox.shouldRunWhatsappJobs(), true);
     assert.equal(outbox.shouldEnqueue(), false, "the service itself sends");
+  });
+});
+
+test("the mode comes from MIQASS_WHATSAPP_DELIVERY in Miqass.env, read the same way by the app and the service", async () => {
+  await withEnv({ WHATSAPP_DELIVERY: undefined, MIQASS_WHATSAPP_DELIVERY: "queue", MIQASS_ROLE: undefined }, () => {
+    assert.equal(outbox.isQueueMode(), true);
+    assert.equal(outbox.shouldEnqueue(), true);
+    assert.equal(outbox.shouldRunWhatsappJobs(), false);
+  });
+  await withEnv({ WHATSAPP_DELIVERY: undefined, MIQASS_WHATSAPP_DELIVERY: " Queue ", MIQASS_ROLE: "whatsapp" }, () => {
+    assert.equal(outbox.shouldRunWhatsappJobs(), true);
+  });
+  await withEnv({ WHATSAPP_DELIVERY: undefined, MIQASS_WHATSAPP_DELIVERY: undefined, MIQASS_ROLE: "whatsapp" }, () => {
+    assert.equal(outbox.isQueueMode(), false, "inline when nothing is set");
   });
 });
 

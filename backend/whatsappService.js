@@ -92,7 +92,7 @@ const start = async () => {
     console.log("📨 whatsapp-service تعمل: هي من ترسل رسائل واتساب الآن (وضع الطابور).");
   } else {
     console.log(jobsAllowed
-      ? "💤 whatsapp-service في وضع الاستعداد: الإرسال ما زال في الخادم (WHATSAPP_DELIVERY=inline)."
+      ? "💤 whatsapp-service في وضع الاستعداد: الإرسال ما زال في الخادم. للتبديل أضف MIQASS_WHATSAPP_DELIVERY=queue في Miqass.env ثم أعد تشغيل app وwhatsapp."
       : "⏸️ whatsapp-service متوقفة عبر DISABLE_CRON_JOBS.");
   }
 

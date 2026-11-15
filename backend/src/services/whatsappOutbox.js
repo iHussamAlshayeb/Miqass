@@ -10,7 +10,9 @@
 const WhatsAppMessage = require("../models/WhatsAppMessage");
 
 const isWhatsappWorker = () => process.env.MIQASS_ROLE === "whatsapp";
-const isQueueMode = () => process.env.WHATSAPP_DELIVERY === "queue";
+// يُضبط من Miqass.env بالسطر MIQASS_WHATSAPP_DELIVERY=queue (يقرؤه الخادم والخدمة معاً)
+const deliveryMode = () => String(process.env.WHATSAPP_DELIVERY || process.env.MIQASS_WHATSAPP_DELIVERY || "inline").trim().toLowerCase();
+const isQueueMode = () => deliveryMode() === "queue";
 /** الخادم في وضع الطابور يسجّل فقط، والخدمة المستقلة ترسل */
 const shouldEnqueue = () => isQueueMode() && !isWhatsappWorker();
 /** من يشغّل الإرسال والمهام المجدولة: الخادم في inline، والخدمة في queue. لا يعملان معاً أبداً. */
@@ -279,6 +281,7 @@ const resendMessage = async (messageId, { tenantId = null } = {}) => {
 module.exports = {
   isWhatsappWorker,
   isQueueMode,
+  deliveryMode,
   shouldEnqueue,
   shouldRunWhatsappJobs,
   isRetryableError,
