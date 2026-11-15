@@ -2,7 +2,8 @@ name: miqass-local
 
 services:
   app:
-    build:
+    image: miqass-local-app
+    build: &app-build
       context: .
       dockerfile: Dockerfile
       args:
@@ -20,6 +21,9 @@ services:
       FRONTEND_URL: https://www.miqass.app
       ZAKATY_BASE_URL: https://zakat.ihussam.dev
       DISABLE_CRON_JOBS: ${MIQASS_DISABLE_CRON_JOBS:-false}
+      # inline: الخادم يرسل الواتساب بنفسه (الافتراضي). queue: خدمة whatsapp ترسل.
+      # للتبديل: أضف MIQASS_WHATSAPP_DELIVERY=queue في ملف .env بجانب هذا الملف ثم شغّل start-local.ps1
+      WHATSAPP_DELIVERY: ${MIQASS_WHATSAPP_DELIVERY:-inline}
     ports:
       - "127.0.0.1:15000:5000"
     restart: unless-stopped
@@ -30,6 +34,36 @@ services:
         - wget
         - -qO-
         - http://127.0.0.1:5000/api/health
+      interval: 20s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+  # خدمة رسائل واتساب المستقلة: نفس الكود، عملية منفصلة بلا منافذ خارجية.
+  # في وضع inline تبقى في الاستعداد ولا ترسل شيئاً، فلا تتكرر رسالة أبداً.
+  whatsapp:
+    image: miqass-local-app
+    build: *app-build
+    command: ["node", "whatsappService.js"]
+    env_file:
+      - Miqass.env
+      - .local-secrets/miqass-zakaty.env
+    environment:
+      NODE_ENV: production
+      MIQASS_ROLE: whatsapp
+      BACKEND_URL: https://www.miqass.app
+      FRONTEND_URL: https://www.miqass.app
+      DISABLE_CRON_JOBS: ${MIQASS_DISABLE_CRON_JOBS:-false}
+      WHATSAPP_DELIVERY: ${MIQASS_WHATSAPP_DELIVERY:-inline}
+      WHATSAPP_SERVICE_PORT: 5100
+    restart: unless-stopped
+    stop_grace_period: 30s
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - -qO-
+        - http://127.0.0.1:5100/health
       interval: 20s
       timeout: 5s
       start_period: 30s

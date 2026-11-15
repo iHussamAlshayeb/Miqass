@@ -1,4 +1,5 @@
 const Campaign = require("../models/Campaign");
+const { updateMessageLogDelivery } = require("./whatsappOutbox");
 
 const normalizeIdentifiers = (identifiers = []) => [
   ...new Set(
@@ -106,8 +107,13 @@ const updateCampaignMessageDelivery = async ({
     },
   );
 
+  // نفس الحالة تُحدَّث في سجل الرسائل (رسائل الحجوزات والحملات)
+  const logUpdate = await updateMessageLogDelivery({
+    tenantId, identifiers: messageIdentifiers, whatsappMessageId, status,
+  }).catch(() => ({ matched: false }));
+
   return {
-    matched: matched || statusUpdate.matchedCount > 0,
+    matched: matched || statusUpdate.matchedCount > 0 || logUpdate.matched,
     statusUpdated: statusUpdate.modifiedCount > 0,
   };
 };

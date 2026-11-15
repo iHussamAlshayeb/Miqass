@@ -6,6 +6,7 @@ import {
     Clock3,
     Copy,
     KeyRound,
+    ScrollText,
     CreditCard,
     ExternalLink,
     MessageCircle,
@@ -29,6 +30,7 @@ import IdentitySection from './settings/IdentitySection';
 import BookingHoursSection from './settings/BookingHoursSection';
 import KioskSection from './settings/KioskSection';
 import CashiersSection from './settings/CashiersSection';
+import MessageLog from '../whatsapp/MessageLog';
 import TeamSection from './settings/TeamSection';
 import PaymentSection from './settings/PaymentSection';
 import IntegrationsSection from './settings/IntegrationsSection';
@@ -56,6 +58,7 @@ const SETTINGS_GROUPS = [
         label: 'التواصل مع العملاء',
         pages: [
             { id: 'whatsapp', label: 'واتساب', icon: MessageCircle, description: 'ربط رقم واتساب الصالون الذي تُرسل منه الرسائل للعملاء.' },
+            { id: 'message-log', label: 'سجل الرسائل', icon: ScrollText, description: 'كل رسالة واتساب أرسلها النظام لعملائك وحالتها: أُرسلت، وصلت، قُرئت، أو فشلت وسبب الفشل، مع إعادة الإرسال.' },
             { id: 'messages', label: 'الرسائل التلقائية', icon: Send, description: 'التأكيد والتذكير والإلغاء تُرسل دائماً عند ربط واتساب. هنا تشغّل الرسائل الإضافية وتعدّل نصوص الرسائل.' },
         ],
     },
@@ -552,6 +555,17 @@ const SettingsTab = ({
                             />
                         </div>
                     </form>
+
+                    <div hidden={pageHidden('message-log')}>
+                        {activePage === 'message-log' && (
+                            <section className="rounded-lg border border-slate-100 bg-white p-5 shadow-sm md:p-7">
+                                <MessageLog
+                                    load={(params) => API.get('/whatsapp/messages', { params }).then((res) => res.data)}
+                                    resend={(id) => API.post(`/whatsapp/messages/${id}/resend`).then((res) => res.data)}
+                                />
+                            </section>
+                        )}
+                    </div>
 
                     <div hidden={pageHidden('whatsapp')}>
                         <IntegrationsSection

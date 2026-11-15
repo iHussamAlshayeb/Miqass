@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const rateLimit = require("../middlewares/rateLimit");
 const { protect } = require("../middlewares/authMiddleware");
+const { listTenantMessages, resendTenantMessage } = require("../controllers/whatsappMessagesController");
 
 const {
   getWhatsappProviders,
@@ -48,6 +49,9 @@ router.post(
 );
 
 router.get("/providers", protect, getWhatsappProviders);
+// سجل رسائل الصالون وإعادة إرسال رسالة
+router.get("/messages", protect, listTenantMessages);
+router.post("/messages/:id/resend", protect, rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, message: { message: "محاولات كثيرة، انتظر دقيقة." } }), resendTenantMessage);
 router.put("/whatsi", protect, whatsiSettingsLimiter, saveWhatsiSettings);
 router.get("/session-data", protect, getWhatsappSessionData);
 router.post("/disconnect", protect, disconnectWhatsappSession);

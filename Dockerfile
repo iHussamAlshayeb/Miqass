@@ -35,6 +35,7 @@ ENV NODE_ENV=production \
 COPY --from=backend-dependencies --chown=node:node /app/node_modules ./node_modules
 COPY --chown=node:node backend/package*.json ./
 COPY --chown=node:node backend/server.js ./server.js
+COPY --chown=node:node backend/whatsappService.js ./whatsappService.js
 COPY --chown=node:node backend/src ./src
 COPY --from=frontend-build --chown=node:node /build/frontend/dist ./frontend/dist
 

@@ -2,6 +2,7 @@ const axios = require("axios");
 const { normalizeWasenderMessageStatus } = require("./wasender");
 const { renderTemplate } = require("./whatsappTemplates");
 const { decrypt } = require("./encryption");
+const outbox = require("../services/whatsappOutbox");
 const {
   sendWhatsiText,
   getWhatsiMessage,
@@ -115,219 +116,143 @@ const handleWhatsAppError = (actionName, error) => {
   }
 };
 
-const sendWhatsAppMessage = async (
-  phone,
-  childName,
-  date,
-  time,
-  barberName,
-  tenant,
-) => {
-  try {
-    const customApiKey = getSendCredential(tenant);
-    const isEnabled = tenant?.whatsappSettings?.isEnabled;
+/**
+ * نقطة إرسال رسائل الحجوزات: تتحقق من الربط والرقم، ثم ترسل أو تضع الرسالة في الطابور
+ * عبر سجل الرسائل (services/whatsappOutbox). تُرجع true إذا أُرسلت أو دخلت الطابور.
+ */
+const deliverText = async (tenant, { type, phone, text, recipientName = "", appointmentId = null, label, successLog }) => {
+  const credential = getSendCredential(tenant);
+  if (!tenant?.whatsappSettings?.isEnabled || !credential) return false;
 
-    if (!isEnabled || !customApiKey) return false;
-
-    const formattedPhone = formatPhoneNumber(phone);
-    if (!formattedPhone) return false;
-
-    const friendlyTime = formatTimeForMessage(time);
-    const salonName = tenant?.salonName || "الصالون";
-    const locationUrl =
-      tenant?.settings?.locationUrl || "رابط الموقع غير متوفر";
-    const publicPhone = tenant?.settings?.contactPhone || tenant?.ownerPhone;
-    const contactPhone = publicPhone
-      ? `\n📞 للتواصل: ${publicPhone}`
-      : "";
-    const seatName = barberName ? `\n💈 الكرسي/الحلاق: ${barberName}` : "";
-
-    const message = renderTemplate(tenant, 'confirmation', {
-      اسم_الصالون: salonName, اسم_العميل: childName, التاريخ: date,
-      الوقت: friendlyTime, الحلاق: seatName, الموقع: locationUrl,
-      رقم_التواصل: contactPhone,
-    });
-
-    await postText(tenant, customApiKey, { to: formattedPhone, text: message });
-
-    console.log(`✅ تم إرسال رسالة التأكيد لصالون ${salonName} بنجاح.`);
-    return true;
-  } catch (error) {
-    handleWhatsAppError("رسالة التأكيد", error);
-    return false;
-  }
-};
-
-const sendCancellationMessage = async (
-  phone,
-  childName,
-  barberName,
-  tenant,
-  reason = "",
-) => {
-  try {
-    const customApiKey = getSendCredential(tenant);
-    const isEnabled = tenant?.whatsappSettings?.isEnabled;
-
-    if (!isEnabled || !customApiKey) return false;
-
-    const formattedPhone = formatPhoneNumber(phone);
-    if (!formattedPhone) return false;
-
-    const salonName = tenant?.salonName || "الصالون";
-    const slug = tenant?.slug || "";
-    const bookingLink = slug ? `https://www.miqass.app/${slug}` : "رابط الصالون";
-    const reasonText = reason ? `\n*سبب الإلغاء:* ${reason}\n` : "";
-    const seatName = barberName ? `(عند ${barberName}) ` : "";
-
-    const message = renderTemplate(tenant, 'cancellation', {
-      اسم_الصالون: salonName, اسم_العميل: childName, الحلاق: seatName,
-      سبب_الإلغاء: reasonText, رابط_الحجز: bookingLink,
-    });
-
-    await postText(tenant, customApiKey, { to: formattedPhone, text: message });
-
-    console.log(`✅ تم إرسال رسالة الإلغاء لصالون ${salonName}.`);
-    return true;
-  } catch (error) {
-    handleWhatsAppError("رسالة الإلغاء", error);
-    return false;
-  }
-};
-
-const sendReminderMessage = async (
-  phone,
-  childName,
-  time,
-  barberName,
-  tenant,
-) => {
-  try {
-    const customApiKey = getSendCredential(tenant);
-    const isEnabled = tenant?.whatsappSettings?.isEnabled;
-
-    if (!isEnabled || !customApiKey) return false;
-
-    const formattedPhone = formatPhoneNumber(phone);
-    if (!formattedPhone) return false;
-
-    const friendlyTime = formatTimeForMessage(time);
-    const salonName = tenant?.salonName || "الصالون";
-    const locationUrl = tenant?.settings?.locationUrl || "";
-    const publicPhone = tenant?.settings?.contactPhone || tenant?.ownerPhone;
-    const contactPhone = publicPhone
-      ? `\n📞 للاستفسار: ${publicPhone}`
-      : "";
-    const seatName = barberName ? `\n💈 الكرسي/الحلاق: ${barberName}` : "";
-
-    const message = renderTemplate(tenant, 'reminder', {
-      اسم_الصالون: salonName, اسم_العميل: childName, الوقت: friendlyTime,
-      الحلاق: seatName, الموقع: locationUrl, رقم_التواصل: contactPhone,
-    });
-
-    await postText(tenant, customApiKey, { to: formattedPhone, text: message });
-
-    console.log(`✅ تم إرسال رسالة التذكير لصالون ${salonName}.`);
-    return true;
-  } catch (error) {
-    handleWhatsAppError("رسالة التذكير", error);
-    return false;
-  }
-};
-
-const sendReviewRequestMessage = async (
-  phone,
-  childName,
-  tenant,
-  appointmentId,
-) => {
-  try {
-    const customApiKey = getSendCredential(tenant);
-    const isEnabled = tenant?.whatsappSettings?.isEnabled;
-
-    if (!isEnabled || !customApiKey) return false;
-
-    const formattedPhone = formatPhoneNumber(phone);
-    if (!formattedPhone) {
-      console.log(`⚠️ [WhatsApp] تم تخطي الإرسال لأن الرقم غير صالح أو وهمي.`);
-      return false;
+  const to = formatPhoneNumber(phone);
+  if (!to) {
+    if (tenant?._id) {
+      await outbox.recordSkipped({ tenant, type, to: phone, text, recipientName, appointmentId, reason: "رقم الجوال غير صالح للإرسال." });
     }
-
-    const salonName = tenant?.salonName || "الصالون";
-    const reviewUrl = `https://www.miqass.app/rate/${appointmentId}`;
-
-    const message = renderTemplate(tenant, 'review', {
-      اسم_الصالون: salonName, اسم_العميل: childName, رابط_التقييم: reviewUrl,
-    });
-
-    await postText(tenant, customApiKey, { to: formattedPhone, text: message });
-
-    console.log(
-      `✅ [WhatsApp] تم إرسال رابط التقييم لـ ${childName} (${reviewUrl})`,
-    );
-    return true;
-  } catch (error) {
-    handleWhatsAppError("رسالة التقييم", error);
     return false;
   }
+
+  try {
+    if (!tenant?._id) {
+      await postText(tenant, credential, { to, text });
+    } else {
+      const accepted = await outbox.deliver({ postText, tenant, credential, type, to, text, recipientName, appointmentId });
+      if (!accepted) return false;
+    }
+    if (successLog) console.log(successLog);
+    return true;
+  } catch (error) {
+    handleWhatsAppError(label, error);
+    return false;
+  }
+};
+
+const sendWhatsAppMessage = async (phone, childName, date, time, barberName, tenant) => {
+  if (!isWhatsappReady(tenant)) return false;
+  const friendlyTime = formatTimeForMessage(time);
+  const salonName = tenant?.salonName || "الصالون";
+  const locationUrl = tenant?.settings?.locationUrl || "رابط الموقع غير متوفر";
+  const publicPhone = tenant?.settings?.contactPhone || tenant?.ownerPhone;
+  const contactPhone = publicPhone ? `\n📞 للتواصل: ${publicPhone}` : "";
+  const seatName = barberName ? `\n💈 الكرسي/الحلاق: ${barberName}` : "";
+
+  const message = renderTemplate(tenant, 'confirmation', {
+    اسم_الصالون: salonName, اسم_العميل: childName, التاريخ: date,
+    الوقت: friendlyTime, الحلاق: seatName, الموقع: locationUrl,
+    رقم_التواصل: contactPhone,
+  });
+
+  return deliverText(tenant, {
+    type: "confirmation", phone, text: message, recipientName: childName,
+    label: "رسالة التأكيد", successLog: `✅ تم إرسال رسالة التأكيد لصالون ${salonName} بنجاح.`,
+  });
+};
+
+const sendCancellationMessage = async (phone, childName, barberName, tenant, reason = "") => {
+  if (!isWhatsappReady(tenant)) return false;
+  const salonName = tenant?.salonName || "الصالون";
+  const slug = tenant?.slug || "";
+  const bookingLink = slug ? `https://www.miqass.app/${slug}` : "رابط الصالون";
+  const reasonText = reason ? `\n*سبب الإلغاء:* ${reason}\n` : "";
+  const seatName = barberName ? `(عند ${barberName}) ` : "";
+
+  const message = renderTemplate(tenant, 'cancellation', {
+    اسم_الصالون: salonName, اسم_العميل: childName, الحلاق: seatName,
+    سبب_الإلغاء: reasonText, رابط_الحجز: bookingLink,
+  });
+
+  return deliverText(tenant, {
+    type: "cancellation", phone, text: message, recipientName: childName,
+    label: "رسالة الإلغاء", successLog: `✅ تم إرسال رسالة الإلغاء لصالون ${salonName}.`,
+  });
+};
+
+const sendReminderMessage = async (phone, childName, time, barberName, tenant) => {
+  if (!isWhatsappReady(tenant)) return false;
+  const friendlyTime = formatTimeForMessage(time);
+  const salonName = tenant?.salonName || "الصالون";
+  const locationUrl = tenant?.settings?.locationUrl || "";
+  const publicPhone = tenant?.settings?.contactPhone || tenant?.ownerPhone;
+  const contactPhone = publicPhone ? `\n📞 للاستفسار: ${publicPhone}` : "";
+  const seatName = barberName ? `\n💈 الكرسي/الحلاق: ${barberName}` : "";
+
+  const message = renderTemplate(tenant, 'reminder', {
+    اسم_الصالون: salonName, اسم_العميل: childName, الوقت: friendlyTime,
+    الحلاق: seatName, الموقع: locationUrl, رقم_التواصل: contactPhone,
+  });
+
+  return deliverText(tenant, {
+    type: "reminder", phone, text: message, recipientName: childName,
+    label: "رسالة التذكير", successLog: `✅ تم إرسال رسالة التذكير لصالون ${salonName}.`,
+  });
+};
+
+const sendReviewRequestMessage = async (phone, childName, tenant, appointmentId) => {
+  if (!isWhatsappReady(tenant)) return false;
+  const salonName = tenant?.salonName || "الصالون";
+  const reviewUrl = `https://www.miqass.app/rate/${appointmentId}`;
+
+  const message = renderTemplate(tenant, 'review', {
+    اسم_الصالون: salonName, اسم_العميل: childName, رابط_التقييم: reviewUrl,
+  });
+
+  return deliverText(tenant, {
+    type: "review", phone, text: message, recipientName: childName, appointmentId,
+    label: "رسالة التقييم", successLog: `✅ [WhatsApp] تم إرسال رابط التقييم لـ ${childName} (${reviewUrl})`,
+  });
 };
 
 const sendLoyaltyRewardMessage = async (phone, customerName, tenant) => {
-  try {
-    const customApiKey = getSendCredential(tenant);
-    const isEnabled = tenant?.whatsappSettings?.isEnabled;
+  if (!isWhatsappReady(tenant)) return false;
+  const salonName = tenant?.salonName || "الصالون";
+  const slug = tenant?.slug || "";
+  const bookingLink = slug ? `https://www.miqass.app/${slug}` : "رابط الصالون";
 
-    if (!isEnabled || !customApiKey) return false;
+  const message = renderTemplate(tenant, 'loyalty', {
+    اسم_الصالون: salonName, اسم_العميل: customerName, رابط_الحجز: bookingLink,
+  });
 
-    const formattedPhone = formatPhoneNumber(phone);
-    if (!formattedPhone) return false;
-
-    const salonName = tenant?.salonName || "الصالون";
-    const slug = tenant?.slug || "";
-    const bookingLink = slug ? `https://www.miqass.app/${slug}` : "رابط الصالون";
-
-    const message = renderTemplate(tenant, 'loyalty', {
-      اسم_الصالون: salonName, اسم_العميل: customerName, رابط_الحجز: bookingLink,
-    });
-
-    await postText(tenant, customApiKey, { to: formattedPhone, text: message });
-
-    console.log(`✅ تم إرسال رسالة مكافأة الولاء لعميل صالون ${salonName}.`);
-    return true;
-  } catch (error) {
-    handleWhatsAppError("رسالة الولاء", error);
-    return false;
-  }
+  return deliverText(tenant, {
+    type: "loyalty", phone, text: message, recipientName: customerName,
+    label: "رسالة الولاء", successLog: `✅ تم إرسال رسالة مكافأة الولاء لعميل صالون ${salonName}.`,
+  });
 };
 
 const sendRetentionMessage = async (phone, customerName, tenant) => {
-  try {
-    const customApiKey = getSendCredential(tenant);
-    const isEnabled = tenant?.whatsappSettings?.isEnabled;
+  if (!isWhatsappReady(tenant)) return false;
+  const salonName = tenant?.salonName || "الصالون";
+  const slug = tenant?.slug || "";
+  const bookingLink = slug ? `https://www.miqass.app/${slug}` : 'رابط الصالون';
 
-    if (!isEnabled || !customApiKey) return false;
+  const message = renderTemplate(tenant, 'retention', {
+    اسم_الصالون: salonName, اسم_العميل: customerName, رابط_الحجز: bookingLink,
+  });
 
-    const formattedPhone = formatPhoneNumber(phone);
-    if (!formattedPhone) return false;
-
-    const salonName = tenant?.salonName || "الصالون";
-    const slug = tenant?.slug || "";
-    const bookingLink = slug ? `https://www.miqass.app/${slug}` : 'رابط الصالون';
-
-    const message = renderTemplate(tenant, 'retention', {
-      اسم_الصالون: salonName, اسم_العميل: customerName, رابط_الحجز: bookingLink,
-    });
-
-    await postText(tenant, customApiKey, { to: formattedPhone, text: message });
-
-    console.log(
-      `✅ تم إرسال رسالة إعادة الاستهداف للعميل ${customerName} - صالون ${salonName}`,
-    );
-    return true;
-  } catch (error) {
-    handleWhatsAppError("رسالة إعادة الاستهداف", error);
-    return false;
-  }
+  return deliverText(tenant, {
+    type: "retention", phone, text: message, recipientName: customerName,
+    label: "رسالة إعادة الاستهداف",
+    successLog: `✅ تم إرسال رسالة إعادة الاستهداف للعميل ${customerName} - صالون ${salonName}`,
+  });
 };
 
 const sendCampaignMessage = async (phone, messageText, tenant, options = {}) => {
@@ -424,36 +349,24 @@ const sendCampaignMessage = async (phone, messageText, tenant, options = {}) => 
 };
 
 const sendBookingAccessCode = async (phone, code, tenant) => {
-  const apiKey = getSendCredential(tenant);
-  const formattedPhone = formatPhoneNumber(phone);
-  if (!tenant?.whatsappSettings?.isEnabled || !apiKey || !formattedPhone) return false;
-
-  try {
-    await postText(tenant, apiKey, {
-        to: formattedPhone,
-        text: `رمز عرض وإدارة مواعيدك لدى ${tenant.salonName}: ${code}\nصالح لمدة 5 دقائق. لا تشاركه مع أحد.`,
-      });
-    return true;
-  } catch (error) {
-    handleWhatsAppError("رمز إدارة المواعيد", error);
-    return false;
-  }
+  if (!isWhatsappReady(tenant)) return false;
+  return deliverText(tenant, {
+    type: "access_code",
+    phone,
+    text: `رمز عرض وإدارة مواعيدك لدى ${tenant.salonName}: ${code}\nصالح لمدة 5 دقائق. لا تشاركه مع أحد.`,
+    label: "رمز إدارة المواعيد",
+  });
 };
 
 const sendRescheduleMessage = async (phone, childName, date, time, barberName, tenant) => {
-  const apiKey = getSendCredential(tenant);
-  const formattedPhone = formatPhoneNumber(phone);
-  if (!tenant?.whatsappSettings?.isEnabled || !apiKey || !formattedPhone) return false;
-  try {
-    await postText(tenant, apiKey, {
-        to: formattedPhone,
-        text: `تم تعديل موعد ${childName} لدى ${tenant.salonName}.\nالموعد الجديد: ${date} الساعة ${formatTimeForMessage(time)}\nالموظف: ${barberName}`,
-      });
-    return true;
-  } catch (error) {
-    handleWhatsAppError("تعديل الموعد", error);
-    return false;
-  }
+  if (!isWhatsappReady(tenant)) return false;
+  return deliverText(tenant, {
+    type: "reschedule",
+    phone,
+    recipientName: childName,
+    text: `تم تعديل موعد ${childName} لدى ${tenant.salonName}.\nالموعد الجديد: ${date} الساعة ${formatTimeForMessage(time)}\nالموظف: ${barberName}`,
+    label: "تعديل الموعد",
+  });
 };
 
 const getCampaignMessageInfo = async (providerMessageId, tenant) => {
@@ -509,6 +422,8 @@ const getCampaignMessageInfo = async (providerMessageId, tenant) => {
 const getWhatsAppStatus = () => ({ status: "API_ACTIVE", qr: "" });
 
 module.exports = {
+  postText,
+  getSendCredential,
   isWhatsappReady,
   sendWhatsAppMessage,
   sendBookingAccessCode,

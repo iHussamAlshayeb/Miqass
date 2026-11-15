@@ -14,6 +14,8 @@ const {
   sendCampaignMessage,
   getCampaignMessageInfo,
   isWhatsappReady,
+  postText,
+  getSendCredential,
 } = require("./whatsapp");
 const { sendRenewalReminderEmail } = require("./emailService");
 const {
@@ -23,6 +25,7 @@ const {
 const {
   updateCampaignMessageDelivery,
 } = require("../services/campaignDeliveryService");
+const { shouldRunWhatsappJobs, logCampaignSend, dispatchDue } = require("../services/whatsappOutbox");
 const {
   getNextCampaignDayStart,
   getCampaignDayKey,
@@ -527,6 +530,15 @@ const processBroadcastCampaigns = async () => {
         // يمنع تكرار الرسالة عند إعادة المحاولة (يدعمه Whatsi)
         { clientMessageId: `campaign-${campaign._id}-${customer._id}` },
       );
+      // للعرض في سجل الرسائل فقط؛ متابعة الحملة نفسها في Campaign
+      logCampaignSend({
+        tenant: campaign.tenantId,
+        campaignId: campaign._id,
+        to: customer.phone,
+        text: personalizedMessage,
+        recipientName: customer.name,
+        result: sendResult,
+      });
       const recipientUpdate = {
         lastProgressAt: new Date(),
         lockExpiresAt: new Date(Date.now() + CAMPAIGN_LOCK_MS),
@@ -801,6 +813,39 @@ const schedule = (...args) => {
   return task;
 };
 
+let isDispatchingMessages = false;
+/** يرسل ما في طابور رسائل واتساب (إعادة المحاولة، إعادة الإرسال، ووضع الطابور) */
+const dispatchWhatsappQueue = async () => {
+  if (isDispatchingMessages || isShuttingDown) return 0;
+  isDispatchingMessages = true;
+  try {
+    return await dispatchDue({
+      postText,
+      getCredential: getSendCredential,
+      loadTenant: (tenantId) => Tenant.findById(tenantId).select("salonName slug whatsappSettings deletedAt").lean(),
+      shouldStop: () => isShuttingDown,
+    });
+  } catch (error) {
+    console.error("خطأ في طابور رسائل واتساب:", error.message);
+    return 0;
+  } finally {
+    isDispatchingMessages = false;
+  }
+};
+
+/**
+ * مهام الواتساب: التذكيرات، "اشتقنالك"، الحملات ومتابعتها، وطابور الرسائل.
+ * تعمل في الخادم (وضع inline) أو في خدمة whatsapp-service (وضع queue)، وليس الاثنين.
+ */
+const startWhatsappJobs = () => {
+  console.log("📨 تشغيل مهام واتساب (التذكيرات، الحملات، طابور الرسائل)...");
+  schedule("*/15 * * * *", processAutomatedReminders);
+  schedule("0 10 * * *", processRetentionCampaign);
+  schedule("* * * * *", processBroadcastCampaigns);
+  schedule("*/5 * * * *", reconcileCampaignDeliveries);
+  schedule("*/10 * * * * *", dispatchWhatsappQueue);
+};
+
 const startCronJobs = () => {
   console.log("تم تشغيل نظام العمليات الخلفية (Cron Jobs) بنجاح...");
 
@@ -808,17 +853,12 @@ const startCronJobs = () => {
     console.error("خطأ في بدء طابور الإشعارات:", error.message),
   );
 
-  schedule("*/15 * * * *", processAutomatedReminders);
-
   schedule("*/5 * * * *", cleanupPendingPayments);
 
   schedule("0 8 * * *", processSubscriptionReminders);
 
-  schedule("0 10 * * *", processRetentionCampaign);
-
-  schedule("* * * * *", processBroadcastCampaigns);
-
-  schedule("*/5 * * * *", reconcileCampaignDeliveries);
+  if (shouldRunWhatsappJobs()) startWhatsappJobs();
+  else console.log("📨 مهام واتساب تعمل في خدمة whatsapp-service المستقلة (وضع الطابور).");
 
   schedule("*/15 * * * * *", processNotificationQueue);
 
@@ -850,14 +890,16 @@ const stopCronJobs = async (timeoutMs = 15000) => {
     } catch {}
   }
   const deadline = Date.now() + timeoutMs;
-  while ((isProcessingCampaigns || isReconcilingCampaignDeliveries) && Date.now() < deadline) {
+  while ((isProcessingCampaigns || isReconcilingCampaignDeliveries || isDispatchingMessages) && Date.now() < deadline) {
     await sleep(200);
   }
-  return !isProcessingCampaigns && !isReconcilingCampaignDeliveries;
+  return !isProcessingCampaigns && !isReconcilingCampaignDeliveries && !isDispatchingMessages;
 };
 
 module.exports = {
   startCronJobs,
+  startWhatsappJobs,
+  dispatchWhatsappQueue,
   stopCronJobs,
   processBroadcastCampaigns,
   reconcileCampaignDeliveries,

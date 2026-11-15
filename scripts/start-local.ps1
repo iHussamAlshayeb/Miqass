@@ -20,7 +20,7 @@ if ($Public -and -not (Test-Path -LiteralPath ".cloudflared\tunnel.env")) {
 $env:MIQASS_DISABLE_CRON_JOBS = if ($DisableCron) { "true" } else { "false" }
 
 docker compose config --quiet
-docker compose up -d --build app backup
+docker compose up -d --build app whatsapp backup
 
 $healthUrl = "http://127.0.0.1:15000/api/health"
 $deadline = (Get-Date).AddMinutes(3)
@@ -49,6 +49,15 @@ if ($Public) {
 
 docker compose --profile public ps
 Write-Host "Miqass is healthy at http://127.0.0.1:15000" -ForegroundColor Green
+$whatsappMode = if ($env:MIQASS_WHATSAPP_DELIVERY) { $env:MIQASS_WHATSAPP_DELIVERY } else {
+  $line = if (Test-Path -LiteralPath ".env") { Select-String -Path ".env" -Pattern '^\s*MIQASS_WHATSAPP_DELIVERY\s*=\s*(\S+)' | Select-Object -First 1 } else { $null }
+  if ($line) { $line.Matches[0].Groups[1].Value } else { "inline" }
+}
+if ($whatsappMode -eq "queue") {
+  Write-Host "WhatsApp: sent by the separate whatsapp service (queue mode)." -ForegroundColor Green
+} else {
+  Write-Host "WhatsApp: sent by the app (inline mode); the whatsapp service is on standby." -ForegroundColor Green
+}
 if ($DisableCron) {
   Write-Host "Background cron jobs are DISABLED (reminders, campaigns and review requests will not run)." -ForegroundColor Yellow
 } else {

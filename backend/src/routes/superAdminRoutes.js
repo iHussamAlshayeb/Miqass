@@ -20,6 +20,7 @@ const {
 } = require("../controllers/promoController");
 
 const superAdminAuth = require("../middlewares/superAdminAuth");
+const { listAllMessages, resendAnyMessage } = require("../controllers/whatsappMessagesController");
 
 const adminLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -36,6 +37,8 @@ router.use(adminLimiter);
 router.use(superAdminAuth);
 router.get("/tenants", getAllTenants);
 router.get("/promos", getAllPromoCodes);
+router.get("/whatsapp/messages", listAllMessages);
+router.post("/whatsapp/messages/:id/resend", resendAnyMessage);
 router.get("/pricing", getSystemPricing);
 router.post("/tenants/:id/impersonate", impersonateTenant);
 router.post("/promos", createPromoCode);

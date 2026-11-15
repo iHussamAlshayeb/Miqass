@@ -12,3 +12,10 @@ try {
   exit 1
 }
 
+try {
+  $whatsapp = docker compose exec -T whatsapp wget -qO- http://127.0.0.1:5100/health
+  Write-Host "WhatsApp service: $whatsapp" -ForegroundColor Green
+} catch {
+  Write-Host "WhatsApp service health check failed: $($_.Exception.Message)" -ForegroundColor Red
+}
+

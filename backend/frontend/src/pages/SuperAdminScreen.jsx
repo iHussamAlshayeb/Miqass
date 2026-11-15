@@ -25,6 +25,7 @@ import {
     RotateCcw,
 } from 'lucide-react';
 import API from '../services/api';
+import AdminMessagePanel from '../components/whatsapp/AdminMessagePanel';
 
 const fallbackPricing = { pro: 99, premium: 199 };
 const fallbackDiscount = { isActive: false, percentage: 0, name: '' };
@@ -625,6 +626,8 @@ const SuperAdminScreen = () => {
                     <StatCard icon={Crown} label="Premium" value={stats.premium.toLocaleString('ar-SA')} accent="text-violet-700" />
                     <StatCard icon={ReceiptText} label="مربوط بـ Zakaty" value={stats.zakaty.toLocaleString('ar-SA')} accent="text-emerald-700" />
                 </section>
+
+                <AdminMessagePanel salons={tenants} />
 
                 <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
                     <Card>
