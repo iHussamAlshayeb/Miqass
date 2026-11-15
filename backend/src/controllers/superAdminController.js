@@ -9,7 +9,7 @@ const SystemSettings = require("../models/SystemSettings");
 
 const jwt = require("jsonwebtoken");
 const { sendActivationEmail } = require("../utils/emailService");
-const redisClient = require("../utils/redisClient");
+const redisCache = require("../utils/redisCache");
 const {
   RETENTION_DAYS,
   softDeleteTenant,
@@ -63,7 +63,7 @@ const updateSystemPricing = async (req, res) => {
     ).lean();
 
     try {
-      await redisClient.del("system_pricing_public");
+      await redisCache.del("system_pricing_public");
     } catch (e) {}
 
     res.status(200).json({
@@ -88,14 +88,8 @@ const toggleMaintenanceMode = async (req, res) => {
     ).lean();
 
     try {
-      await redisClient.set(
-        "system_maintenance_mode",
-        String(settings.isMaintenanceMode),
-      );
-      await redisClient.set(
-        "system_maintenance_message",
-        settings.maintenanceMessage,
-      );
+      await redisCache.set("system_maintenance_mode", String(settings.isMaintenanceMode), { EX: 60 });
+      await redisCache.set("system_maintenance_message", settings.maintenanceMessage || "", { EX: 60 });
     } catch (e) {}
 
     res.status(200).json({
@@ -140,7 +134,7 @@ const updateTenantStatus = async (req, res) => {
     await tenant.save();
 
     try {
-      await redisClient.del(`tenant_public_profile:${tenant.slug}`);
+      await redisCache.del(`tenant_public_profile:${tenant.slug}`);
     } catch (e) {}
 
     const safeTenant = tenant.toObject();

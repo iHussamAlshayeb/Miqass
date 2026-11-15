@@ -1,5 +1,5 @@
 const SystemSettings = require("../models/SystemSettings");
-const redisClient = require("../utils/redisClient"); // 🚀 استدعاء الكاش
+const redisCache = require("../utils/redisCache"); // كاش لا ينتظر Redis إذا كان منقطعاً
 
 const checkMaintenanceMode = async (req, res, next) => {
   try {
@@ -14,26 +14,22 @@ const checkMaintenanceMode = async (req, res, next) => {
     let maintenanceMessage =
       "النظام تحت الصيانة حالياً لتقديم خدمة أفضل، سنعود قريباً.";
 
-    try {
-      const cachedStatus = await redisClient.get("system_maintenance_mode");
-      if (cachedStatus !== null) {
-        isMaintenanceMode = cachedStatus === "true";
+    const cachedStatus = await redisCache.get("system_maintenance_mode");
+    if (cachedStatus !== null) {
+      isMaintenanceMode = cachedStatus === "true";
 
-        if (isMaintenanceMode) {
-          const cachedMessage = await redisClient.get(
-            "system_maintenance_message",
-          );
-          if (cachedMessage) maintenanceMessage = cachedMessage;
+      if (isMaintenanceMode) {
+        const cachedMessage = await redisCache.get("system_maintenance_message");
+        if (cachedMessage) maintenanceMessage = cachedMessage;
 
-          return res.status(503).json({
-            isMaintenance: true,
-            message: maintenanceMessage,
-          });
-        }
-
-        return next();
+        return res.status(503).json({
+          isMaintenance: true,
+          message: maintenanceMessage,
+        });
       }
-    } catch (cacheError) {}
+
+      return next();
+    }
 
     const settings = await SystemSettings.findOne({ isGlobal: true }).lean();
 
@@ -42,13 +38,9 @@ const checkMaintenanceMode = async (req, res, next) => {
       if (settings.maintenanceMessage)
         maintenanceMessage = settings.maintenanceMessage;
 
-      try {
-        await redisClient.set(
-          "system_maintenance_mode",
-          String(isMaintenanceMode),
-        );
-        await redisClient.set("system_maintenance_message", maintenanceMessage);
-      } catch (e) {}
+      // صلاحية دقيقة: لو تغيّر الوضع وRedis منقطع، يتصحح الكاش وحده بعد عودته
+      await redisCache.set("system_maintenance_mode", String(isMaintenanceMode), { EX: 60 });
+      await redisCache.set("system_maintenance_message", maintenanceMessage, { EX: 60 });
     }
 
     if (isMaintenanceMode) {

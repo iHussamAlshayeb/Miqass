@@ -14,7 +14,7 @@ const InventoryMovement = require("../models/InventoryMovement");
 const Invoice = require("../models/Invoice");
 const NotificationDelivery = require("../models/NotificationDelivery");
 const PushDevice = require("../models/PushDevice");
-const redisClient = require("../utils/redisClient");
+const redisCache = require("../utils/redisCache");
 
 // مدة الاحتفاظ بالصالون المحذوف قبل الحذف النهائي
 const RETENTION_DAYS = 30;
@@ -32,7 +32,7 @@ const httpError = (message, statusCode) =>
 
 const clearTenantCache = async (slug) => {
   try {
-    await redisClient.del(`tenant_public_profile:${slug}`);
+    await redisCache.del(`tenant_public_profile:${slug}`);
   } catch {}
 };
 
