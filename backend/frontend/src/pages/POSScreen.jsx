@@ -27,17 +27,25 @@ const writePref = (key, value) => { try { localStorage.setItem(key, value); } ca
 // أخطاء الخادم برسالته، وأخطاء التحقق المحلية برسالتها، وانقطاع الشبكة بالرسالة الافتراضية
 const errorMessage = (error, fallback) => error?.response?.data?.message || (error?.isAxiosError ? '' : error?.message) || fallback;
 
-const Tile = ({ title, price, sub, accent, disabled, onClick }) => (
+// بطاقة خدمة/منتج: الاسم، السعر بخلفية لون الصالون، وشارة بالعدد إن كان في الفاتورة
+const Tile = ({ title, price, sub, accent, disabled, onClick, inCart = 0, icon = null }) => (
     <button
         type="button"
         disabled={disabled}
         onClick={onClick}
-        className="group flex min-h-[112px] flex-col justify-between rounded-xl border border-slate-200 bg-white p-4 text-right shadow-sm transition active:scale-[0.97] active:bg-slate-50 disabled:opacity-40"
+        className={`relative flex min-h-[118px] flex-col justify-between rounded-2xl border-2 bg-white p-4 text-right shadow-sm transition hover:shadow-md active:scale-[0.97] disabled:opacity-40 disabled:hover:shadow-sm ${inCart ? '' : 'border-transparent ring-1 ring-slate-200'}`}
+        style={inCart ? { borderColor: accent } : undefined}
     >
-        <span className="line-clamp-2 text-base font-bold leading-snug text-slate-800">{title}</span>
+        {inCart > 0 && (
+            <span className="absolute -left-2 -top-2 flex h-7 min-w-[28px] items-center justify-center rounded-full px-1.5 font-mono text-sm font-extrabold text-white shadow" style={{ backgroundColor: accent }}>{inCart}</span>
+        )}
+        <span className="flex items-start gap-2">
+            {icon && <span className="mt-0.5 shrink-0 text-slate-300">{icon}</span>}
+            <span className="line-clamp-2 text-base font-extrabold leading-snug text-slate-800">{title}</span>
+        </span>
         <span className="mt-3 flex items-end justify-between gap-2">
             <span className="text-xs font-semibold text-slate-400">{sub}</span>
-            <span className="font-mono text-lg font-extrabold" style={{ color: accent }} dir="ltr">{money(price)}</span>
+            <span className="rounded-lg px-2 py-0.5 font-mono text-base font-extrabold" style={{ color: accent, backgroundColor: `${accent}14` }} dir="ltr">{money(price)}</span>
         </span>
     </button>
 );
@@ -221,6 +229,11 @@ function POSScreen() {
     // كل فاتورة مرتبطة بعميل: الحجز يحدده، وإلا رقم جوال صحيح
     const hasCustomer = Boolean(appointment) || Boolean(normalizeSaudiMobile(customer.phone));
     const itemCount = cart.reduce((sum, line) => sum + line.quantity, 0);
+    const cartCounts = useMemo(() => {
+        const counts = new Map();
+        for (const line of cart) counts.set(line.refId, (counts.get(line.refId) || 0) + line.quantity);
+        return counts;
+    }, [cart]);
 
     const addService = (service) => {
         const barber = activeBarber;
@@ -578,6 +591,7 @@ function POSScreen() {
                         {mode === 'appointments' ? (
                             <TodayBookings
                                 appointments={openAppointments}
+                                barbers={barbers}
                                 loading={loadingAppointments}
                                 activeId={appointment?._id ? String(appointment._id) : ''}
                                 accent={accent}
@@ -591,9 +605,9 @@ function POSScreen() {
                         ) : (
                             <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-4">
                                 {visibleItems.map((item) => (mode === 'services' ? (
-                                    <Tile key={item._id} title={item.name} price={getBarberServicePrice(item, activeBarber)} sub={item.duration ? `${item.duration} د` : item.category || ''} accent={accent} onClick={() => addService(item)} />
+                                    <Tile key={item._id} title={item.name} price={getBarberServicePrice(item, activeBarber)} sub={item.duration ? `${item.duration} دقيقة` : item.category || ''} accent={accent} inCart={cartCounts.get(String(item._id)) || 0} icon={<Scissors size={16} />} onClick={() => addService(item)} />
                                 ) : (
-                                    <Tile key={item._id} title={item.name} price={item.salePrice} sub={Number(item.stockQuantity) > 0 ? `المخزون ${item.stockQuantity}` : 'نفد'} accent={accent} disabled={Number(item.stockQuantity) <= 0} onClick={() => addProduct(item)} />
+                                    <Tile key={item._id} title={item.name} price={item.salePrice} sub={Number(item.stockQuantity) > 0 ? `المخزون ${item.stockQuantity}` : 'نفد'} accent={accent} inCart={cartCounts.get(String(item._id)) || 0} icon={<Package size={16} />} disabled={Number(item.stockQuantity) <= 0} onClick={() => addProduct(item)} />
                                 )))}
                             </div>
                         )}
