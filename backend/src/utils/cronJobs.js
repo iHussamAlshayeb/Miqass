@@ -814,19 +814,29 @@ const schedule = (...args) => {
 };
 
 let isDispatchingMessages = false;
+let queueFailingSince = null;
 /** يرسل ما في طابور رسائل واتساب (إعادة المحاولة، إعادة الإرسال، ووضع الطابور) */
 const dispatchWhatsappQueue = async () => {
   if (isDispatchingMessages || isShuttingDown) return 0;
   isDispatchingMessages = true;
   try {
-    return await dispatchDue({
+    const sent = await dispatchDue({
       postText,
       getCredential: getSendCredential,
       loadTenant: (tenantId) => Tenant.findById(tenantId).select("salonName slug whatsappSettings deletedAt").lean(),
       shouldStop: () => isShuttingDown,
     });
+    if (queueFailingSince) {
+      console.log(`✅ عاد طابور رسائل واتساب للعمل بعد ${Math.round((Date.now() - queueFailingSince) / 1000)} ثانية من الانقطاع.`);
+      queueFailingSince = null;
+    }
+    return sent;
   } catch (error) {
-    console.error("خطأ في طابور رسائل واتساب:", error.message);
+    // سطر واحد عند بداية الانقطاع بدل سطر كل 10 ثوانٍ
+    if (!queueFailingSince) {
+      queueFailingSince = Date.now();
+      console.error("خطأ في طابور رسائل واتساب (ستُعاد المحاولة تلقائياً كل 10 ثوانٍ):", error.message);
+    }
     return 0;
   } finally {
     isDispatchingMessages = false;

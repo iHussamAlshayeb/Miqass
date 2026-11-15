@@ -138,6 +138,11 @@ const deliverText = async (tenant, { type, phone, text, recipientName = "", appo
     } else {
       const accepted = await outbox.deliver({ postText, tenant, credential, type, to, text, recipientName, appointmentId });
       if (!accepted) return false;
+      // في وضع الطابور الخادم لا يرسل؛ الخدمة تكتب سطر "أُرسلت" عند الإرسال الفعلي
+      if (outbox.shouldEnqueue()) {
+        console.log(`📥 [طابور واتساب] ${label}${recipientName ? ` لـ ${recipientName}` : ""} (${tenant?.salonName || "الصالون"}) بانتظار الإرسال من whatsapp-service.`);
+        return true;
+      }
     }
     if (successLog) console.log(successLog);
     return true;

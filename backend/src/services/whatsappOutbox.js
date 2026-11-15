@@ -19,6 +19,11 @@ const shouldEnqueue = () => isQueueMode() && !isWhatsappWorker();
 const shouldRunWhatsappJobs = () => (isQueueMode() ? isWhatsappWorker() : !isWhatsappWorker());
 
 const MINUTE = 60 * 1000;
+const TYPE_LABELS = {
+  confirmation: "رسالة التأكيد", cancellation: "رسالة الإلغاء", reminder: "التذكير", review: "طلب التقييم",
+  loyalty: "رسالة الولاء", retention: "رسالة اشتقنالك", campaign: "رسالة الحملة", access_code: "رمز الدخول",
+  reschedule: "تعديل الموعد",
+};
 const TTL_MINUTES = { access_code: 5, reminder: 180 };
 const DEFAULT_TTL_MINUTES = 24 * 60;
 const RETRY_DELAYS_MINUTES = [1, 5, 15, 30];
@@ -214,6 +219,7 @@ const dispatchDue = async ({ postText, loadTenant, getCredential, limit = 25, pa
       // eslint-disable-next-line no-await-in-loop
       await markSent(record._id, ids);
       sent += 1;
+      console.log(`📤 [واتساب] أُرسلت ${TYPE_LABELS[record.type] || record.type}${record.recipientName ? ` لـ ${record.recipientName}` : ""} (${tenant.salonName || "الصالون"})${record.attempts > 1 ? ` بعد ${record.attempts} محاولات` : ""}${record.resendOf ? " [إعادة إرسال]" : ""}.`);
     } catch (error) {
       // eslint-disable-next-line no-await-in-loop
       await markAttemptFailed(record, error);
