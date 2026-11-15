@@ -115,7 +115,8 @@ const saveServicesInPlace = async (tenantId, services) => {
     keptIds.push(id);
     if (clientKey) keyMap.set(clientKey, id);
   }
-  await Service.deleteMany({ tenantId, _id: { $nin: keptIds } });
+  // الخدمات الموقوفة والمؤرشفة تُدار من صفحة الخدمات ولا تمسها الإعدادات
+  await Service.deleteMany({ tenantId, isActive: true, _id: { $nin: keptIds } });
   return keyMap;
 };
 

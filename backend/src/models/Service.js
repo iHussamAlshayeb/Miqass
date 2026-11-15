@@ -39,6 +39,8 @@ const serviceSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    // حذف لعنصر له سجل مبيعات أو حجوزات: يختفي من كل القوائم ويبقى للتقارير والفواتير القديمة
+    archivedAt: { type: Date, default: null },
   },
   { timestamps: true },
 );

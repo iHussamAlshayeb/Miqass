@@ -1,4 +1,6 @@
+const mongoose = require("mongoose");
 const Product = require("../models/Product");
+const SaleItem = require("../models/SaleItem");
 const InventoryMovement = require("../models/InventoryMovement");
 
 const toMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
@@ -14,11 +16,11 @@ const mapProduct = (product) => ({
 
 const listProducts = async (req, res) => {
   try {
-    const query = { tenantId: req.tenantId };
+    const query = { tenantId: req.tenantId, archivedAt: null };
     if (req.query.includeInactive !== "true") query.isActive = true;
     if (req.query.category) query.category = cleanString(req.query.category);
     if (req.query.q) {
-      const q = cleanString(req.query.q);
+      const q = cleanString(req.query.q).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       query.$or = [
         { name: new RegExp(q, "i") },
         { sku: new RegExp(q, "i") },
@@ -105,8 +107,9 @@ const updateProduct = async (req, res) => {
       return res.status(400).json({ message: "بيانات المنتج غير مكتملة." });
     }
 
+    if (!mongoose.Types.ObjectId.isValid(req.params.productId)) return res.status(404).json({ message: "المنتج غير موجود" });
     const product = await Product.findOneAndUpdate(
-      { _id: req.params.productId, tenantId: req.tenantId },
+      { _id: req.params.productId, tenantId: req.tenantId, archivedAt: null },
       updateData,
       { returnDocument: "after" },
     ).lean();
@@ -127,50 +130,65 @@ const updateProduct = async (req, res) => {
   }
 };
 
+/**
+ * حركة مخزون يدوية:
+ * - purchase: استلام بضاعة (+) مع تكلفة وحدة اختيارية تُحدّث متوسط التكلفة
+ * - adjustment: تعديل بالموجب أو السالب (تالف، هدر...)
+ * - count: جرد، تُرسل الكمية الفعلية ويُحسب الفرق
+ * التحديث ذري حتى لا تتداخل حركتان أو بيع متزامن.
+ */
 const adjustProductStock = async (req, res) => {
   try {
-    const quantity = toQuantity(req.body.quantity);
-    const type = ["purchase", "adjustment"].includes(req.body.type)
-      ? req.body.type
-      : "adjustment";
+    if (!mongoose.Types.ObjectId.isValid(req.params.productId)) return res.status(404).json({ message: "المنتج غير موجود" });
+    const mode = ["purchase", "adjustment", "count"].includes(req.body.type) ? req.body.type : "adjustment";
+    const note = cleanString(req.body.note).slice(0, 200);
 
-    if (!quantity) {
-      return res.status(400).json({ message: "كمية التعديل غير صالحة." });
-    }
-
-    const product = await Product.findOne({
-      _id: req.params.productId,
-      tenantId: req.tenantId,
-    });
-
+    const product = await Product.findOne({ _id: req.params.productId, tenantId: req.tenantId, archivedAt: null }).lean();
     if (!product) return res.status(404).json({ message: "المنتج غير موجود" });
 
-    const balanceAfter = toQuantity(product.stockQuantity + quantity);
-    if (balanceAfter < 0) {
-      return res
-        .status(400)
-        .json({ message: "لا يمكن أن يصبح المخزون أقل من صفر." });
+    let quantity = toQuantity(req.body.quantity);
+    if (mode === "count") {
+      const counted = toQuantity(req.body.countedQuantity);
+      if (req.body.countedQuantity === "" || req.body.countedQuantity === undefined || counted < 0) {
+        return res.status(400).json({ message: "اكتب الكمية الفعلية بعد الجرد." });
+      }
+      quantity = toQuantity(counted - product.stockQuantity);
+      if (!quantity) return res.status(400).json({ message: "الكمية الفعلية مطابقة للمخزون، لا يوجد فرق." });
+    }
+    if (!quantity) return res.status(400).json({ message: "كمية التعديل غير صالحة." });
+    if (mode === "purchase" && quantity < 0) return res.status(400).json({ message: "كمية الاستلام يجب أن تكون موجبة." });
+
+    const set = {};
+    const unitCost = req.body.unitCost === undefined || req.body.unitCost === "" ? null : toMoney(req.body.unitCost);
+    if (unitCost !== null && unitCost < 0) return res.status(400).json({ message: "تكلفة الوحدة غير صالحة." });
+    if (mode === "purchase" && unitCost !== null) {
+      // متوسط مرجّح: الرصيد الحالي بتكلفته القديمة + المستلم بتكلفته الجديدة
+      const currentQty = Math.max(product.stockQuantity, 0);
+      set.costPrice = toMoney((currentQty * product.costPrice + quantity * unitCost) / (currentQty + quantity));
     }
 
-    product.stockQuantity = balanceAfter;
-    if (req.body.costPrice !== undefined) product.costPrice = toMoney(req.body.costPrice);
-    await product.save();
+    const updated = await Product.findOneAndUpdate(
+      { _id: product._id, tenantId: req.tenantId, stockQuantity: { $gte: -quantity } },
+      { $inc: { stockQuantity: quantity }, ...(Object.keys(set).length ? { $set: set } : {}) },
+      { returnDocument: "after" },
+    ).lean();
+    if (!updated) return res.status(400).json({ message: "لا يمكن أن يصبح المخزون أقل من صفر." });
 
     const movement = await InventoryMovement.create({
       tenantId: req.tenantId,
       productId: product._id,
-      type,
+      type: mode === "purchase" ? "purchase" : "adjustment",
       quantity,
-      unitCost: product.costPrice,
-      unitPrice: product.salePrice,
-      balanceAfter,
+      unitCost: unitCost ?? updated.costPrice,
+      unitPrice: updated.salePrice,
+      balanceAfter: toQuantity(updated.stockQuantity),
       referenceType: "Manual",
-      note: cleanString(req.body.note),
+      note: mode === "count" ? (note ? `جرد: ${note}` : "جرد") : note,
     });
 
     res.status(200).json({
-      message: "تم تحديث المخزون بنجاح.",
-      product: mapProduct(product),
+      message: mode === "purchase" ? "تم استلام الكمية." : mode === "count" ? "تم تسجيل الجرد." : "تم تحديث المخزون.",
+      product: mapProduct(updated),
       movement,
     });
   } catch (error) {
@@ -178,10 +196,37 @@ const adjustProductStock = async (req, res) => {
   }
 };
 
+/**
+ * حذف منتج: بدون مبيعات يُحذف نهائياً مع حركاته، وله مبيعات يُؤرشف ليبقى في الفواتير والتقارير.
+ * الأرشفة تحرر رمز المنتج والباركود لإعادة استخدامهما.
+ */
+const deleteProduct = async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.productId)) return res.status(404).json({ message: "المنتج غير موجود" });
+    const product = await Product.findOne({ _id: req.params.productId, tenantId: req.tenantId, archivedAt: null });
+    if (!product) return res.status(404).json({ message: "المنتج غير موجود" });
+    const sold = await SaleItem.exists({ tenantId: req.tenantId, productId: product._id });
+    if (sold) {
+      product.set({ isActive: false, archivedAt: new Date(), sku: "", barcode: "" });
+      await product.save();
+      return res.json({ message: "حُذف المنتج من القوائم، وبقي في الفواتير والتقارير السابقة.", archived: true });
+    }
+    await InventoryMovement.deleteMany({ tenantId: req.tenantId, productId: product._id });
+    await product.deleteOne();
+    return res.json({ message: "حُذف المنتج.", archived: false });
+  } catch (error) {
+    return res.status(500).json({ message: "تعذر حذف المنتج." });
+  }
+};
+
 const listInventoryMovements = async (req, res) => {
   try {
     const query = { tenantId: req.tenantId };
-    if (req.params.productId) query.productId = req.params.productId;
+    if (req.params.productId) {
+      if (!mongoose.Types.ObjectId.isValid(req.params.productId)) return res.status(404).json({ message: "المنتج غير موجود" });
+      query.productId = req.params.productId;
+    }
+    if (["initial", "purchase", "sale", "return", "adjustment"].includes(req.query.type)) query.type = req.query.type;
 
     const movements = await InventoryMovement.find(query)
       .populate("productId", "name sku barcode")
@@ -200,5 +245,6 @@ module.exports = {
   createProduct,
   updateProduct,
   adjustProductStock,
+  deleteProduct,
   listInventoryMovements,
 };

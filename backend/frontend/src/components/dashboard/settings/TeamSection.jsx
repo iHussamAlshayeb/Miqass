@@ -1,9 +1,7 @@
 import {
     CalendarDays,
-    Clock3,
     Plus,
     RotateCcw,
-    Scissors,
     Tags,
     Trash2,
 } from 'lucide-react';
@@ -12,7 +10,7 @@ import { PlanBadge } from './PlanBadge';
 import { WEEKDAY_OPTIONS, LEAVE_TYPE_OPTIONS, formatLeaveDate } from './barberLeaveOptions';
 import { getServiceKey } from '../../../utils/servicePricing';
 
-// 4. قسم قائمة الخدمات والطاقم
+// 4. قسم الطاقم (الخدمات تُدار من الإدارة المالية ← الخدمات)
 const TeamSection = ({
     part = 'all',
     settings,
@@ -23,10 +21,7 @@ const TeamSection = ({
     currentPlan,
     handleAddBarber,
     handleAddBarberLeave,
-    handleAddService,
     handleRemoveBarberLeave,
-    handleRemoveService,
-    handleServiceChange,
     leaveDrafts,
     newBarberName,
     newBarberPin,
@@ -210,7 +205,7 @@ const TeamSection = ({
                             حدّد سعراً مختلفاً لهذا الحلاق، أو اترك الحقل فارغاً ليأخذ السعر الأساسي للخدمة.
                         </p>
                         {pricedServices.length === 0 ? (
-                            <p className="rounded-lg bg-slate-50 px-3 py-3 text-xs font-bold text-slate-500">أضف الخدمات أولاً من صفحة الخدمات.</p>
+                            <p className="rounded-lg bg-slate-50 px-3 py-3 text-xs font-bold text-slate-500">أضف الخدمات أولاً من الإدارة المالية ← الخدمات.</p>
                         ) : (
                             <div className="divide-y divide-slate-100 border border-slate-100 rounded-lg overflow-hidden">
                                 {pricedServices.map((service) => {
@@ -399,51 +394,6 @@ const TeamSection = ({
         </div>
         )}
 
-        {/* قائمة الخدمات */}
-        {part !== 'barbers' && (
-        <div>
-            <div className="flex justify-between items-center mb-4">
-                <div>
-                    <label className="block text-sm font-black text-slate-800">قائمة الخدمات والأسعار</label>
-                    <p className="text-[10px] font-bold text-slate-500 mt-1">لحساب الفاتورة بدقة، قم بإضافة خدماتك بأسعار شاملة الضريبة. ولتحديد سعر مختلف لحلاق معيّن، افتح الحلاق من صفحة الحلاقين.</p>
-                </div>
-                <button type="button" onClick={handleAddService} className="bg-slate-800 text-white px-4 py-2.5 rounded-lg font-black text-xs hover:bg-slate-700 transition-colors shadow-sm flex items-center gap-2">
-                    <span>+</span> خدمة جديدة
-                </button>
-            </div>
-            <div className="space-y-3">
-                {services.length === 0 ? (
-                    <div className="text-center p-8 bg-slate-50 rounded-lg border-2 border-dashed border-slate-200">
-                        <Scissors size={28} className="text-slate-300 mx-auto mb-2" />
-                        <p className="text-slate-500 font-bold text-sm">لم تقم بإضافة خدمات. (الوضع الافتراضي: حجز مقعد فقط)</p>
-                    </div>
-                ) : (
-                    services.map((srv, index) => (
-                        <div key={getServiceKey(srv) || index} className="flex flex-col md:flex-row gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200 items-center hover:border-blue-300 transition-colors">
-                            <div className="w-full md:w-2/5 relative">
-                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-black bg-white w-5 h-5 flex items-center justify-center rounded-full shadow-sm">{index + 1}</span>
-                                <input type="text" required placeholder="اسم الخدمة (مثال: تنظيف بشرة)" value={srv.name} onChange={(e) => handleServiceChange(getServiceKey(srv), 'name', e.target.value)} className="w-full pr-12 pl-4 py-3.5 rounded-lg border-none outline-none focus:ring-2 focus:ring-blue-100 text-sm font-black text-slate-800 shadow-sm" />
-                            </div>
-                            <div className="w-full md:w-1/4 relative">
-                                <input type="number" required placeholder="السعر" min="0" value={srv.price} onChange={(e) => handleServiceChange(getServiceKey(srv), 'price', Number(e.target.value))} className="w-full px-4 py-3.5 rounded-lg border-none outline-none focus:ring-2 focus:ring-blue-100 text-sm font-black text-slate-800 shadow-sm" dir="ltr" />
-                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">ر.س</span>
-                            </div>
-                            <div className="w-full md:w-1/4 relative">
-                                <select value={srv.duration} onChange={(e) => handleServiceChange(getServiceKey(srv), 'duration', Number(e.target.value))} className="w-full pl-10 pr-4 py-3.5 rounded-lg border-none outline-none focus:ring-2 focus:ring-blue-100 text-sm font-black text-slate-800 appearance-none shadow-sm cursor-pointer">
-                                    <option value={15}>15 دقيقة</option>
-                                    <option value={30}>30 دقيقة</option>
-                                    <option value={45}>45 دقيقة</option>
-                                    <option value={60}>ساعة</option>
-                                </select>
-                                <Clock3 size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                            </div>
-                            <button type="button" onClick={() => handleRemoveService(getServiceKey(srv))} className="w-full md:w-auto p-3.5 bg-red-50 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center font-bold">حذف</button>
-                        </div>
-                    ))
-                )}
-            </div>
-        </div>
-        )}
         {editingBarber && (
             <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/40" role="dialog" aria-modal="true" aria-labelledby="barber-editor-title" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
                 <div className="flex h-full w-full max-w-xl flex-col bg-white shadow-2xl">

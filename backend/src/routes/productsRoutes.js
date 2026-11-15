@@ -7,6 +7,7 @@ const {
   createProduct,
   updateProduct,
   adjustProductStock,
+  deleteProduct,
   listInventoryMovements,
 } = require("../controllers/productsController");
 
@@ -16,6 +17,7 @@ router.get("/", listProducts);
 router.post("/", createProduct);
 router.get("/inventory/movements", listInventoryMovements);
 router.put("/:productId", updateProduct);
+router.delete("/:productId", deleteProduct);
 router.post("/:productId/stock", adjustProductStock);
 router.get("/:productId/movements", listInventoryMovements);
 

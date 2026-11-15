@@ -27,6 +27,8 @@ import StatisticsTab from '../components/dashboard/StatisticsTab';
 import PushNotificationPrompt from '../components/dashboard/PushNotificationPrompt';
 import SalesTab from '../components/dashboard/SalesTab';
 import ProductsTab from '../components/dashboard/ProductsTab';
+import ServicesTab from '../components/dashboard/ServicesTab';
+import InventoryTab from '../components/dashboard/InventoryTab';
 import ExpensesTab from '../components/dashboard/ExpensesTab';
 
 const pageMeta = {
@@ -46,9 +48,17 @@ const pageMeta = {
         title: 'سجل المبيعات',
         description: 'كل فواتير البيع: عرضها وطباعتها، تسديد المتبقي، والإرسال إلى Zakaty.',
     },
+    services: {
+        title: 'الخدمات',
+        description: 'الخدمات وأسعارها ومدتها كما تظهر في صفحة الحجز ونقطة البيع.',
+    },
     products: {
-        title: 'المنتجات والمخزون',
-        description: 'إدارة المنتجات، الأسعار، وحركات المخزون.',
+        title: 'المنتجات',
+        description: 'المنتجات وأسعار البيع والتكلفة وهامش الربح.',
+    },
+    inventory: {
+        title: 'المخزون',
+        description: 'الكميات وقيمتها، استلام البضاعة والجرد، وسجل كل حركة.',
     },
     expenses: {
         title: 'المصروفات',
@@ -68,7 +78,7 @@ const pageMeta = {
     },
     settings: {
         title: 'إعدادات النظام',
-        description: 'أوقات العمل، الخدمات، الدفع، والهوية البصرية.',
+        description: 'أوقات العمل، الحلاقون، الدفع، والهوية البصرية.',
     },
     billing: {
         title: 'الاشتراك',
@@ -124,6 +134,8 @@ const DashboardScreen = () => {
 
     const [barbers, setBarbers] = useState([]);
     const [services, setServices] = useState([]);
+    // صفحة الخدمات تُحدّث النسخة المستخدمة في أسعار الحلاقين بالإعدادات
+    const handleServicesChanged = useCallback((list) => setServices(list), []);
     const [taxNumber, setTaxNumber] = useState('');
 
     const [promoBanner, setPromoBanner] = useState(null);
@@ -243,7 +255,7 @@ const DashboardScreen = () => {
         setIsSavingSettings(true);
         try {
             await API.put('/appointments/settings', {
-                ...settings, salonName, ownerName, ownerPhone, barbers, services, taxNumber, bio, socialLinks,
+                ...settings, salonName, ownerName, ownerPhone, barbers, taxNumber, bio, socialLinks,
                 branding: { logoUrl, primaryColor: themeColors.primaryColor, secondaryColor: themeColors.secondaryColor },
                 paymentSettings
             });
@@ -476,7 +488,9 @@ const DashboardScreen = () => {
                         {activeTab === 'appointments' && <DailyTab selectedDate={selectedDate} setSelectedDate={setSelectedDate} isLoading={isLoading} appointments={appointments} handleStatusChange={handleStatusChange} handleSingleWhatsApp={handleSingleWhatsApp} whatsappSettings={whatsappSettings} reviewEnabled={Boolean(settings?.enableGoogleReviews && settings?.googleReviewLink)} refreshAppointments={fetchAppointments} onOpenCheckout={openAppointmentCheckout} />}
                         {activeTab === 'all' && <AllTab isLoading={isLoading} allAppointments={allAppointments} exportToExcel={exportToExcel} handleStatusChange={handleStatusChange} />}
                         {activeTab === 'sales' && <SalesTab />}
-                        {activeTab === 'products' && <ProductsTab />}
+                        {activeTab === 'services' && <ServicesTab onChanged={handleServicesChanged} />}
+                        {activeTab === 'products' && <ProductsTab onOpenInventory={() => handleSetActiveTab('inventory')} />}
+                        {activeTab === 'inventory' && <InventoryTab />}
                         {activeTab === 'expenses' && <ExpensesTab />}
                         {activeTab === 'reviews' && <ReviewsTab reviews={reviews} isLoading={isLoading} />}
                         {activeTab === 'customers' && <CustomersTab />}
@@ -499,7 +513,7 @@ const DashboardScreen = () => {
                                 newClosedDate={newClosedDate} setNewClosedDate={setNewClosedDate}
                                 barbers={barbers} setBarbers={setBarbers}
                                 subscription={subscription}
-                                services={services} setServices={setServices}
+                                services={services}
                                 setTaxNumber={setTaxNumber}
                                 bio={bio} setBio={setBio}
                                 socialLinks={socialLinks} setSocialLinks={setSocialLinks}

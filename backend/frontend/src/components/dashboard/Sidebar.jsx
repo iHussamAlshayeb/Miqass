@@ -14,11 +14,13 @@ import {
     Package,
     Receipt,
     ScanBarcode,
+    Scissors,
     Settings,
     Smartphone,
     Star,
     UsersRound,
     WalletCards,
+    Warehouse,
     X,
 } from 'lucide-react';
 import UpgradeModal from './UpgradeModal';
@@ -37,7 +39,9 @@ const navSections = [
         items: [
             { id: 'pos', label: 'نقطة البيع', icon: ScanBarcode, href: '/pos' },
             { id: 'sales', label: 'سجل المبيعات', icon: Receipt },
-            { id: 'products', label: 'المنتجات والمخزون', icon: Package },
+            { id: 'services', label: 'الخدمات', icon: Scissors },
+            { id: 'products', label: 'المنتجات', icon: Package },
+            { id: 'inventory', label: 'المخزون', icon: Warehouse },
             { id: 'expenses', label: 'المصروفات', icon: WalletCards },
         ],
     },

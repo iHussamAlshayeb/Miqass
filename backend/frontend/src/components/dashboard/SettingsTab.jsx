@@ -14,14 +14,12 @@ import {
     Receipt,
     RotateCcw,
     Save,
-    Scissors,
     Send,
     Store,
     Tablet,
     Users,
 } from 'lucide-react';
 import API from '../../services/api';
-import { getServiceKey } from '../../utils/servicePricing';
 import UpgradeModal from './UpgradeModal';
 
 import ZakatySection from './settings/ZakatySection';
@@ -48,10 +46,9 @@ const SETTINGS_GROUPS = [
         ],
     },
     {
-        label: 'الفريق والخدمات',
+        label: 'الفريق',
         pages: [
-            { id: 'barbers', label: 'الحلاقون', icon: Users, description: 'الحلاقون وألوانهم في صفحة الحجز ورموز دخولهم وإجازاتهم.' },
-            { id: 'services', label: 'الخدمات', icon: Scissors, description: 'الخدمات وأسعارها شاملة الضريبة ومدة كل خدمة.' },
+            { id: 'barbers', label: 'الحلاقون', icon: Users, description: 'الحلاقون وألوانهم في صفحة الحجز ورموز دخولهم وإجازاتهم وأسعارهم الخاصة. الخدمات نفسها تُدار من الإدارة المالية ← الخدمات.' },
         ],
     },
     {
@@ -88,7 +85,7 @@ const SETTINGS_GROUPS = [
 const SETTINGS_PAGES = SETTINGS_GROUPS.flatMap((group) => group.pages);
 
 // الصفحات التي تُحفظ عبر شريط الحفظ (حقول نموذج)، والبقية إجراءات فورية (ربط وفك ربط)
-const FORM_PAGES = new Set(['profile', 'hours', 'barbers', 'services', 'messages', 'deposit']);
+const FORM_PAGES = new Set(['profile', 'hours', 'barbers', 'messages', 'deposit']);
 
 const PageCard = ({ title, children }) => (
     <section className="rounded-lg border border-slate-100 bg-white p-5 shadow-sm md:p-7">
@@ -108,7 +105,7 @@ const SettingsTab = ({
     newClosedDate, setNewClosedDate,
     barbers, setBarbers,
     subscription,
-    services, setServices,
+    services,
     setTaxNumber,
     bio, setBio,
     socialLinks, setSocialLinks,
@@ -138,7 +135,7 @@ const SettingsTab = ({
     const activePageInfo = SETTINGS_PAGES.find((page) => page.id === activePage) || SETTINGS_PAGES[0];
 
     // ─── شريط الحفظ: يظهر فقط عند وجود تغييرات غير محفوظة ───
-    const formState = { salonName, ownerName, ownerPhone, logoUrl, settings, bio, socialLinks, themeColors, barbers, services, paymentSettings };
+    const formState = { salonName, ownerName, ownerPhone, logoUrl, settings, bio, socialLinks, themeColors, barbers, paymentSettings };
     const [savedForm, setSavedForm] = useState(() => formState);
     const [savedTemplates, setSavedTemplates] = useState(() => whatsappTemplates || {});
     const [saveFeedback, setSaveFeedback] = useState(null);
@@ -156,7 +153,6 @@ const SettingsTab = ({
         setSocialLinks(savedForm.socialLinks);
         setThemeColors(savedForm.themeColors);
         setBarbers(savedForm.barbers);
-        setServices(savedForm.services);
         setPaymentSettings(savedForm.paymentSettings);
         setWhatsappTemplates(savedTemplates);
         setTemplateError('');
@@ -175,7 +171,6 @@ const SettingsTab = ({
             setSavedForm({
                 ...formState,
                 barbers: result.barbers || formState.barbers,
-                services: result.services || formState.services,
                 paymentSettings: result.paymentSettings || formState.paymentSettings,
             });
         }
@@ -323,10 +318,7 @@ const SettingsTab = ({
         reader.readAsDataURL(file);
     };
 
-    const handleAddService = () => setServices([...services, { id: Date.now().toString(), name: '', price: '', duration: 30 }]);
     // المفتاح الثابت للخدمة: معرفها المحفوظ أو المؤقت للخدمة الجديدة
-    const handleServiceChange = (key, field, value) => setServices(services.map(srv => getServiceKey(srv) === key ? { ...srv, [field]: value } : srv));
-    const handleRemoveService = (key) => setServices(services.filter(srv => getServiceKey(srv) !== key));
 
     const handleAddBarber = () => {
         const val = newBarberName.trim();
@@ -504,7 +496,7 @@ const SettingsTab = ({
                             />
                         </div>
 
-                        {['barbers', 'services'].map((part) => (
+                        {['barbers'].map((part) => (
                             <div key={part} data-settings-page={part} hidden={pageHidden(part)}>
                                 <TeamSection
                                     part={part}
@@ -516,10 +508,7 @@ const SettingsTab = ({
                                     currentPlan={currentPlan}
                                     handleAddBarber={handleAddBarber}
                                     handleAddBarberLeave={handleAddBarberLeave}
-                                    handleAddService={handleAddService}
                                     handleRemoveBarberLeave={handleRemoveBarberLeave}
-                                    handleRemoveService={handleRemoveService}
-                                    handleServiceChange={handleServiceChange}
                                     leaveDrafts={leaveDrafts}
                                     newBarberName={newBarberName}
                                     newBarberPin={newBarberPin}

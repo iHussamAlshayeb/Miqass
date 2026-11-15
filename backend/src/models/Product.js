@@ -19,6 +19,8 @@ const productSchema = new mongoose.Schema(
     lowStockThreshold: { type: Number, default: 3, min: 0 },
 
     isActive: { type: Boolean, default: true },
+    // حذف لمنتج له مبيعات أو حركة مخزون: يختفي من القوائم ويبقى للتقارير والفواتير القديمة
+    archivedAt: { type: Date, default: null },
   },
   { timestamps: true },
 );

@@ -56,6 +56,7 @@ app.use("/api/appointments", require("./routes/appointmentRoutes"));
 app.use("/api/sales", require("./routes/salesRoutes"));
 app.use("/api/pos", require("./routes/posRoutes"));
 app.use("/api/products", require("./routes/productsRoutes"));
+app.use("/api/services", require("./routes/servicesRoutes"));
 app.use("/api/expenses", require("./routes/expensesRoutes"));
 app.use("/api/auth", require("./routes/authRoutes"));
 app.use("/api/admin", require("./routes/superAdminRoutes"));
