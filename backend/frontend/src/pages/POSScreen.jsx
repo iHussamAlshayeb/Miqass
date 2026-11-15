@@ -8,6 +8,7 @@ import posApi, { endCashierSession, forgetDevice, hasPosSession, isCashierSessio
 import CashierLogin from '../components/pos/CashierLogin';
 import TodayBookings from '../components/pos/TodayBookings';
 import ShiftPanel from '../components/pos/ShiftPanel';
+import WalkInModal from '../components/pos/WalkInModal';
 import { getBarberServicePrice } from '../utils/servicePricing';
 import { priceCart, money } from '../utils/posPricing';
 import OpenShiftGate from '../components/pos/OpenShiftGate';
@@ -71,6 +72,7 @@ function POSScreen() {
     // تعديل خدمات الحجز: مفتاح البند المراد تغييره، أو 'add' لإضافة خدمة للحجز
     const [swapTarget, setSwapTarget] = useState(null);
     const [swapSearch, setSwapSearch] = useState('');
+    const [showWalkIn, setShowWalkIn] = useState(false);
     const [paying, setPaying] = useState(false);
     const [closing, setClosing] = useState(false);
     const [completed, setCompleted] = useState(null);
@@ -539,9 +541,14 @@ function POSScreen() {
                                 {search && <button type="button" onClick={() => setSearch('')} className="p-1 text-slate-400" aria-label="مسح"><X size={18} /></button>}
                             </label>}
                             {mode === 'appointments' && (
-                                <button type="button" onClick={loadOpenAppointments} className="mr-auto flex h-[52px] items-center gap-2 rounded-xl border border-slate-200 px-4 font-bold text-slate-600">
-                                    <RefreshCw size={18} className={loadingAppointments ? 'animate-spin' : ''} /> تحديث
-                                </button>
+                                <>
+                                    <button type="button" onClick={() => setShowWalkIn(true)} className="mr-auto flex h-[52px] items-center gap-2 rounded-xl px-5 font-extrabold text-white shadow-sm" style={{ backgroundColor: accent }}>
+                                        <Plus size={20} /> حلاقة الآن
+                                    </button>
+                                    <button type="button" onClick={loadOpenAppointments} className="flex h-[52px] items-center gap-2 rounded-xl border border-slate-200 px-4 font-bold text-slate-600" aria-label="تحديث">
+                                        <RefreshCw size={18} className={loadingAppointments ? 'animate-spin' : ''} /> <span className="hidden lg:inline">تحديث</span>
+                                    </button>
+                                </>
                             )}
                         </div>
                         {mode === 'services' && barbers.length > 0 && (
@@ -723,6 +730,20 @@ function POSScreen() {
                     </div>
                 </aside>
             </div>
+
+            {showWalkIn && (
+                <WalkInModal
+                    catalog={catalog}
+                    accent={accent}
+                    onClose={() => setShowWalkIn(false)}
+                    onCreated={(created, collect) => {
+                        setShowWalkIn(false);
+                        setToast(`أُضيف ${created.childName} لطابور ${created.barberName}.`);
+                        loadOpenAppointments();
+                        if (collect) pickAppointment(created);
+                    }}
+                />
+            )}
 
             {swapTarget && (
                 <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/60 p-4 sm:items-center" onClick={() => setSwapTarget(null)}>

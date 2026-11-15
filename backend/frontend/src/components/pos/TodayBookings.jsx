@@ -103,7 +103,7 @@ const TodayBookings = ({ appointments, loading, activeId, accent, onCollect, onR
                                     {item.status === 'Booked' && (
                                         <>
                                             <Action icon={<CheckCheck size={16} />} label="إتمام" disabled={busy} onClick={() => setStatus(item, 'Completed', {}, 'تم إتمام الموعد.')} />
-                                            <Action icon={<BellRing size={16} />} label="تذكير" disabled={busy || !item.customerPhone} onClick={() => run(item, () => posApi.post(`/pos/appointments/${item._id}/reminder`), 'تم إرسال التذكير.')} />
+                                            {!item.isWalkIn && <Action icon={<BellRing size={16} />} label="تذكير" disabled={busy || !item.customerPhone} onClick={() => run(item, () => posApi.post(`/pos/appointments/${item._id}/reminder`), 'تم إرسال التذكير.')} />}
                                         </>
                                     )}
                                     {item.isPaid && item.saleId && <Action icon={<Printer size={16} />} label="الإيصال" disabled={busy} onClick={() => onReceipt(item.saleId)} />}

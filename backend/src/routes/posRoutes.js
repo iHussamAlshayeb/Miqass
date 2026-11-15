@@ -15,6 +15,7 @@ const {
   listTodayAppointments,
   updateAppointmentStatusFromPos,
   updateAppointmentServicesFromPos,
+  createWalkInFromPos,
   sendAppointmentReminder,
   listShiftSales,
   listShiftExpenses,
@@ -88,6 +89,8 @@ router.get("/appointments/:appointmentId", getCheckoutAppointment);
 router.put("/appointments/:appointmentId/status", updateAppointmentStatusFromPos);
 // العميل غيّر طلبه: تعديل خدمات الحجز قبل التحصيل
 router.put("/appointments/:appointmentId/services", updateAppointmentServicesFromPos);
+// حلاقة الآن: عميل حاضر يدخل طابور الحلاق (كشك مصغّر)
+router.post("/walk-ins", createWalkInFromPos);
 router.post("/appointments/:appointmentId/reminder", sendAppointmentReminder);
 router.post("/sales", createSale);
 router.get("/sales/:saleId/invoice", getSaleInvoice);

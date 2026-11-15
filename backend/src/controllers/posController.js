@@ -8,7 +8,12 @@ const CashShift = require("../models/CashShift");
 const Customer = require("../models/Customer");
 const Appointment = require("../models/Appointment");
 const Sale = require("../models/Sale");
-const { formatKsaDate } = require("./booking/helpers");
+const {
+  formatKsaDate, formatWalkInTimeSlot, getKsaNow, WALK_IN_BARBER_NAME, BOOKING_SOURCE_KIOSK_WALK_IN,
+} = require("./booking/helpers");
+const { isBarberOnLeave } = require("../utils/barberLeave");
+const { normalizeSaudiMobile } = require("../utils/saudiMobile");
+const { sendAdminNotification } = require("../utils/onesignal");
 const { applyBarberServicePrices } = require("../utils/servicePricing");
 const { publicLogoUrl } = require("../utils/logoImage");
 const Cashier = require("../models/Cashier");
@@ -196,7 +201,7 @@ const getCheckoutAppointment = async (req, res) => {
         childName: appointment.childName,
         customerPhone: appointment.customerId?.phone || "",
         date: appointment.date,
-        timeSlot: appointment.timeSlot,
+        timeSlot: displayTimeSlot(appointment.timeSlot),
         barberId: appointment.barberId ? String(appointment.barberId) : "",
         barberName: appointment.barberName || "",
         status: appointment.status,
@@ -227,7 +232,7 @@ const listTodayAppointments = async (req, res) => {
         _id: appointment._id,
         childName: appointment.childName,
         customerPhone: appointment.customerId?.phone || "",
-        timeSlot: appointment.timeSlot,
+        timeSlot: displayTimeSlot(appointment.timeSlot),
         barberName: appointment.barberName || "",
         status: appointment.status,
         isWalkIn: Boolean(appointment.isWalkIn || appointment.bookingSource === "kiosk_walk_in"),
@@ -328,6 +333,103 @@ const updateAppointmentServicesFromPos = async (req, res) => {
     });
   } catch (error) {
     return sendError(res, error, "تعذر تعديل خدمات الحجز.");
+  }
+};
+
+const WALK_IN_FREE_MONTHLY_LIMIT = 150;
+/** وقت الحلاقة المباشرة يُخزن بالثواني ورمز مميز؛ نعرض الساعة والدقيقة فقط */
+const displayTimeSlot = (timeSlot) => String(timeSlot || "").slice(0, 5);
+
+/**
+ * حلاقة الآن من نقطة البيع (كشك مصغّر للكاشير): عميل حاضر يدخل طابور الحلاق فوراً.
+ * نفس ما يسجله الكشك (kiosk_walk_in)، مع إمكانية تحديد الخدمات مسبقاً.
+ */
+const createWalkInFromPos = async (req, res) => {
+  try {
+    const phone = normalizeSaudiMobile(req.body?.phone);
+    const name = String(req.body?.name || "").trim().slice(0, 60);
+    const barberId = req.body?.barberId ? String(req.body.barberId) : "";
+    const serviceIds = Array.isArray(req.body?.serviceIds) ? req.body.serviceIds.map(String) : [];
+    if (!phone) return res.status(400).json({ message: "اكتب رقم جوال سعودي صحيح (05xxxxxxxx)." });
+    if (!name) return res.status(400).json({ message: "اكتب اسم العميل." });
+    if ((barberId && !mongoose.Types.ObjectId.isValid(barberId)) || serviceIds.length > MAX_BOOKED_SERVICES
+      || serviceIds.some((id) => !mongoose.Types.ObjectId.isValid(id))) {
+      return res.status(400).json({ message: "بيانات غير صالحة." });
+    }
+
+    const tenant = await Tenant.findById(req.tenantId).select("subscription deletedAt").lean();
+    if (!tenant || tenant.deletedAt || tenant.subscription?.status !== "Active") {
+      return res.status(403).json({ message: "الاشتراك غير فعّال؛ لا يمكن تسجيل حجوزات جديدة." });
+    }
+    if (tenant.subscription?.plan === "Free") {
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
+      const count = await Appointment.countDocuments({ tenantId: tenant._id, createdAt: { $gte: startOfMonth } });
+      if (count >= WALK_IN_FREE_MONTHLY_LIMIT) {
+        return res.status(403).json({ message: "وصل الصالون للحد الأقصى المجاني من الحجوزات لهذا الشهر.", limitReached: true });
+      }
+    }
+
+    const today = formatKsaDate();
+    let barber = null;
+    if (barberId) {
+      barber = await Barber.findOne({ _id: barberId, tenantId: tenant._id, isActive: { $ne: false } }).select("name leaves servicePrices").lean();
+      if (!barber) return res.status(400).json({ message: "الحلاق المختار غير متاح." });
+      if (isBarberOnLeave(barber, today)) return res.status(409).json({ message: `${barber.name} في إجازة اليوم.` });
+    }
+
+    let selectedServices = [];
+    if (serviceIds.length) {
+      const services = await Service.find({ _id: { $in: [...new Set(serviceIds)] }, tenantId: tenant._id, isActive: true }).select("name price duration").lean();
+      const byId = new Map(services.map((service) => [String(service._id), service]));
+      if (serviceIds.some((id) => !byId.has(id))) return res.status(400).json({ message: "إحدى الخدمات غير متاحة." });
+      selectedServices = applyBarberServicePrices(serviceIds.map((id) => {
+        const service = byId.get(id);
+        return { serviceId: service._id, name: service.name, price: roundMoney(service.price), duration: Number(service.duration || 0) };
+      }), barber).map((service) => ({ ...service, price: roundMoney(service.price) }));
+    }
+
+    let customer = await Customer.findOne({ tenantId: tenant._id, phone });
+    if (!customer) {
+      customer = await Customer.create({ tenantId: tenant._id, phone, children: [name] });
+    } else if (!(customer.children || []).includes(name)) {
+      await Customer.updateOne({ _id: customer._id }, { $push: { children: name } });
+    }
+
+    const { invoiceCounter } = await Tenant.findByIdAndUpdate(
+      tenant._id,
+      { $inc: { invoiceCounter: 1 } },
+      { returnDocument: "after", select: "invoiceCounter" },
+    ).lean();
+
+    const appointment = await Appointment.create({
+      tenantId: tenant._id,
+      customerId: customer._id,
+      barberId: barber?._id || null,
+      barberName: barber?.name || WALK_IN_BARBER_NAME,
+      date: today,
+      timeSlot: formatWalkInTimeSlot(getKsaNow()),
+      childName: name,
+      bookingSource: BOOKING_SOURCE_KIOSK_WALK_IN,
+      isWalkIn: true,
+      selectedServices,
+      totalPrice: roundMoney(selectedServices.reduce((sum, service) => sum + service.price, 0)),
+      totalDuration: selectedServices.reduce((sum, service) => sum + (service.duration || 0), 0),
+      invoiceNumber: `INV-${invoiceCounter}`,
+      status: "Booked",
+      payment: { status: "Not_Required", amount: 0 },
+    });
+
+    sendAdminNotification(name, today, displayTimeSlot(appointment.timeSlot), barber?.name || WALK_IN_BARBER_NAME, tenant._id, {
+      dedupeKey: `appointments:${appointment._id}`,
+    }).catch(() => {});
+
+    return res.status(201).json({
+      appointment: { _id: appointment._id, childName: name, barberName: appointment.barberName, timeSlot: displayTimeSlot(appointment.timeSlot) },
+    });
+  } catch (error) {
+    return sendError(res, error, "تعذر تسجيل العميل.");
   }
 };
 
@@ -725,5 +827,5 @@ const deleteCashier = async (req, res) => {
 };
 
 module.exports = {
-  listTodayAppointments, updateAppointmentStatusFromPos, updateAppointmentServicesFromPos, sendAppointmentReminder, listShiftSales, listShiftExpenses,
+  listTodayAppointments, updateAppointmentStatusFromPos, updateAppointmentServicesFromPos, createWalkInFromPos, sendAppointmentReminder, listShiftSales, listShiftExpenses,
   createDrawerExpense, posLogin, posDeviceStatus, getSetupStatus, dismissSetupGuide, activateThisDevice, createActivationCode, activateWithCode, listDevices, revokeDevice, posMe, listCashiers, createCashier, updateCashier, deleteCashier, getCatalog, getCurrentShift, postOpenShift, postCloseShift, listShifts, getShift, searchCustomers, getCheckoutAppointment };
