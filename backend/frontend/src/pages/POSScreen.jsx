@@ -9,12 +9,13 @@ import CashierLogin from '../components/pos/CashierLogin';
 import TodayBookings from '../components/pos/TodayBookings';
 import ShiftPanel from '../components/pos/ShiftPanel';
 import WalkInModal from '../components/pos/WalkInModal';
+import RefundModal from '../components/pos/RefundModal';
 import { getBarberServicePrice } from '../utils/servicePricing';
 import { priceCart, money } from '../utils/posPricing';
 import OpenShiftGate from '../components/pos/OpenShiftGate';
 import PaymentModal from '../components/pos/PaymentModal';
 import CloseShiftModal from '../components/pos/CloseShiftModal';
-import { methodLabel, printShiftReport, isAwaitingPayment } from '../components/pos/posShared';
+import { methodLabel, printShiftReport, isAwaitingPayment, refundReceiptToInvoice } from '../components/pos/posShared';
 import DiscountSheet from '../components/pos/DiscountSheet';
 import InvoiceModal from '../components/dashboard/InvoiceModal';
 import CustomerLookup from '../components/pos/CustomerLookup';
@@ -81,6 +82,8 @@ function POSScreen() {
     const [swapTarget, setSwapTarget] = useState(null);
     const [swapSearch, setSwapSearch] = useState('');
     const [showWalkIn, setShowWalkIn] = useState(false);
+    const [refundSaleId, setRefundSaleId] = useState(null);
+    const [shiftReload, setShiftReload] = useState(0);
     const [paying, setPaying] = useState(false);
     const [closing, setClosing] = useState(false);
     const [completed, setCompleted] = useState(null);
@@ -745,6 +748,24 @@ function POSScreen() {
                 </aside>
             </div>
 
+            {refundSaleId && (
+                <RefundModal
+                    saleId={refundSaleId}
+                    onClose={() => setRefundSaleId(null)}
+                    onDone={async (refund) => {
+                        setRefundSaleId(null);
+                        setToast(`تم الاسترجاع ${refund.refundNumber}: ${money(refund.totalAmount)} ر.س ${methodLabel(refund.method)}.`);
+                        setShiftReload((value) => value + 1);
+                        posApi.get('/pos/shift').then((res) => { if (res.data.shift) setShift(res.data.shift); }).catch(() => {});
+                        loadOpenAppointments();
+                        try {
+                            const res = await posApi.get(`/pos/refunds/${refund._id}/receipt`);
+                            setInvoice(refundReceiptToInvoice(res.data.receipt));
+                        } catch { /* الإيصال يمكن طباعته لاحقاً من لوحة التحكم */ }
+                    }}
+                />
+            )}
+
             {showWalkIn && (
                 <WalkInModal
                     catalog={catalog}
@@ -836,6 +857,8 @@ function POSScreen() {
                 <ShiftPanel
                     onClose={() => setShowShiftPanel(false)}
                     onReceipt={openInvoice}
+                    onRefund={setRefundSaleId}
+                    reloadKey={shiftReload}
                     onChanged={() => { posApi.get('/pos/shift').then((res) => { if (res.data.shift) setShift(res.data.shift); }).catch(() => {}); loadOpenAppointments(); }}
                     onToast={setToast}
                 />

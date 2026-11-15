@@ -49,9 +49,15 @@ const CloseShiftModal = ({ shift, salonName, onClose, onConfirm, busy, error }) 
                     {s.unpaidCount > 0 && (
                         <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800">{s.unpaidCount} فاتورة غير مكتملة الدفع في هذه الوردية.</p>
                     )}
-                    <div className={`grid gap-3 ${s.cashExpenses > 0 ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                    {s.refundsTotal > 0 && (
+                        <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm font-bold text-rose-800">
+                            مرتجعات الوردية: {s.refundsCount} إشعار بإجمالي {money(s.refundsTotal)} ر.س{s.cashRefunds > 0 ? `، منها ${money(s.cashRefunds)} نقداً من الدرج` : ''}.
+                        </p>
+                    )}
+                    <div className={`grid gap-3 ${[s.cashExpenses > 0, s.cashRefunds > 0].filter(Boolean).length === 2 ? 'grid-cols-2 sm:grid-cols-4' : s.cashExpenses > 0 || s.cashRefunds > 0 ? 'grid-cols-3' : 'grid-cols-2'}`}>
                         <Stat label="النقد الافتتاحي" value={money(shift?.openingCash)} />
                         {s.cashExpenses > 0 && <Stat label={`مصروفات من الصندوق (${s.cashExpensesCount})`} value={`-${money(s.cashExpenses)}`} />}
+                        {s.cashRefunds > 0 && <Stat label="مسترجع نقداً" value={`-${money(s.cashRefunds)}`} />}
                         <Stat label="المتوقع في الدرج" value={money(expected)} tone="dark" />
                     </div>
                 </div>

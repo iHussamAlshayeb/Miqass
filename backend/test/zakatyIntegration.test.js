@@ -5,6 +5,7 @@ const {
   validateZakatyConfig,
   prepareZakatyProvisioning,
   prepareZakatyInvoice,
+  prepareZakatyCreditNote,
 } = require('../src/services/zakatyIntegration');
 
 const tenant = {
@@ -90,4 +91,26 @@ test('an appointment sale cannot enter Zakaty before legacy invoice reconciliati
   });
   assert.equal(result.ready, false);
   assert.ok(result.issues.some((issue) => issue.includes('المزدوج')));
+});
+
+test('a refund becomes a credit note linked to the accepted original invoice', () => {
+  const refund = {
+    _id: '507f1f77bcf86cd799439099', refundNumber: 'RF-7', totalAmount: 3, reason: 'إرجاع منتج',
+    createdAt: new Date('2026-10-05T10:00:00.000Z'),
+    items: [{ name: 'منتج', quantity: 1, unitPrice: 3, totalAmount: 3, discountAmount: 0, vatRate: 0.15 }],
+  };
+  const accepted = { ...sale, zakaty: { status: 'Accepted' } };
+  const result = prepareZakatyCreditNote({ tenant, sale: accepted, refund, baseUrl: 'https://zakat.example' });
+  assert.equal(result.ready, true, result.issues.join(' | '));
+  assert.equal(result.payload.documentType, 'credit_note');
+  assert.equal(result.payload.invoiceNumber, 'RF-7');
+  assert.deepEqual(result.payload.billingReference, { invoiceNumber: 'POS-120', issueDate: '2026-10-04', reason: 'إرجاع منتج' });
+  assert.equal(result.payload.externalInvoiceId, `miqass:${tenant._id}:refund:${refund._id}`);
+  assert.equal(result.payload.idempotencyKey, result.payload.externalInvoiceId);
+  assert.equal(result.payload.items.length, 1);
+  assert.equal(result.payload.issueDate, '2026-10-05');
+
+  const notYet = prepareZakatyCreditNote({ tenant, sale: { ...sale, zakaty: { status: 'NotSubmitted' } }, refund, baseUrl: 'https://zakat.example' });
+  assert.equal(notYet.ready, false);
+  assert.match(notYet.issues.join(' '), /أرسل الفاتورة الأصلية POS-120/);
 });

@@ -138,3 +138,99 @@ const submitSaleToZakaty = (req, res) => processZakatySale(req, res, true);
 const reconcileZakatySale = (req, res) => processZakatySale(req, res, false);
 
 module.exports = { getZakatySaleStatus, submitSaleToZakaty, reconcileZakatySale };
+
+// ===== إشعارات الاسترجاع (credit notes) =====
+const SaleRefund = require('../models/SaleRefund');
+const { prepareZakatyCreditNote } = require('../services/zakatyIntegration');
+
+const releaseRefundLock = async (refundId, tenantId, lockOwner, changes) => {
+  const updates = Object.fromEntries(Object.entries(changes).map(([key, value]) => [`zakaty.${key}`, value]));
+  const refund = await SaleRefund.findOneAndUpdate(
+    { _id: refundId, tenantId, 'zakaty.lockOwner': lockOwner },
+    { $set: updates, $unset: { 'zakaty.lockOwner': '', 'zakaty.lockExpiresAt': '' } },
+    { returnDocument: 'after' },
+  ).lean();
+  if (!refund) throw new Error('تعذر تثبيت حالة الإشعار بعد الاتصال.');
+  return refund;
+};
+
+/** إرسال إشعار استرجاع إلى Zakaty أو الاستعلام عنه، بنفس ضمانات الفاتورة (قفل، ومعرّف ثابت لإعادة المحاولة) */
+const processZakatyRefund = async (req, res, submit) => {
+  const { refundId } = req.params;
+  const { tenantId } = req;
+  let lockOwner = null;
+  try {
+    const refund = await SaleRefund.findOne({ _id: refundId, tenantId }).lean();
+    if (!refund) return res.status(404).json({ message: 'إشعار الاسترجاع غير موجود.' });
+    if (FINAL_STATUSES.includes(refund.zakaty?.status)) return res.json({ zakaty: presentStatus(refund) });
+    const [sale, tenant] = await Promise.all([
+      Sale.findOne({ _id: refund.saleId, tenantId }).lean(),
+      Tenant.findById(tenantId).select('salonName taxSettings.taxNumber taxSettings.zakaty').lean(),
+    ]);
+    if (!sale || !tenant) return res.status(404).json({ message: 'الفاتورة الأصلية غير موجودة.' });
+    if (!process.env.ZAKATY_BASE_URL || !tenant.taxSettings?.zakaty?.apiKey) {
+      return res.status(409).json({ message: 'عنوان الخدمة أو مفتاح Zakaty غير مضبوط.' });
+    }
+    if (submit && tenant.taxSettings.zakaty.tenantId) {
+      const unit = await getZakatyEgsUnit(tenant);
+      if (unit.status !== 'production_ready' || !unit.hasProductionCsid) {
+        return res.status(409).json({ message: 'وحدة EGS لم تكمل إعداد شهادة الإنتاج في Zakaty.' });
+      }
+    }
+
+    let payload = refund.zakaty?.payload;
+    if (!payload) {
+      if (!submit) return res.status(409).json({ message: 'لم يُرسل هذا الإشعار إلى Zakaty بعد.' });
+      const prepared = prepareZakatyCreditNote({ tenant, sale, refund, baseUrl: process.env.ZAKATY_BASE_URL });
+      if (!prepared.ready) return res.status(409).json({ message: 'الإشعار غير جاهز للإرسال.', issues: prepared.issues });
+      payload = prepared.payload;
+    }
+
+    lockOwner = crypto.randomUUID();
+    const now = new Date();
+    const claimed = await SaleRefund.findOneAndUpdate(
+      {
+        _id: refundId, tenantId,
+        'zakaty.status': { $nin: FINAL_STATUSES },
+        $or: [{ 'zakaty.lockExpiresAt': { $exists: false } }, { 'zakaty.lockExpiresAt': null }, { 'zakaty.lockExpiresAt': { $lte: now } }],
+      },
+      {
+        $set: {
+          'zakaty.status': 'Submitting',
+          'zakaty.payload': payload,
+          'zakaty.externalInvoiceId': payload.externalInvoiceId,
+          'zakaty.lockOwner': lockOwner,
+          'zakaty.lockExpiresAt': new Date(now.getTime() + 120000),
+          'zakaty.lastError': '',
+        },
+        $inc: { 'zakaty.attempts': 1 },
+      },
+      { returnDocument: 'after' },
+    ).lean();
+    if (!claimed) return res.status(409).json({ message: 'الإشعار قيد المعالجة أو تم قبوله بالفعل.' });
+
+    let result = null;
+    if (refund.zakaty?.attempts > 0 || !submit) result = await getZakatyInvoiceStatus(tenant, payload.externalInvoiceId);
+    if (!result && submit) result = await submitZakatyInvoice(tenant, payload);
+    if (!result) {
+      const updated = await releaseRefundLock(refundId, tenantId, lockOwner, {
+        status: 'Unknown', checkedAt: new Date(), lastError: 'لم يُعثر على الإشعار لدى Zakaty. يمكن إعادة الإرسال بالمعرّف نفسه.',
+      });
+      return res.status(202).json({ zakaty: presentStatus(updated) });
+    }
+    const updated = await releaseRefundLock(refundId, tenantId, lockOwner, normalizeZakatyResult(result));
+    return res.json({ zakaty: presentStatus(updated) });
+  } catch (error) {
+    const summary = summarizeZakatyError(error);
+    if (lockOwner) {
+      await releaseRefundLock(refundId, tenantId, lockOwner, {
+        status: summary.status === 409 ? 'Conflict' : summary.status >= 400 && summary.status < 500 ? 'Failed' : 'Unknown',
+        checkedAt: new Date(), lastError: summary.message,
+      }).catch(() => {});
+    }
+    return res.status(summary.status === 409 ? 409 : 502).json({ message: summary.message });
+  }
+};
+
+module.exports.submitRefundToZakaty = (req, res) => processZakatyRefund(req, res, true);
+module.exports.reconcileRefundZakaty = (req, res) => processZakatyRefund(req, res, false);

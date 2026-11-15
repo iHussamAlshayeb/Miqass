@@ -157,4 +157,45 @@ const prepareZakatyInvoice = ({ tenant, sale, items, buyer, baseUrl }) => {
   };
 };
 
-module.exports = { presentZakatyConfig, validateZakatyConfig, prepareZakatyProvisioning, prepareZakatyInvoice };
+/**
+ * إشعار دائن (استرجاع) لفاتورة قُبلت في Zakaty: نفس فحوص الفاتورة على بنود الإشعار،
+ * مع documentType=credit_note ومرجع للفاتورة الأصلية (رقمها وتاريخها وسبب الاسترجاع).
+ */
+const prepareZakatyCreditNote = ({ tenant, sale, refund, baseUrl }) => {
+  const prepared = prepareZakatyInvoice({
+    tenant,
+    sale: {
+      ...sale,
+      _id: refund._id,
+      status: 'Paid',
+      invoiceNumber: refund.refundNumber,
+      createdAt: refund.createdAt,
+      totalAmount: refund.totalAmount,
+    },
+    items: refund.items,
+    baseUrl,
+  });
+  const issues = [...prepared.issues];
+  if (!['Accepted', 'AcceptedWithWarnings'].includes(sale?.zakaty?.status)) {
+    issues.push(`أرسل الفاتورة الأصلية ${sale?.invoiceNumber || ''} إلى Zakaty أولاً؛ الإشعار الدائن يُربط بها.`);
+  }
+  if (issues.length) return { ready: false, issues, payload: null };
+  const externalInvoiceId = `miqass:${tenant._id}:refund:${refund._id}`;
+  return {
+    ready: true,
+    issues: [],
+    payload: {
+      ...prepared.payload,
+      externalInvoiceId,
+      idempotencyKey: externalInvoiceId,
+      documentType: 'credit_note',
+      billingReference: {
+        invoiceNumber: sale.invoiceNumber,
+        issueDate: formatRiyadhDateTime(sale.createdAt).issueDate,
+        reason: String(refund.reason || 'استرجاع').slice(0, 200),
+      },
+    },
+  };
+};
+
+module.exports = { presentZakatyConfig, validateZakatyConfig, prepareZakatyProvisioning, prepareZakatyInvoice, prepareZakatyCreditNote };

@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Banknote, ClipboardCheck, ReceiptText, RefreshCw } from 'lucide-react';
+import { Banknote, ClipboardCheck, ReceiptText, RefreshCw, Undo2 } from 'lucide-react';
 import API from '../../services/api';
 import InvoiceModal from './InvoiceModal';
+import RefundModal from '../pos/RefundModal';
+import { refundReceiptToInvoice } from '../pos/posShared';
 
 const paymentMethodLabels = {
     cash: 'نقدي',
@@ -46,6 +48,43 @@ const SalesTab = () => {
     const [invoiceData, setInvoiceData] = useState(null);
     const [zakatyCheck, setZakatyCheck] = useState(null);
     const [message, setMessage] = useState('');
+    const [refundSaleId, setRefundSaleId] = useState(null);
+    const [refunds, setRefunds] = useState([]);
+    const [refundZakatyBusy, setRefundZakatyBusy] = useState('');
+
+    const fetchRefunds = async () => {
+        try {
+            const res = await API.get('/sales/refunds');
+            setRefunds(res.data.refunds || []);
+        } catch {
+            setRefunds([]);
+        }
+    };
+
+    const showRefundReceipt = async (refundId) => {
+        try {
+            const res = await API.get(`/pos/refunds/${refundId}/receipt`);
+            setInvoiceData(refundReceiptToInvoice(res.data.receipt));
+        } catch (error) {
+            setMessage(error.response?.data?.message || 'تعذر جلب إيصال الاسترجاع.');
+        }
+    };
+
+    // إرسال إشعار الاسترجاع إلى Zakaty كإشعار دائن مرتبط بالفاتورة الأصلية
+    const processRefundZakaty = async (refund, reconcile = false) => {
+        if (!reconcile && !window.confirm(`إرسال إشعار الاسترجاع ${refund.refundNumber} إلى Zakaty؟`)) return;
+        setRefundZakatyBusy(refund._id);
+        try {
+            const { data } = await API.post(`/sales/refunds/${refund._id}/zakaty/${reconcile ? 'reconcile' : 'submit'}`);
+            setMessage(`${refund.refundNumber}: ${zakatyStatusLabels[data.zakaty.status] || data.zakaty.status}${data.zakaty.lastError ? ` · ${data.zakaty.lastError}` : ''}`);
+        } catch (error) {
+            const issues = error.response?.data?.issues;
+            setMessage(issues?.length ? issues.join(' · ') : error.response?.data?.message || 'تعذر الاتصال بـ Zakaty.');
+        } finally {
+            setRefundZakatyBusy('');
+            fetchRefunds();
+        }
+    };
 
     const fetchSales = async () => {
         setIsLoadingSales(true);
@@ -61,6 +100,7 @@ const SalesTab = () => {
 
     useEffect(() => {
         fetchSales();
+        fetchRefunds();
     }, []);
 
     const getPaymentDraft = (sale) => paymentDrafts[sale._id] || {
@@ -198,6 +238,9 @@ const SalesTab = () => {
                                                 <span className={`${getStatusClass(sale.status)} px-3 py-1 rounded-lg font-black text-xs whitespace-nowrap`}>
                                                     {statusLabels[sale.status] || sale.status}
                                                 </span>
+                                                {Number(sale.refundedAmount) > 0 && (
+                                                    <div className="mt-1 text-[11px] font-black text-rose-600 whitespace-nowrap">مسترجع {toMoney(sale.refundedAmount)} ر.س</div>
+                                                )}
                                             </td>
                                             <td className="py-3 font-bold text-slate-500 whitespace-nowrap">
                                                 {toMoney(sale.paidAmount)} ر.س
@@ -218,6 +261,11 @@ const SalesTab = () => {
                                                         <ReceiptText size={13} />
                                                         فاتورة
                                                     </button>
+                                                    {['Paid', 'Partially_Paid'].includes(sale.status) && Number(sale.paidAmount) - Number(sale.refundedAmount || 0) > 0.009 && (
+                                                        <button type="button" onClick={() => setRefundSaleId(sale._id)} className="inline-flex items-center justify-center gap-1.5 bg-rose-50 text-rose-700 border border-rose-100 px-3 py-2 rounded-lg font-black text-xs hover:bg-rose-100 whitespace-nowrap">
+                                                            <Undo2 size={13} />استرجاع
+                                                        </button>
+                                                    )}
                                                     {sale.status === 'Paid' && (
                                                         <button type="button" title="فحص جاهزية Zakaty" onClick={() => checkZakatyReadiness(sale)} className="inline-flex items-center justify-center gap-1.5 bg-slate-50 text-slate-700 border border-slate-100 px-3 py-2 rounded-lg font-black text-xs hover:bg-slate-100 whitespace-nowrap">
                                                             <ClipboardCheck size={13} />Zakaty
@@ -283,6 +331,71 @@ const SalesTab = () => {
                     </div>
                 )}
             </div>
+
+            {refunds.length > 0 && (
+                <div className="bg-white p-4 sm:p-5 rounded-lg shadow-sm border border-slate-100">
+                    <h3 className="text-lg font-black text-slate-800">إشعارات الاسترجاع</h3>
+                    <p className="mt-0.5 mb-4 text-xs font-bold text-slate-500">كل استرجاع إشعار دائن مرتبط بفاتورته. يُرسل إلى Zakaty بعد قبول الفاتورة الأصلية.</p>
+                    <div className="overflow-x-auto">
+                        <table className="w-full min-w-[720px] text-sm">
+                            <thead>
+                                <tr className="text-slate-400 border-b border-slate-100">
+                                    <th className="py-3 text-right">الإشعار</th>
+                                    <th className="py-3 text-right">الفاتورة</th>
+                                    <th className="py-3 text-right">السبب</th>
+                                    <th className="py-3 text-right">بواسطة</th>
+                                    <th className="py-3 text-left">المبلغ</th>
+                                    <th className="py-3 text-left">إجراء</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {refunds.map((refund) => {
+                                    const final = ['Accepted', 'AcceptedWithWarnings'].includes(refund.zakatyStatus);
+                                    const pending = ['Submitting', 'Unknown', 'RetryPending'].includes(refund.zakatyStatus);
+                                    return (
+                                        <tr key={refund._id} className="border-b border-slate-50 last:border-0 align-top">
+                                            <td className="py-3">
+                                                <p className="font-black text-slate-800">{refund.refundNumber}</p>
+                                                <p className="text-[11px] font-bold text-slate-400">{new Date(refund.createdAt).toLocaleString('ar-SA-u-nu-latn', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Riyadh' })}</p>
+                                            </td>
+                                            <td className="py-3 font-bold text-slate-500">{refund.invoiceNumber}<p className="text-[11px]">{refund.customerName}</p></td>
+                                            <td className="py-3 text-xs font-bold text-slate-500">{refund.reason}<p className="text-[11px] text-slate-400">{refund.items.map((item) => `${item.name} ×${item.quantity}`).join('، ')}</p></td>
+                                            <td className="py-3 text-xs font-bold text-slate-500">{refund.refundedBy}</td>
+                                            <td className="py-3 text-left font-black text-rose-700 whitespace-nowrap">-{toMoney(refund.totalAmount)} ر.س<p className="text-[11px] font-bold text-slate-400">{paymentMethodLabels[refund.method] || refund.method}</p></td>
+                                            <td className="py-3">
+                                                <div className="flex flex-col lg:flex-row gap-2 justify-end">
+                                                    <button type="button" onClick={() => showRefundReceipt(refund._id)} className="inline-flex items-center justify-center gap-1.5 bg-slate-50 text-slate-700 border border-slate-100 px-3 py-2 rounded-lg font-black text-xs hover:bg-slate-100 whitespace-nowrap"><ReceiptText size={13} />إيصال</button>
+                                                    {final ? (
+                                                        <span className="inline-flex items-center rounded-lg bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700 whitespace-nowrap">Zakaty: {zakatyStatusLabels[refund.zakatyStatus]}</span>
+                                                    ) : (
+                                                        <button type="button" disabled={refundZakatyBusy === refund._id} onClick={() => processRefundZakaty(refund, pending)} title={refund.zakatyError || ''} className="inline-flex items-center justify-center gap-1.5 bg-slate-50 text-slate-700 border border-slate-100 px-3 py-2 rounded-lg font-black text-xs hover:bg-slate-100 whitespace-nowrap disabled:opacity-50">
+                                                            <ClipboardCheck size={13} />{refundZakatyBusy === refund._id ? '...' : pending ? 'الاستعلام من Zakaty' : refund.zakatyStatus === 'NotSubmitted' ? 'إرسال لـ Zakaty' : `Zakaty: ${zakatyStatusLabels[refund.zakatyStatus] || refund.zakatyStatus}`}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+
+            {refundSaleId && (
+                <RefundModal
+                    saleId={refundSaleId}
+                    onClose={() => setRefundSaleId(null)}
+                    onDone={(refund) => {
+                        setRefundSaleId(null);
+                        setMessage(`تم الاسترجاع ${refund.refundNumber} بمبلغ ${toMoney(refund.totalAmount)} ر.س.`);
+                        fetchSales();
+                        fetchRefunds();
+                        showRefundReceipt(refund._id);
+                    }}
+                />
+            )}
 
             {invoiceData && (
                 <InvoiceModal

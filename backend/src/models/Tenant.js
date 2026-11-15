@@ -168,6 +168,8 @@ const tenantSchema = new mongoose.Schema(
       default: 100,
     },
     posInvoiceCounter: { type: Number, default: 0 },
+    // ترقيم إشعارات الاسترجاع (RF-1، RF-2...)
+    refundCounter: { type: Number, default: 0 },
 
     bio: {
       type: String,

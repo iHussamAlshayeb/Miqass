@@ -3,7 +3,7 @@ const router = express.Router();
 
 const { protect } = require("../middlewares/authMiddleware");
 const { requireZakatyEnabled } = require("../utils/zakatySwitch");
-const { getZakatySaleStatus, submitSaleToZakaty, reconcileZakatySale } = require('../controllers/zakatySaleController');
+const { getZakatySaleStatus, submitSaleToZakaty, reconcileZakatySale, submitRefundToZakaty, reconcileRefundZakaty } = require('../controllers/zakatySaleController');
 const {
   listSales,
   getSale,
@@ -12,11 +12,16 @@ const {
   cancelSale,
   getSaleInvoice,
   getZakatyReadiness,
+  listRefunds,
 } = require("../controllers/salesController");
 
 router.use(protect);
 
 router.get("/", listSales);
+// إشعارات الاسترجاع وإرسالها إلى Zakaty كإشعار دائن
+router.get("/refunds", listRefunds);
+router.post("/refunds/:refundId/zakaty/submit", requireZakatyEnabled, submitRefundToZakaty);
+router.post("/refunds/:refundId/zakaty/reconcile", requireZakatyEnabled, reconcileRefundZakaty);
 router.post("/", createSale);
 router.get("/:saleId", getSale);
 router.post("/:saleId/payments", addSalePayment);

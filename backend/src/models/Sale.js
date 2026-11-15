@@ -43,6 +43,8 @@ const saleSchema = new mongoose.Schema(
     vatAmount: { type: Number, default: 0 },
     totalAmount: { type: Number, default: 0 },
     paidAmount: { type: Number, default: 0 },
+    // مجموع ما استُرجع للعميل من هذه الفاتورة (الإشعارات في SaleRefund)
+    refundedAmount: { type: Number, default: 0 },
 
     cancelledAt: { type: Date, default: null },
     cancelReason: { type: String, default: "" },

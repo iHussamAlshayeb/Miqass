@@ -5,6 +5,7 @@ const CashShift = require("../src/models/CashShift");
 const Payment = require("../src/models/Payment");
 const Sale = require("../src/models/Sale");
 const Expense = require("../src/models/Expense");
+const SaleRefund = require("../src/models/SaleRefund");
 const { summarizeShift, openShift, closeShift } = require("../src/services/cashShiftService");
 
 const id = () => new mongoose.Types.ObjectId();
@@ -25,6 +26,7 @@ const aggregates = [
     { _id: "Cancelled", count: 1, total: 40, discount: 0, vat: 5.22 },
   ]],
   [Expense, "aggregate", async () => []],
+  [SaleRefund, "aggregate", async () => []],
 ];
 
 test("shift summary counts collections by method and the cash expected in the drawer", async () => {
@@ -84,5 +86,19 @@ test("cash paid out of the drawer is taken off the expected cash", async () => {
     assert.equal(summary.cashExpensesCount, 2);
     // 200 بداية + 230 نقد − 35.5 مصروفات
     assert.equal(summary.expectedCash, 394.5);
+  });
+});
+
+test("cash refunded to customers leaves the drawer; card refunds do not", async () => {
+  await stub([
+    ...aggregates,
+    [SaleRefund, "aggregate", async () => [{ _id: "cash", amount: 30, count: 1 }, { _id: "card", amount: 45.5, count: 2 }]],
+  ], async () => {
+    const summary = await summarizeShift({ _id: id(), tenantId: id(), openingCash: 200 });
+    assert.equal(summary.refundsTotal, 75.5);
+    assert.equal(summary.refundsCount, 3);
+    assert.equal(summary.cashRefunds, 30);
+    // 200 بداية + 230 نقد − 30 مسترجع نقداً
+    assert.equal(summary.expectedCash, 400);
   });
 });

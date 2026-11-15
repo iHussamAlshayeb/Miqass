@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Printer, ReceiptText, Wallet, X, MinusCircle, Plus } from 'lucide-react';
+import { Printer, ReceiptText, Wallet, X, MinusCircle, Plus, Undo2, Search } from 'lucide-react';
 import posApi from '../../services/posApi';
 import { money } from '../../utils/posPricing';
 import Keypad from './Keypad';
@@ -15,7 +15,7 @@ const QUICK_EXPENSES = ['ماء وضيافة', 'أدوات تنظيف', 'مست�
 const errorText = (error, fallback) => error?.response?.data?.message || fallback;
 
 /** لوحة الوردية: فواتير الوردية (إعادة طباعة وتسديد المتبقي) ومصروفات الصندوق */
-const ShiftPanel = ({ onClose, onReceipt, onChanged, onToast }) => {
+const ShiftPanel = ({ onClose, onReceipt, onChanged, onToast, onRefund, reloadKey = 0 }) => {
     const [tab, setTab] = useState('sales');
     const [sales, setSales] = useState(null);
     const [expenses, setExpenses] = useState(null);
@@ -26,12 +26,30 @@ const ShiftPanel = ({ onClose, onReceipt, onChanged, onToast }) => {
     const [adding, setAdding] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
+    const [lookup, setLookup] = useState('');
+    const [lookingUp, setLookingUp] = useState(false);
 
     const load = useCallback(() => {
         posApi.get('/pos/shift/sales').then((res) => setSales(res.data.sales || [])).catch(() => setSales([]));
         posApi.get('/pos/shift/expenses').then((res) => setExpenses(res.data.expenses || [])).catch(() => setExpenses([]));
     }, []);
-    useEffect(() => { load(); }, [load]);
+    useEffect(() => { load(); }, [load, reloadKey]);
+
+    // استرجاع فاتورة من وردية سابقة برقمها
+    const findInvoice = async (event) => {
+        event.preventDefault();
+        if (!lookup.trim()) return;
+        setLookingUp(true);
+        try {
+            const res = await posApi.get('/pos/sales/lookup', { params: { invoice: lookup.trim() } });
+            setLookup('');
+            onRefund(res.data.saleId);
+        } catch (err) {
+            onToast(errorText(err, 'تعذر العثور على الفاتورة.'));
+        } finally {
+            setLookingUp(false);
+        }
+    };
 
     const resetForm = () => { setPayTarget(null); setAdding(false); setAmount(''); setDescription(''); setMethod('cash'); setError(''); };
 
@@ -128,11 +146,20 @@ const ShiftPanel = ({ onClose, onReceipt, onChanged, onToast }) => {
                     </div>
                 ) : tab === 'sales' ? (
                     <div className="flex-1 space-y-2 overflow-y-auto p-4">
+                        <form onSubmit={findInvoice} className="flex gap-2 rounded-xl bg-white p-2 shadow-sm">
+                            <label className="flex flex-1 items-center gap-2 px-2">
+                                <Search size={16} className="text-slate-400" />
+                                <input value={lookup} onChange={(event) => setLookup(event.target.value)} placeholder="استرجاع فاتورة سابقة: رقمها مثل POS-12" className="h-10 w-full bg-transparent text-sm font-semibold outline-none" />
+                            </label>
+                            <button type="submit" disabled={lookingUp || !lookup.trim()} className="flex h-10 items-center gap-1 rounded-lg bg-rose-600 px-3 text-sm font-bold text-white disabled:opacity-40"><Undo2 size={15} /> استرجاع</button>
+                        </form>
                         {sales === null ? <p className="mt-10 text-center font-bold text-slate-400">جاري التحميل...</p>
                             : sales.length === 0 ? <p className="mt-10 text-center font-bold text-slate-400">لا توجد فواتير في هذه الوردية بعد.</p>
                                 : sales.map((sale) => {
                                     const [label, tone] = STATUS[sale.status] || [sale.status, 'bg-slate-100 text-slate-600'];
                                     const due = Math.round((sale.totalAmount - sale.paidAmount) * 100) / 100;
+                                    const refunded = Number(sale.refundedAmount || 0);
+                                    const refundable = ['Paid', 'Partially_Paid'].includes(sale.status) && Number(sale.paidAmount) - refunded > 0.009;
                                     return (
                                         <div key={sale._id} className="flex items-center gap-3 rounded-xl bg-white p-3 shadow-sm">
                                             <div className="min-w-0 flex-1">
@@ -145,9 +172,13 @@ const ShiftPanel = ({ onClose, onReceipt, onChanged, onToast }) => {
                                             <div className="text-left">
                                                 <p className="font-mono text-base font-extrabold" dir="ltr">{money(sale.totalAmount)}</p>
                                                 {due > 0 && sale.status !== 'Cancelled' && <p className="font-mono text-xs font-bold text-amber-700" dir="ltr">-{money(due)}</p>}
+                                                {refunded > 0 && <p className="text-xs font-bold text-rose-600">مسترجع <span className="font-mono" dir="ltr">{money(refunded)}</span></p>}
                                             </div>
                                             {due > 0 && sale.status !== 'Cancelled' && (
                                                 <button type="button" onClick={() => { setPayTarget(sale); setAmount(String(due)); }} className="flex h-10 items-center gap-1 rounded-lg bg-emerald-600 px-3 text-sm font-bold text-white"><Wallet size={16} /> تسديد</button>
+                                            )}
+                                            {refundable && (
+                                                <button type="button" onClick={() => onRefund(sale._id)} className="flex h-10 w-10 items-center justify-center rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50" aria-label="استرجاع" title="استرجاع"><Undo2 size={18} /></button>
                                             )}
                                             <button type="button" onClick={() => onReceipt(sale._id)} className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-600" aria-label="طباعة الإيصال"><Printer size={18} /></button>
                                         </div>

@@ -24,6 +24,35 @@ export const applyKey = (current, key) => {
 };
 
 
+/** إيصال الاسترجاع بنفس قالب الفاتورة الحرارية (InvoiceModal) */
+export const refundReceiptToInvoice = (receipt) => {
+    const created = new Date(receipt.createdAt);
+    return {
+        invoiceNumber: receipt.refundNumber,
+        documentTitle: 'إشعار دائن مبسط (استرجاع)',
+        numberLabel: 'رقم الإشعار',
+        totalLabel: 'المبلغ المسترجع',
+        paymentLabel: 'طريقة الإرجاع',
+        referenceInvoiceNumber: receipt.originalInvoiceNumber,
+        refundReason: receipt.reason,
+        salonName: receipt.salonName,
+        logoUrl: receipt.logoUrl,
+        phone: receipt.phone,
+        taxNumber: receipt.taxNumber,
+        date: created.toLocaleDateString('en-GB', { timeZone: 'Asia/Riyadh' }),
+        time: created.toLocaleTimeString('ar-SA', { timeZone: 'Asia/Riyadh', hour: '2-digit', minute: '2-digit' }),
+        customerName: receipt.customerName,
+        itemType: 'mixed',
+        services: receipt.items.map((item) => ({ name: item.name, qty: item.quantity, quantity: item.quantity, price: item.totalAmount })),
+        discountAmount: '0.00',
+        baseAmount: receipt.baseAmount,
+        vatAmount: receipt.vatAmount,
+        totalAmount: receipt.totalAmount,
+        paymentMethod: methodLabel(receipt.method),
+        qrCode: receipt.qrCode,
+    };
+};
+
 export const formatDateTime = (value) => value
     ? new Date(value).toLocaleString('ar-SA-u-nu-latn', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Riyadh' })
     : '—';
@@ -60,11 +89,13 @@ export const printShiftReport = (shift, salonName) => {
             ${row('إجمالي المبيعات', money(s.salesTotal), true)}
             ${s.cancelledCount ? row('فواتير ملغاة', s.cancelledCount) : ''}
         </table>
+        ${s.refundsTotal ? `<h2>المرتجعات</h2><table>${row(`عدد الإشعارات`, s.refundsCount)}${row('إجمالي المسترجع', `-${money(s.refundsTotal)}`, true)}</table>` : ''}
         <h2>المقبوضات</h2><table>${methods || row('لا توجد مقبوضات', '0.00')}${row('الإجمالي', money(s.collected), true)}</table>
         <h2>الصندوق</h2><table>
             ${row('النقد الافتتاحي', money(shift.openingCash))}
             ${row('المقبوض نقداً', money(s.payments?.cash?.amount))}
             ${s.cashExpenses ? row('مصروفات من الصندوق', `-${money(s.cashExpenses)}`) : ''}
+            ${s.cashRefunds ? row(`مسترجع نقداً (${s.refundsByMethod?.cash?.count || 0})`, `-${money(s.cashRefunds)}`) : ''}
             ${row('المتوقع في الدرج', money(shift.expectedCash ?? s.expectedCash), true)}
             ${shift.countedCash != null ? row('المعدود', money(shift.countedCash)) : ''}
             ${shift.cashDifference != null ? row(shift.cashDifference < 0 ? 'عجز' : shift.cashDifference > 0 ? 'زيادة' : 'الفرق', money(Math.abs(shift.cashDifference)), true) : ''}

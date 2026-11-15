@@ -15,6 +15,9 @@ const { isBarberOnLeave } = require("../utils/barberLeave");
 const { normalizeSaudiMobile } = require("../utils/saudiMobile");
 const { sendAdminNotification } = require("../utils/onesignal");
 const { applyBarberServicePrices } = require("../utils/servicePricing");
+const SaleRefund = require("../models/SaleRefund");
+const { getRefundable, createRefund } = require("../services/refundService");
+const { generateZatcaQR } = require("../utils/zatca");
 const { publicLogoUrl } = require("../utils/logoImage");
 const Cashier = require("../models/Cashier");
 const Expense = require("../models/Expense");
@@ -433,6 +436,88 @@ const createWalkInFromPos = async (req, res) => {
   }
 };
 
+/** استرجاع فاتورة: البنود والمتبقي منها */
+const getSaleRefundable = async (req, res) => {
+  try {
+    return res.json(await getRefundable(req.tenantId, req.params.saleId));
+  } catch (error) {
+    return sendError(res, error, "تعذر تحميل الفاتورة.");
+  }
+};
+
+/** إنشاء إشعار استرجاع (كامل أو جزئي) من نقطة البيع */
+const createSaleRefund = async (req, res) => {
+  try {
+    const refund = await createRefund({
+      tenantId: req.tenantId,
+      saleId: req.params.saleId,
+      items: req.body?.items,
+      method: req.body?.method,
+      reason: req.body?.reason,
+      refundedBy: req.cashier?.name || "المالك",
+    });
+    return res.status(201).json({ refund });
+  } catch (error) {
+    return sendError(res, error, "تعذر تنفيذ الاسترجاع.");
+  }
+};
+
+/** البحث عن فاتورة سابقة برقمها (POS-12 أو 12) لاسترجاعها */
+const lookupSaleByInvoice = async (req, res) => {
+  try {
+    const raw = String(req.query.invoice || "").trim().toUpperCase().replace(/\s+/g, "");
+    const digits = raw.replace(/^POS-?/, "");
+    if (!/^\d{1,9}$/.test(digits)) return res.status(400).json({ message: "اكتب رقم الفاتورة، مثل POS-12." });
+    const sale = await Sale.findOne({ tenantId: req.tenantId, invoiceNumber: `POS-${digits}` }).select("_id").lean();
+    if (!sale) return res.status(404).json({ message: `لا توجد فاتورة برقم POS-${digits}.` });
+    return res.json({ saleId: sale._id });
+  } catch (error) {
+    return sendError(res, error, "تعذر البحث عن الفاتورة.");
+  }
+};
+
+/** إيصال الاسترجاع (إشعار دائن مبسط) للطباعة */
+const getRefundReceipt = async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.refundId)) return res.status(404).json({ message: "الإشعار غير موجود." });
+    const refund = await SaleRefund.findOne({ _id: req.params.refundId, tenantId: req.tenantId }).lean();
+    if (!refund) return res.status(404).json({ message: "الإشعار غير موجود." });
+    const [sale, tenant] = await Promise.all([
+      Sale.findOne({ _id: refund.saleId, tenantId: req.tenantId }).select("invoiceNumber createdAt customerSnapshot").lean(),
+      Tenant.findById(req.tenantId).select("salonName ownerPhone branding taxSettings.taxNumber").lean(),
+    ]);
+    const taxNumber = tenant?.taxSettings?.taxNumber || "";
+    const accepted = ["Accepted", "AcceptedWithWarnings"].includes(refund.zakaty?.status);
+    const total = Number(refund.totalAmount || 0);
+    const vat = Number(refund.vatAmount || 0);
+    return res.json({
+      receipt: {
+        refundNumber: refund.refundNumber,
+        originalInvoiceNumber: sale?.invoiceNumber || "",
+        originalDate: sale?.createdAt || null,
+        createdAt: refund.createdAt,
+        salonName: tenant?.salonName || "",
+        logoUrl: publicLogoUrl(tenant),
+        phone: tenant?.ownerPhone || "",
+        taxNumber,
+        customerName: sale?.customerSnapshot?.name || "",
+        items: refund.items.map((item) => ({ name: item.name, quantity: item.quantity, totalAmount: Math.round(item.totalAmount * 100) / 100 })),
+        totalAmount: total.toFixed(2),
+        vatAmount: vat.toFixed(2),
+        baseAmount: (total - vat).toFixed(2),
+        method: refund.method,
+        reason: refund.reason,
+        refundedBy: refund.refundedBy,
+        qrCode: accepted && refund.zakaty?.qrBase64
+          ? refund.zakaty.qrBase64
+          : taxNumber ? generateZatcaQR(tenant?.salonName || "", taxNumber, new Date(refund.createdAt).toISOString(), total.toFixed(2), vat.toFixed(2)) : null,
+      },
+    });
+  } catch (error) {
+    return sendError(res, error, "تعذر تحميل إيصال الاسترجاع.");
+  }
+};
+
 /** إتمام أو إلغاء موعد من نقطة البيع: نفس منطق لوحة التحكم (الزيارات، الولاء، رسائل الإلغاء والتقييم) */
 const updateAppointmentStatusFromPos = (req, res) => {
   if (!["Completed", "Cancelled"].includes(req.body?.status)) {
@@ -459,7 +544,7 @@ const listShiftSales = async (req, res) => {
     const shift = await CashShift.findOne({ tenantId: req.tenantId, status: "Open" }).select("_id").lean();
     if (!shift) return res.json({ sales: [] });
     const sales = await Sale.find({ tenantId: req.tenantId, shiftId: shift._id })
-      .select("invoiceNumber customerSnapshot totalAmount paidAmount status source createdAt appointmentId")
+      .select("invoiceNumber customerSnapshot totalAmount paidAmount refundedAmount status source createdAt appointmentId")
       .sort({ createdAt: -1 })
       .limit(300)
       .lean();
@@ -827,5 +912,5 @@ const deleteCashier = async (req, res) => {
 };
 
 module.exports = {
-  listTodayAppointments, updateAppointmentStatusFromPos, updateAppointmentServicesFromPos, createWalkInFromPos, sendAppointmentReminder, listShiftSales, listShiftExpenses,
+  listTodayAppointments, updateAppointmentStatusFromPos, updateAppointmentServicesFromPos, createWalkInFromPos, getSaleRefundable, createSaleRefund, lookupSaleByInvoice, getRefundReceipt, sendAppointmentReminder, listShiftSales, listShiftExpenses,
   createDrawerExpense, posLogin, posDeviceStatus, getSetupStatus, dismissSetupGuide, activateThisDevice, createActivationCode, activateWithCode, listDevices, revokeDevice, posMe, listCashiers, createCashier, updateCashier, deleteCashier, getCatalog, getCurrentShift, postOpenShift, postCloseShift, listShifts, getShift, searchCustomers, getCheckoutAppointment };

@@ -16,6 +16,10 @@ const {
   updateAppointmentStatusFromPos,
   updateAppointmentServicesFromPos,
   createWalkInFromPos,
+  getSaleRefundable,
+  createSaleRefund,
+  lookupSaleByInvoice,
+  getRefundReceipt,
   sendAppointmentReminder,
   listShiftSales,
   listShiftExpenses,
@@ -91,6 +95,11 @@ router.put("/appointments/:appointmentId/status", updateAppointmentStatusFromPos
 router.put("/appointments/:appointmentId/services", updateAppointmentServicesFromPos);
 // حلاقة الآن: عميل حاضر يدخل طابور الحلاق (كشك مصغّر)
 router.post("/walk-ins", createWalkInFromPos);
+// الاسترجاع: فاتورة سابقة برقمها، بنودها القابلة للاسترجاع، تنفيذه، وإيصاله
+router.get("/sales/lookup", lookupSaleByInvoice);
+router.get("/sales/:saleId/refund", getSaleRefundable);
+router.post("/sales/:saleId/refunds", createSaleRefund);
+router.get("/refunds/:refundId/receipt", getRefundReceipt);
 router.post("/appointments/:appointmentId/reminder", sendAppointmentReminder);
 router.post("/sales", createSale);
 router.get("/sales/:saleId/invoice", getSaleInvoice);

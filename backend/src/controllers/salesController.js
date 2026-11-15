@@ -687,6 +687,39 @@ const getSaleInvoice = async (req, res) => {
   }
 };
 
+/** آخر إشعارات الاسترجاع للوحة التحكم مع حالة إرسالها إلى Zakaty */
+const listRefunds = async (req, res) => {
+  try {
+    const SaleRefund = require("../models/SaleRefund");
+    const refunds = await SaleRefund.find({ tenantId: req.tenantId })
+      .select("-zakaty.payload -zakaty.qrBase64 -zakaty.lockOwner -zakaty.lockExpiresAt")
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .populate("saleId", "invoiceNumber customerSnapshot.name zakaty.status")
+      .lean();
+    res.json({
+      refunds: refunds.map((refund) => ({
+        _id: refund._id,
+        refundNumber: refund.refundNumber,
+        invoiceNumber: refund.saleId?.invoiceNumber || "",
+        saleId: refund.saleId?._id || null,
+        customerName: refund.saleId?.customerSnapshot?.name || "",
+        saleZakatyStatus: refund.saleId?.zakaty?.status || "NotSubmitted",
+        totalAmount: toMoney(refund.totalAmount),
+        method: refund.method,
+        reason: refund.reason,
+        refundedBy: refund.refundedBy,
+        createdAt: refund.createdAt,
+        items: refund.items.map((item) => ({ name: item.name, quantity: item.quantity })),
+        zakatyStatus: refund.zakaty?.status || "NotSubmitted",
+        zakatyError: refund.zakaty?.lastError || "",
+      })),
+    });
+  } catch (error) {
+    res.status(500).json({ message: "تعذر تحميل إشعارات الاسترجاع." });
+  }
+};
+
 const getZakatyReadiness = async (req, res) => {
   try {
     const sale = await Sale.findOne({ _id: req.params.saleId, tenantId: req.tenantId }).lean();
@@ -719,6 +752,8 @@ const getZakatyReadiness = async (req, res) => {
 };
 
 module.exports = {
+  applySaleInventoryMovements,
+  listRefunds,
   listSales,
   getSale,
   createSale,

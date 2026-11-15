@@ -4,6 +4,7 @@ const CashShift = require("../models/CashShift");
 const Payment = require("../models/Payment");
 const Sale = require("../models/Sale");
 const Expense = require("../models/Expense");
+const SaleRefund = require("../models/SaleRefund");
 
 const toMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
 const shiftError = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
@@ -20,7 +21,7 @@ const summarizeShift = async (shift) => {
   const tenantId = new mongoose.Types.ObjectId(String(shift.tenantId));
   const shiftId = new mongoose.Types.ObjectId(String(shift._id));
 
-  const [paymentGroups, salesGroups, expenseGroups] = await Promise.all([
+  const [paymentGroups, salesGroups, expenseGroups, refundGroups] = await Promise.all([
     Payment.aggregate([
       { $match: { tenantId, shiftId, status: "Paid" } },
       { $group: { _id: "$method", amount: { $sum: "$amount" }, count: { $sum: 1 } } },
@@ -42,7 +43,15 @@ const summarizeShift = async (shift) => {
       { $match: { tenantId, shiftId, status: "Paid", paymentMethod: "cash" } },
       { $group: { _id: null, amount: { $sum: "$amount" }, count: { $sum: 1 } } },
     ]),
+    // مبالغ أُرجعت للعملاء خلال الوردية (النقدي منها يخرج من الدرج)
+    SaleRefund.aggregate([
+      { $match: { tenantId, shiftId } },
+      { $group: { _id: "$method", amount: { $sum: "$totalAmount" }, count: { $sum: 1 } } },
+    ]),
   ]);
+  const refundsByMethod = Object.fromEntries(refundGroups.map((group) => [group._id, { amount: toMoney(group.amount), count: group.count }]));
+  const refundsTotal = toMoney(refundGroups.reduce((sum, group) => sum + group.amount, 0));
+  const cashRefunds = refundsByMethod.cash?.amount || 0;
 
   const payments = Object.fromEntries(PAYMENT_METHODS.map((method) => [method, { amount: 0, count: 0 }]));
   for (const group of paymentGroups) {
@@ -55,7 +64,7 @@ const summarizeShift = async (shift) => {
 
   const collected = toMoney(PAYMENT_METHODS.reduce((sum, method) => sum + payments[method].amount, 0));
   const cashExpenses = toMoney(expenseGroups[0]?.amount || 0);
-  const expectedCash = toMoney(Number(shift.openingCash || 0) + payments.cash.amount - cashExpenses);
+  const expectedCash = toMoney(Number(shift.openingCash || 0) + payments.cash.amount - cashExpenses - cashRefunds);
 
   return {
     salesCount: active.reduce((sum, group) => sum + group.count, 0),
@@ -69,6 +78,10 @@ const summarizeShift = async (shift) => {
     openingCash: toMoney(shift.openingCash),
     cashExpenses,
     cashExpensesCount: expenseGroups[0]?.count || 0,
+    refundsTotal,
+    refundsCount: refundGroups.reduce((sum, group) => sum + group.count, 0),
+    refundsByMethod,
+    cashRefunds: toMoney(cashRefunds),
     expectedCash,
   };
 };

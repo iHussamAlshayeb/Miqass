@@ -163,7 +163,7 @@ const ReceiptContent = ({ invoice, invoiceNumber, formatCurrency, baseAmount, va
                     borderRadius: '20px',
                     display: 'inline-block',
                 }}>
-                    فاتورة ضريبية مبسطة
+                    {invoice?.documentTitle || 'فاتورة ضريبية مبسطة'}
                 </span>
             </div>
 
@@ -172,7 +172,7 @@ const ReceiptContent = ({ invoice, invoiceNumber, formatCurrency, baseAmount, va
                 <tbody>
                     <tr style={{ borderBottom: '1px solid #000' }}>
                         <td style={{ padding: '2px 3px', width: '50%', borderRight: '1px solid #000', verticalAlign: 'top' }}>
-                            <div style={{ fontSize: fs.small, color: '#555' }}>رقم الفاتورة</div>
+                            <div style={{ fontSize: fs.small, color: '#555' }}>{invoice?.numberLabel || 'رقم الفاتورة'}</div>
                             <div style={{ fontWeight: 'bold', fontFamily: 'monospace', fontSize: fs.mono, letterSpacing: '0.5px' }}>{invoiceNumber}</div>
                         </td>
                         <td style={{ padding: '2px 3px', verticalAlign: 'top' }}>
@@ -188,6 +188,15 @@ const ReceiptContent = ({ invoice, invoiceNumber, formatCurrency, baseAmount, va
                             </div>
                         </td>
                     </tr>
+                    {invoice?.referenceInvoiceNumber && (
+                        <tr style={{ borderBottom: '1px solid #000' }}>
+                            <td colSpan={2} style={{ padding: '2px 3px' }}>
+                                <span style={{ fontSize: fs.small, color: '#555' }}>مرجع الفاتورة الأصلية: </span>
+                                <span style={{ fontWeight: 'bold', fontFamily: 'monospace' }}>{invoice.referenceInvoiceNumber}</span>
+                                {invoice.refundReason && <div style={{ fontSize: fs.small }}>السبب: {invoice.refundReason}</div>}
+                            </td>
+                        </tr>
+                    )}
                     {(invoice?.customerName || invoice?.customerPhone) && (
                         <tr>
                             <td style={{ padding: '2px 3px', borderRight: '1px solid #000', verticalAlign: 'top' }}>
@@ -272,7 +281,7 @@ const ReceiptContent = ({ invoice, invoiceNumber, formatCurrency, baseAmount, va
                         color: '#fff',
                     }}
                 >
-                    <span style={{ fontSize: fs.totalLbl, fontWeight: '900', color: '#fff' }}>الإجمالي</span>
+                    <span style={{ fontSize: fs.totalLbl, fontWeight: '900', color: '#fff' }}>{invoice?.totalLabel || 'الإجمالي'}</span>
                     <span style={{ fontFamily: 'monospace', fontSize: fs.totalVal, fontWeight: '900', color: '#fff' }}>
                         {formatCurrency(totalAmount)}
                         <span style={{ fontSize: fs.small, fontWeight: 'normal', color: '#fff' }}> ر.س</span>
@@ -290,7 +299,7 @@ const ReceiptContent = ({ invoice, invoiceNumber, formatCurrency, baseAmount, va
                     marginBottom: '10px',
                     fontWeight: 'bold',
                 }}>
-                    طريقة الدفع: {invoice.paymentMethod}
+                    {invoice?.paymentLabel || 'طريقة الدفع'}: {invoice.paymentMethod}
                 </div>
             )}
 
@@ -307,7 +316,7 @@ const ReceiptContent = ({ invoice, invoiceNumber, formatCurrency, baseAmount, va
                                 fgColor="#000000"
                             />
                         </div>
-                        <div style={{ fontSize: fs.normal, marginTop: '4px', fontWeight: '900', textAlign: 'center' }}>QR فاتورة ضريبية</div>
+                        <div style={{ fontSize: fs.normal, marginTop: '4px', fontWeight: '900', textAlign: 'center' }}>{invoice?.referenceInvoiceNumber ? 'QR إشعار دائن' : 'QR فاتورة ضريبية'}</div>
 
                         {invoice?.isZatcaPhase2 && (
                             <div style={{ fontSize: '8px', fontWeight: 'bold', border: '1px solid #000', padding: '2px 4px', borderRadius: '2px', marginTop: '2px' }}>
