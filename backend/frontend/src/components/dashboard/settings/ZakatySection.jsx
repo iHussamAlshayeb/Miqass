@@ -107,7 +107,7 @@ const ZakatySection = ({ onTaxNumberSaved }) => {
     };
 
     const disconnect = async () => {
-        if (!window.confirm('إلغاء مفتاح الصالون في Zakaty؟ سيبقى سجل المنشأة ووحدة EGS.')) return;
+        if (!window.confirm('إلغاء الربط مع Zakaty؟\n\n• يُلغى مفتاح الصالون ويتوقف إرسال الفواتير إلى هيئة الزكاة.\n• تبقى الفواتير المُرسلة سابقاً كما هي.\n• يبقى الرقم الضريبي والعنوان على الفاتورة المطبوعة.\n• يمكنك الربط من جديد لاحقاً.')) return;
         setSaving(true);
         setError('');
         setMessage('');
@@ -127,6 +127,8 @@ const ZakatySection = ({ onTaxNumberSaved }) => {
     const isReady = status === 'ready';
     const hasManualKey = config.hasApiKey && !config.isProvisioned && !status;
     const identityLocked = config.isProvisioned || isRunning || status === 'awaiting_otp';
+    // أي أثر للربط (مكتمل، جارٍ، بانتظار OTP، متعثر، أو مفتاح يدوي) يسمح بإلغائه
+    const isLinked = config.isProvisioned || config.hasApiKey || Boolean(status);
 
     return (
         <section className="mt-6 border-t border-slate-200 pt-6">
@@ -160,12 +162,12 @@ const ZakatySection = ({ onTaxNumberSaved }) => {
                             <button type="button" disabled={saving || otp.trim().length < 4} onClick={submitOtp} className="rounded-md bg-slate-900 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50">تأكيد OTP</button>
                         </div>
                     )}
-                    {(isReady || hasManualKey) && <div className="flex flex-wrap gap-3">
-                        <button type="button" onClick={saveAddress} disabled={saving} className="inline-flex items-center gap-2 rounded-md border border-slate-300 px-4 py-2.5 text-sm font-bold disabled:opacity-50"><Save size={16} />حفظ العنوان</button>
-                        {config.hasApiKey && <button type="button" onClick={disconnect} disabled={saving} className="inline-flex items-center gap-2 text-sm font-bold text-red-600 disabled:opacity-50"><Unplug size={16} />إلغاء المفتاح</button>}
+                    {(isReady || hasManualKey || isLinked) && <div className="flex flex-wrap gap-3">
+                        {(isReady || hasManualKey) && <button type="button" onClick={saveAddress} disabled={saving} className="inline-flex items-center gap-2 rounded-md border border-slate-300 px-4 py-2.5 text-sm font-bold disabled:opacity-50"><Save size={16} />حفظ العنوان</button>}
+                        {isLinked && <button type="button" onClick={disconnect} disabled={saving || config.keyIssuePending} className="inline-flex items-center gap-2 rounded-md border border-red-200 px-4 py-2.5 text-sm font-bold text-red-600 hover:bg-red-50 disabled:opacity-50"><Unplug size={16} />إلغاء الربط</button>}
                     </div>}
                     {isRunning && <p role="status" className="text-sm text-slate-600">يستمر تجهيز الربط على الخادم حتى بعد إغلاق الصفحة.</p>}
-                    {hasManualKey && <p className="text-sm text-amber-700">يوجد مفتاح يدوي محفوظ. ألغِه قبل بدء الربط التلقائي.</p>}
+                    {hasManualKey && <p className="text-sm text-amber-700">يوجد مفتاح يدوي محفوظ. ألغِ الربط قبل بدء الربط التلقائي.</p>}
                     {config.keyIssuePending && <p role="alert" className="text-sm text-amber-700">نتيجة إصدار المفتاح غير مؤكدة. يلزم مراجعة مسؤول Zakaty.</p>}
                     {config.setupError && <p role="alert" className="text-sm text-red-600">{config.setupError}{isRunning ? ' ستُعاد المحاولة تلقائيًا.' : ''}</p>}
                     {message && <p role="status" className="text-sm text-emerald-700">{message}</p>}

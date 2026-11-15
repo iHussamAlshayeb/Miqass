@@ -62,26 +62,45 @@ const updateZakatyConfig = async (req, res) => {
   }
 };
 
+/**
+ * فك الربط الكامل مع Zakaty: يُلغى مفتاح الصالون ثم تُمسح بيانات الربط المحلية
+ * (المنشأة، وحدة EGS، الأرقام المسجلة، حالة التهيئة) حتى يمكن الربط من جديد ولو بهوية مختلفة.
+ * يبقى الرقم الضريبي والعنوان لأنهما يُطبعان على الفاتورة، وتبقى الفواتير المُرسلة سابقاً كما هي.
+ */
 const disconnectZakatyConfig = async (req, res) => {
   try {
     const current = await Tenant.findById(req.tenantId).select('taxSettings.zakaty').lean();
     if (!current) return res.status(404).json({ message: 'الصالون غير موجود' });
     const config = current.taxSettings?.zakaty || {};
-    if (['preparing', 'awaiting_otp', 'finalizing'].includes(config.setup?.status)) {
-      return res.status(409).json({ message: 'لا يمكن إلغاء المفتاح أثناء تجهيز الربط.' });
+    const setup = config.setup || {};
+    // خطوة تهيئة تعمل الآن على الخادم: ننتظر انتهاءها حتى لا يُنشأ شيء بعد الفصل
+    if (['preparing', 'finalizing'].includes(setup.status) && setup.lockUntil && new Date(setup.lockUntil) > new Date()) {
+      return res.status(409).json({ message: 'خطوة من تجهيز الربط تعمل الآن. حاول بعد دقيقة.' });
     }
     if (config.keyIssuingAt) return res.status(409).json({ message: 'إصدار المفتاح غير محسوم. راجع المسؤول قبل الفصل.' });
     if (config.apiKeyId) await revokeZakatySalonKey(config.apiKeyId);
+
     const tenant = await Tenant.findByIdAndUpdate(req.tenantId, {
       $set: {
-        'taxSettings.zakaty.apiKey': '', 'taxSettings.zakaty.apiKeyId': '',
-        'taxSettings.zakaty.setup.status': '', 'taxSettings.zakaty.setup.error': '',
+        'taxSettings.zakaty.apiKey': '',
+        'taxSettings.zakaty.apiKeyId': '',
+        'taxSettings.zakaty.tenantId': '',
+        'taxSettings.zakaty.egsUnitId': '',
+        'taxSettings.zakaty.registeredVatNumber': '',
+        'taxSettings.zakaty.registeredCrNumber': '',
+        'taxSettings.zakaty.keyIssuingAt': null,
+        'taxSettings.zakaty.setup': {
+          status: '', error: '', lockOwner: '', lockUntil: null, nextAttemptAt: null, complianceCheckedAt: null,
+        },
       },
     }, { returnDocument: 'after', select: 'taxSettings.zakaty' }).lean();
     if (!tenant) return res.status(404).json({ message: "الصالون غير موجود" });
-    return res.json({ message: 'تم إلغاء مفتاح الصالون؛ بقي سجل الصالون ووحدة EGS في Zakaty.', config: presentZakatyConfig(tenant) });
+    return res.json({
+      message: 'تم إلغاء الربط مع Zakaty. توقف إرسال الفواتير، وبقيت الفواتير المُرسلة سابقاً كما هي. يمكنك الربط من جديد في أي وقت.',
+      config: presentZakatyConfig(tenant),
+    });
   } catch (error) {
-    return res.status(502).json({ message: 'تعذر إلغاء المفتاح من Zakaty. لم تُمسح بيانات الربط المحلية.' });
+    return res.status(502).json({ message: 'تعذر إلغاء المفتاح من Zakaty، فلم يُلغَ الربط. حاول مرة أخرى.' });
   }
 };
 
