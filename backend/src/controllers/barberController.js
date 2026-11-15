@@ -210,11 +210,9 @@ const updateAppointmentStatus = async (req, res) => {
       }
     }
 
-    if (
-      status === "Completed" &&
-      updatedAppointment.bookingSource === "kiosk_walk_in" &&
-      !updatedAppointment.isReviewRequested
-    ) {
+    // طلب التقييم يُرسل عند إكمال أي حجز (أونلاين أو مباشر) مرة واحدة فقط.
+    // إعادة "إتمام" حجز مكتمل لم يُرسل له التقييم بعد تعيد المحاولة.
+    if (status === "Completed" && !updatedAppointment.isReviewRequested) {
       tenant ||= await Tenant.findById(req.tenantId);
       if (tenant) await sendReviewAfterCompletion(updatedAppointment, tenant);
     }

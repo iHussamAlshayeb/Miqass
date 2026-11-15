@@ -232,7 +232,7 @@ const DailyTab = ({
                                             <CheckCircle2 size={16} />
                                             مكتمل
                                         </span>
-                                        {app.bookingSource === 'kiosk_walk_in' && !app.isReviewRequested && reviewEnabled && whatsappSettings?.isEnabled && (
+                                        {!app.isReviewRequested && reviewEnabled && whatsappSettings?.isEnabled && (
                                             <button
                                                 type="button"
                                                 onClick={() => retryWalkInReview(app._id)}

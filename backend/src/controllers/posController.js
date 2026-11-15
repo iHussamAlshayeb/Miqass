@@ -236,7 +236,7 @@ const listTodayAppointments = async (req, res) => {
         saleId: appointment.saleId || null,
         isPaid: Boolean(appointment.saleId),
         canRequestReview: Boolean(
-          appointment.status === "Completed" && appointment.bookingSource === "kiosk_walk_in" && !appointment.isReviewRequested,
+          appointment.status === "Completed" && !appointment.isReviewRequested,
         ),
         cancelReason: appointment.cancelReason || "",
       })),
