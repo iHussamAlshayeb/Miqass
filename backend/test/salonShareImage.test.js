@@ -11,8 +11,11 @@ const {
 
 const pixelAt = (pixels, info, x, y) =>
   [...pixels.subarray((y * info.width + x) * info.channels, (y * info.width + x) * info.channels + 3)];
+// JPEG: مقارنة بهامش بسيط
+const near = (actual, expected, label) =>
+  assert.ok(actual.every((value, index) => Math.abs(value - expected[index]) <= 6), `${label}: ${actual} vs ${expected}`);
 
-test("wide and tall logos remain centered and uncropped on a fixed PNG canvas", async () => {
+test("wide and tall logos remain centered and uncropped on a fixed JPEG canvas", async () => {
   for (const [width, height, color] of [
     [600, 100, "#ff0000"],
     [100, 600, "#0000ff"],
@@ -24,13 +27,14 @@ test("wide and tall logos remain centered and uncropped on a fixed PNG canvas", 
     const metadata = await sharp(output).metadata();
     const { data, info } = await sharp(output).raw().toBuffer({ resolveWithObject: true });
 
-    assert.equal(metadata.format, "png");
+    assert.equal(metadata.format, "jpeg");
+    assert.equal(metadata.chromaSubsampling, "4:4:4");
     assert.equal(metadata.width, IMAGE_WIDTH);
     assert.equal(metadata.height, IMAGE_HEIGHT);
-    assert.deepEqual(pixelAt(data, info, 0, 0), [255, 255, 255]);
-    assert.deepEqual(pixelAt(data, info, 600, 315), color === "#ff0000" ? [255, 0, 0] : [0, 0, 255]);
-    assert.deepEqual(pixelAt(data, info, 600, 40), [255, 255, 255]);
-    assert.deepEqual(pixelAt(data, info, 40, 315), [255, 255, 255]);
+    near(pixelAt(data, info, 0, 0), [255, 255, 255], "corner");
+    near(pixelAt(data, info, 600, 315), color === "#ff0000" ? [255, 0, 0] : [0, 0, 255], "centre");
+    near(pixelAt(data, info, 600, 20), [255, 255, 255], "top");
+    near(pixelAt(data, info, 20, 315), [255, 255, 255], "side");
   }
 });
 
@@ -47,4 +51,16 @@ test("a private external logo falls back without contacting the host", async () 
   const metadata = await sharp(image).metadata();
   assert.equal(metadata.width, IMAGE_WIDTH);
   assert.equal(metadata.height, IMAGE_HEIGHT);
+});
+
+test("small logos are enlarged at most 2x so they stay sharp; transparency becomes white", async () => {
+  const source = await sharp({ create: { width: 100, height: 100, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    .composite([{ input: await sharp({ create: { width: 50, height: 50, channels: 3, background: "#00aa00" } }).png().toBuffer(), gravity: "centre" }])
+    .png().toBuffer();
+  const output = await renderSalonShareImage(`data:image/png;base64,${source.toString("base64")}`);
+  const { data, info } = await sharp(output).raw().toBuffer({ resolveWithObject: true });
+  // 100px → 200px: الجزء الأخضر (50px) يصبح 100px في المنتصف، وما حوله أبيض
+  near(pixelAt(data, info, 600, 315), [0, 170, 0], "logo centre");
+  near(pixelAt(data, info, 600, 315 - 70), [255, 255, 255], "transparent area");
+  near(pixelAt(data, info, 600 - 110, 315), [255, 255, 255], "outside 2x box");
 });

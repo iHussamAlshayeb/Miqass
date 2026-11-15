@@ -1,4 +1,4 @@
-const { IMAGE_WIDTH, IMAGE_HEIGHT, logoVersion } = require("./salonShareImage");
+const { IMAGE_WIDTH, IMAGE_HEIGHT, SHARE_IMAGE_REVISION, logoVersion } = require("./salonShareImage");
 
 const escapeHtml = (value) =>
   String(value).replace(/[&<>"']/g, (character) => {
@@ -18,7 +18,7 @@ const renderSalonSocialMeta = (html, tenant, origin) => {
   const description =
     tenant.bio?.trim().slice(0, 160) || `احجز موعدك في ${name} بسهولة.`;
   const url = `${origin}/${encodeURIComponent(tenant.slug)}`;
-  const image = `${origin}/share-image/${encodeURIComponent(tenant.slug)}?v=${logoVersion(tenant.branding?.logoUrl)}`;
+  const image = `${origin}/share-image/${encodeURIComponent(tenant.slug)}?v=${logoVersion(tenant.branding?.logoUrl)}.${SHARE_IMAGE_REVISION}`;
   const tags = [
     `<meta name="description" content="${escapeHtml(description)}" />`,
     `<link rel="canonical" href="${escapeHtml(url)}" />`,
@@ -29,7 +29,8 @@ const renderSalonSocialMeta = (html, tenant, origin) => {
     `<meta property="og:description" content="${escapeHtml(description)}" />`,
     `<meta property="og:url" content="${escapeHtml(url)}" />`,
     `<meta property="og:image" content="${escapeHtml(image)}" />`,
-    '<meta property="og:image:type" content="image/png" />',
+    `<meta property="og:image:secure_url" content="${escapeHtml(image)}" />`,
+    '<meta property="og:image:type" content="image/jpeg" />',
     `<meta property="og:image:width" content="${IMAGE_WIDTH}" />`,
     `<meta property="og:image:height" content="${IMAGE_HEIGHT}" />`,
     `<meta property="og:image:alt" content="${escapeHtml(`شعار ${name}`)}" />`,

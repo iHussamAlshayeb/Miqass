@@ -1,7 +1,9 @@
 const sharp = require("sharp");
 const { logoVersion } = require("./salonShareImage");
 
-const LOGO_MAX_SIZE = 512;
+// شعار بدقة تكفي للشاشات عالية الكثافة ولصورة معاينة الرابط، بحجم معقول داخل مستند الصالون
+const LOGO_MAX_SIZE = 1024;
+const LOGO_MAX_BYTES = 300 * 1024;
 const MAX_INPUT_BYTES = 3 * 1024 * 1024;
 // صيغ نقطية فقط؛ SVG مستبعد لأنه قد يحتوي سكربتات
 const DATA_URI_PATTERN = /^data:image\/(png|jpe?g|webp|gif);base64,([A-Za-z0-9+/=\s]+)$/i;
@@ -16,8 +18,10 @@ const parseLogoDataUri = (value) => {
 };
 
 /**
- * يصغّر الشعار إلى 512×512 كحد أقصى ويحوّله إلى WebP.
- * يُرجع data URI جديداً، أو الأصل إذا كان الضغط لا يوفّر شيئاً.
+ * يجهّز الشعار للتخزين بأعلى جودة ممكنة:
+ * - شعار PNG/WebP أبعاده ≤ 1024 وحجمه معقول يُحفظ كما هو (لا إعادة ضغط تفقده الجودة)
+ * - غير ذلك يُصغّر إلى 1024 كحد أقصى ويُحفظ WebP بلا فقد، وإن كبر حجمه فبجودة عالية
+ *   مع ألوان كاملة (بدون تقليل دقة الألوان) حتى تبقى الحواف والنصوص حادة
  */
 const compressLogoDataUri = async (dataUri) => {
   const parsed = parseLogoDataUri(dataUri);
@@ -26,18 +30,33 @@ const compressLogoDataUri = async (dataUri) => {
     throw Object.assign(new Error("حجم الشعار كبير جداً. الحد الأقصى 3 ميجابايت."), { statusCode: 400 });
   }
 
+  let meta;
+  try {
+    meta = await sharp(parsed.buffer, { animated: false }).metadata();
+  } catch {
+    throw Object.assign(new Error("تعذر قراءة صورة الشعار. جرّب صورة أخرى."), { statusCode: 400 });
+  }
+  const fitsAsIs = ["png", "webp"].includes(meta.format)
+    && Math.max(meta.width || 0, meta.height || 0) <= LOGO_MAX_SIZE
+    && (meta.orientation || 1) === 1
+    && parsed.buffer.length <= LOGO_MAX_BYTES;
+  if (fitsAsIs) return dataUri;
+
+  const encode = (options) => sharp(parsed.buffer, { animated: false })
+    .rotate()
+    .resize(LOGO_MAX_SIZE, LOGO_MAX_SIZE, { fit: "inside", withoutEnlargement: true })
+    .webp(options)
+    .toBuffer();
+
   let output;
   try {
-    output = await sharp(parsed.buffer, { animated: false })
-      .rotate()
-      .resize(LOGO_MAX_SIZE, LOGO_MAX_SIZE, { fit: "inside", withoutEnlargement: true })
-      .webp({ quality: 82 })
-      .toBuffer();
+    output = await encode({ lossless: true, effort: 6 });
+    if (output.length > LOGO_MAX_BYTES) output = await encode({ quality: 95, alphaQuality: 100, smartSubsample: true, effort: 6 });
+    if (output.length > LOGO_MAX_BYTES) output = await encode({ quality: 88, alphaQuality: 100, smartSubsample: true, effort: 6 });
   } catch {
     throw Object.assign(new Error("تعذر قراءة صورة الشعار. جرّب صورة أخرى."), { statusCode: 400 });
   }
 
-  if (output.length >= parsed.buffer.length && parsed.contentType === "image/webp") return dataUri;
   return `data:image/webp;base64,${output.toString("base64")}`;
 };
 

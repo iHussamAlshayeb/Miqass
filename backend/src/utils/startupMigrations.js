@@ -149,7 +149,8 @@ const upgradeStoredSecrets = async () => {
 /**
  * 5) ضغط شعارات base64 الكبيرة (512×512 WebP). عند أي فشل يبقى الشعار كما هو.
  */
-const LOGO_COMPRESS_THRESHOLD = 40 * 1024;
+// فقط الشعارات الكبيرة جداً (أكبر من حد التخزين بعد ترميز base64)؛ الشعارات المحفوظة لا يُعاد ضغطها فتفقد جودتها
+const LOGO_COMPRESS_THRESHOLD = 420 * 1024;
 const compressStoredLogos = async () => {
   const cursor = Tenant.collection.find(
     { "branding.logoUrl": { $regex: "^data:image/" } },

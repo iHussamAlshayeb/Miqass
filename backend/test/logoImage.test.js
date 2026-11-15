@@ -12,13 +12,27 @@ const makePng = async (size) => {
   return `data:image/png;base64,${buffer.toString("base64")}`;
 };
 
-test("large logos are resized to 512px WebP and shrink", async () => {
+test("large logos are resized to 1024px WebP without visible loss", async () => {
   const original = await makePng(1600);
   const compressed = await compressLogoDataUri(original);
   assert.match(compressed, /^data:image\/webp;base64,/);
   const meta = await sharp(parseLogoDataUri(compressed).buffer).metadata();
-  assert.ok(meta.width <= 512 && meta.height <= 512);
-  assert.ok(compressed.length < original.length);
+  assert.equal(Math.max(meta.width, meta.height), 1024);
+  assert.ok(parseLogoDataUri(compressed).buffer.length <= 300 * 1024);
+});
+
+test("a logo that already fits is stored exactly as uploaded (no re-compression)", async () => {
+  const original = await makePng(800);
+  assert.equal(await compressLogoDataUri(original), original);
+});
+
+test("JPEG logos are converted to WebP keeping flat colours exact", async () => {
+  const jpeg = await sharp({ create: { width: 300, height: 300, channels: 3, background: { r: 200, g: 40, b: 90 } } }).jpeg({ quality: 100 }).toBuffer();
+  const compressed = await compressLogoDataUri(`data:image/jpeg;base64,${jpeg.toString("base64")}`);
+  assert.match(compressed, /^data:image\/webp;base64,/);
+  const { data } = await sharp(parseLogoDataUri(compressed).buffer).raw().toBuffer({ resolveWithObject: true });
+  const [r, g, b] = data;
+  assert.ok(Math.abs(r - 200) <= 2 && Math.abs(g - 40) <= 2 && Math.abs(b - 90) <= 2, `${r},${g},${b}`);
 });
 
 test("SVG and corrupt images are rejected with a clear 400 error", async () => {

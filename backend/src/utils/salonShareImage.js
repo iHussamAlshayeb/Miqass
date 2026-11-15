@@ -15,6 +15,10 @@ const fallbackLogoPath = path.join(__dirname, "..", "..", "frontend", "dist", "l
 const logoVersion = (logoUrl) =>
   crypto.createHash("sha256").update(logoUrl || "").digest("hex").slice(0, 12);
 
+// يتغير مع تغيّر طريقة رسم صورة المعاينة، فيجلب واتساب وغيره الصورة الجديدة بدل نسختهم المخزنة
+const SHARE_IMAGE_REVISION = "2";
+const LOGO_BOX = 540;
+
 const isPublicAddress = (address) => {
   try {
     return ipaddr.process(address.replace(/^\[|\]$/g, "")).range() === "unicast";
@@ -88,21 +92,31 @@ const loadLogo = async (logoUrl) => {
   return fs.readFile(fallbackLogoPath);
 };
 
+/**
+ * صورة معاينة رابط الصالون (1200×630): الشعار في المنتصف على خلفية بيضاء.
+ * JPEG بألوان كاملة (4:4:4) وجودة عالية: أصغر حجماً من PNG فيظهر في واتساب بسرعة،
+ * ويحافظ على حدة الحواف والنصوص. الشعار الصغير يُكبَّر بحد أقصى ضعف حجمه حتى لا يتشوش.
+ */
 const renderSalonShareImage = async (logoUrl) => {
+  const prepare = async (input) => {
+    const image = sharp(input, { limitInputPixels: 30_000_000 }).rotate();
+    const meta = await image.metadata();
+    const longest = Math.max(meta.width || 0, meta.height || 0) || LOGO_BOX;
+    const box = Math.min(LOGO_BOX, longest * 2);
+    return image
+      .resize(box, box, { fit: "inside", kernel: "lanczos3" })
+      .flatten({ background: "#ffffff" })
+      .png()
+      .toBuffer();
+  };
+
   let logo;
   try {
     const source = await loadLogo(logoUrl);
     if (source.length > MAX_SOURCE_BYTES) throw new Error("Logo exceeds size limit");
-    logo = await sharp(source, { limitInputPixels: 30_000_000 })
-      .rotate()
-      .resize(510, 510, { fit: "inside" })
-      .png()
-      .toBuffer();
+    logo = await prepare(source);
   } catch {
-    logo = await sharp(fallbackLogoPath)
-      .resize(510, 510, { fit: "inside" })
-      .png()
-      .toBuffer();
+    logo = await prepare(await fs.readFile(fallbackLogoPath));
   }
 
   return sharp({
@@ -114,13 +128,14 @@ const renderSalonShareImage = async (logoUrl) => {
     },
   })
     .composite([{ input: logo, gravity: "centre" }])
-    .png()
+    .jpeg({ quality: 92, chromaSubsampling: "4:4:4", mozjpeg: true })
     .toBuffer();
 };
 
 module.exports = {
   IMAGE_WIDTH,
   IMAGE_HEIGHT,
+  SHARE_IMAGE_REVISION,
   logoVersion,
   isPublicAddress,
   renderSalonShareImage,

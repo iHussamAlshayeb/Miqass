@@ -120,8 +120,9 @@ app.get("/share-image/:slug", async (req, res) => {
     if (!tenant) return res.sendStatus(404);
 
     const image = await renderSalonShareImage(tenant.branding?.logoUrl);
-    res.setHeader("Cache-Control", "public, max-age=3600");
-    res.type("png").send(image);
+    // الرابط المرفق برقم الإصدار يتغير مع الشعار أو طريقة الرسم، فيُخزَّن طويلاً
+    res.setHeader("Cache-Control", req.query.v ? "public, max-age=604800" : "public, max-age=3600");
+    res.type("jpeg").send(image);
   } catch (error) {
     console.error("Failed to generate salon share image:", error);
     res.sendStatus(500);

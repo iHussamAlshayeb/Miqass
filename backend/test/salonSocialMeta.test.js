@@ -15,8 +15,8 @@ test("booking share metadata uses the salon name, logo, and canonical link", () 
   assert.match(rendered, /<title>صالون بالون للأطفال \| احجز موعدك<\/title>/);
   assert.match(rendered, /property="og:title" content="صالون بالون للأطفال \| احجز موعدك"/);
   assert.match(rendered, /property="og:site_name" content="صالون بالون للأطفال"/);
-  assert.match(rendered, /property="og:image" content="https:\/\/www\.miqass\.app\/share-image\/balloon\?v=[a-f0-9]{12}"/);
-  assert.match(rendered, /name="twitter:image" content="https:\/\/www\.miqass\.app\/share-image\/balloon\?v=[a-f0-9]{12}"/);
+  assert.match(rendered, /property="og:image" content="https:\/\/www\.miqass\.app\/share-image\/balloon\?v=[a-f0-9]{12}\.2"/);
+  assert.match(rendered, /name="twitter:image" content="https:\/\/www\.miqass\.app\/share-image\/balloon\?v=[a-f0-9]{12}\.2"/);
   assert.match(rendered, /property="og:image:width" content="1200"/);
   assert.match(rendered, /property="og:image:height" content="630"/);
   assert.match(rendered, /name="twitter:card" content="summary_large_image"/);
