@@ -2,7 +2,6 @@ require("dotenv").config();
 const mongoose = require("mongoose");
 const app = require("./src/app");
 const connectDB = require("./src/config/db");
-const redisClient = require("./src/utils/redisClient");
 const { startCronJobs, stopCronJobs } = require("./src/utils/cronJobs");
 const { runStartupMigrations } = require("./src/utils/startupMigrations");
 const { createShutdown } = require("./src/utils/shutdown");
@@ -35,7 +34,6 @@ const startServer = async () => {
       server,
       stopCronJobs: cronEnabled ? stopCronJobs : null,
       mongoose,
-      redisClient,
       timeoutMs: 25000,
     });
     process.on("SIGTERM", () => shutdown("SIGTERM", 0));

@@ -10,7 +10,6 @@ process.env.MIQASS_ROLE = "whatsapp";
 const http = require("http");
 const mongoose = require("mongoose");
 const connectDB = require("./src/config/db");
-const redisClient = require("./src/utils/redisClient");
 const WhatsAppMessage = require("./src/models/WhatsAppMessage");
 const { startWhatsappJobs, stopCronJobs, dispatchWhatsappQueue } = require("./src/utils/cronJobs");
 const { shouldRunWhatsappJobs, isQueueMode } = require("./src/services/whatsappOutbox");
@@ -111,7 +110,6 @@ const start = async () => {
     server,
     stopCronJobs: state.active ? stopCronJobs : null,
     mongoose,
-    redisClient,
     timeoutMs: 25000,
   });
   process.on("SIGTERM", () => shutdown("SIGTERM", 0));

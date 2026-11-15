@@ -1,12 +1,11 @@
 /**
  * إغلاق منظم: إيقاف المهام المجدولة ← إغلاق الخادم بعد إكمال الطلبات الجارية
- * ← إغلاق اتصالات MongoDB وRedis. مع حد أقصى للوقت حتى لا يعلق الإيقاف.
+ * ← إغلاق اتصال MongoDB. مع حد أقصى للوقت حتى لا يعلق الإيقاف.
  */
 const createShutdown = ({
   server,
   stopCronJobs,
   mongoose,
-  redisClient,
   timeoutMs = 25000,
   exit = (code) => process.exit(code),
   log = console,
@@ -29,11 +28,7 @@ const createShutdown = ({
     await closeServer();
     log.log("⏹️ أُغلق الخادم بعد إكمال الطلبات الجارية.");
     if (mongoose?.connection?.readyState) await mongoose.connection.close();
-    if (redisClient?.isOpen) {
-      // quit() ينتظر اتصالاً جاهزاً؛ إن كان Redis منقطعاً نغلق مباشرة
-      await (redisClient.isReady ? redisClient.quit() : redisClient.disconnect()).catch(() => {});
-    }
-    log.log("🏁 أُغلقت اتصالات قاعدة البيانات وRedis.");
+    log.log("🏁 أُغلق اتصال قاعدة البيانات.");
   };
 
   return (reason, code = 0) => {

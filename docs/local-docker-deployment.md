@@ -1,6 +1,6 @@
 # Miqass local Docker deployment
 
-The local production stack serves the React application and Express API from one container. MongoDB Atlas and Upstash Redis remain external so the local runtime continues using the existing production data configured in `Miqass.env`.
+The local production stack serves the React application and Express API from one container. MongoDB Atlas remains external so the local runtime continues using the existing production data configured in `Miqass.env`.
 
 ## Services
 

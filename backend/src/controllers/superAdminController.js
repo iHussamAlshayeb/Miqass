@@ -9,7 +9,7 @@ const SystemSettings = require("../models/SystemSettings");
 
 const jwt = require("jsonwebtoken");
 const { sendActivationEmail } = require("../utils/emailService");
-const redisCache = require("../utils/redisCache");
+const { setMaintenanceState } = require("../services/maintenanceState");
 const {
   RETENTION_DAYS,
   softDeleteTenant,
@@ -62,10 +62,6 @@ const updateSystemPricing = async (req, res) => {
       { returnDocument: "after", upsert: true },
     ).lean();
 
-    try {
-      await redisCache.del("system_pricing_public");
-    } catch (e) {}
-
     res.status(200).json({
       message: "تم تحديث الإعدادات المالية بنجاح",
       pricing: settings.pricing,
@@ -87,10 +83,7 @@ const toggleMaintenanceMode = async (req, res) => {
       { returnDocument: "after", upsert: true },
     ).lean();
 
-    try {
-      await redisCache.set("system_maintenance_mode", String(settings.isMaintenanceMode), { EX: 60 });
-      await redisCache.set("system_maintenance_message", settings.maintenanceMessage || "", { EX: 60 });
-    } catch (e) {}
+    setMaintenanceState(settings);
 
     res.status(200).json({
       message: `تم ${isMaintenanceMode ? "تفعيل" : "إيقاف"} وضع الصيانة بنجاح`,
@@ -132,10 +125,6 @@ const updateTenantStatus = async (req, res) => {
     }
 
     await tenant.save();
-
-    try {
-      await redisCache.del(`tenant_public_profile:${tenant.slug}`);
-    } catch (e) {}
 
     const safeTenant = tenant.toObject();
     if (safeTenant.taxSettings?.zakaty) delete safeTenant.taxSettings.zakaty.apiKey;

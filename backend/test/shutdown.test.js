@@ -6,7 +6,7 @@ const { createShutdown } = require("../src/utils/shutdown");
 
 const quietLog = { log() {}, error() {} };
 
-test("shutdown runs in order: cron → server (after in-flight request) → mongo → redis", async () => {
+test("shutdown runs in order: cron → server (after in-flight request) → mongo", async () => {
   const order = [];
   let release;
   const server = http.createServer((req, res) => {
@@ -22,7 +22,6 @@ test("shutdown runs in order: cron → server (after in-flight request) → mong
     server,
     stopCronJobs: async () => { order.push("cron"); return true; },
     mongoose: { connection: { readyState: 1, close: async () => order.push("mongo") } },
-    redisClient: { isOpen: true, isReady: true, quit: async () => order.push("redis") },
     exit: (code) => { exitCode = code; },
     log: quietLog,
   });
@@ -35,7 +34,7 @@ test("shutdown runs in order: cron → server (after in-flight request) → mong
   await pending;
   await done;
 
-  assert.deepEqual(order, ["request-start", "cron", "request-done", "mongo", "redis"]);
+  assert.deepEqual(order, ["request-start", "cron", "request-done", "mongo"]);
   assert.equal(exitCode, 0);
 });
 

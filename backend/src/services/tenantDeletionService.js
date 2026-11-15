@@ -14,7 +14,6 @@ const InventoryMovement = require("../models/InventoryMovement");
 const Invoice = require("../models/Invoice");
 const NotificationDelivery = require("../models/NotificationDelivery");
 const PushDevice = require("../models/PushDevice");
-const redisCache = require("../utils/redisCache");
 
 // مدة الاحتفاظ بالصالون المحذوف قبل الحذف النهائي
 const RETENTION_DAYS = 30;
@@ -30,11 +29,6 @@ const TENANT_SCOPED_MODELS = [
 const httpError = (message, statusCode) =>
   Object.assign(new Error(message), { statusCode });
 
-const clearTenantCache = async (slug) => {
-  try {
-    await redisCache.del(`tenant_public_profile:${slug}`);
-  } catch {}
-};
 
 /**
  * حذف مؤقت: يُخفى الصالون ويتوقف كل شيء (الحجز، الدخول، واتساب، الحملات)
@@ -84,7 +78,6 @@ const softDeleteTenant = async (tenantId, confirmSlug) => {
     );
   }
 
-  await clearTenantCache(tenant.slug);
   return { salonName: tenant.salonName, purgeAfter };
 };
 
@@ -115,7 +108,6 @@ const restoreTenant = async (tenantId) => {
     );
   }
 
-  await clearTenantCache(tenant.slug);
   return { salonName: tenant.salonName };
 };
 
@@ -130,7 +122,6 @@ const purgeTenant = async (tenantId) => {
     TENANT_SCOPED_MODELS.map((Model) => Model.deleteMany({ tenantId: tenant._id })),
   );
   await Tenant.deleteOne({ _id: tenant._id });
-  await clearTenantCache(tenant.slug);
   return true;
 };
 
