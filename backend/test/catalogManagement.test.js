@@ -130,3 +130,31 @@ test("a sold product is archived and frees its SKU; an unsold one is deleted wit
   assert.equal(doc.deleted, true);
   assert.equal(removed.mock.callCount(), 1);
 });
+
+test("barber prices are set from the service: blanks mean base price, omitted means untouched", async (t) => {
+  const { updateService } = require("../src/controllers/servicesController");
+  const doc = { _id: id(), set() {}, save: async () => {} };
+  t.mock.method(Service, "exists", async () => null);
+  t.mock.method(Service, "findOne", () => doc);
+  const pulls = t.mock.method(Barber, "updateMany", async () => ({}));
+  const writes = t.mock.method(Barber, "bulkWrite", async () => ({}));
+  const barberA = String(id()); const barberB = String(id());
+
+  let res = response();
+  await updateService({ tenantId: id(), params: { serviceId: String(doc._id) }, body: { price: 40, barberPrices: [{ barberId: barberA, price: "55" }, { barberId: barberB, price: "" }] } }, res);
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(pulls.mock.calls[0].arguments[1], { $pull: { servicePrices: { serviceId: doc._id } } });
+  const ops = writes.mock.calls[0].arguments[0];
+  assert.equal(ops.length, 1);
+  assert.equal(ops[0].updateOne.filter._id, barberA);
+  assert.deepEqual(ops[0].updateOne.update, { $push: { servicePrices: { serviceId: doc._id, price: 55 } } });
+
+  res = response();
+  await updateService({ tenantId: id(), params: { serviceId: String(doc._id) }, body: { isActive: false } }, res);
+  assert.equal(pulls.mock.callCount(), 1);
+
+  res = response();
+  await updateService({ tenantId: id(), params: { serviceId: String(doc._id) }, body: { barberPrices: [{ barberId: barberA, price: -1 }] } }, res);
+  assert.equal(res.statusCode, 400);
+  assert.equal(pulls.mock.callCount(), 1);
+});

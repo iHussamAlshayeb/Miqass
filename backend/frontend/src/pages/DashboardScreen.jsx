@@ -133,9 +133,6 @@ const DashboardScreen = () => {
     const [newClosedDate, setNewClosedDate] = useState('');
 
     const [barbers, setBarbers] = useState([]);
-    const [services, setServices] = useState([]);
-    // صفحة الخدمات تُحدّث النسخة المستخدمة في أسعار الحلاقين بالإعدادات
-    const handleServicesChanged = useCallback((list) => setServices(list), []);
     const [taxNumber, setTaxNumber] = useState('');
 
     const [promoBanner, setPromoBanner] = useState(null);
@@ -213,7 +210,6 @@ const DashboardScreen = () => {
                     }
 
                     setBarbers(settingsRes.data.barbers || []);
-                    setServices(settingsRes.data.services || []);
                     setTaxNumber(settingsRes.data.taxNumber || '');
 
                 }
@@ -255,27 +251,29 @@ const DashboardScreen = () => {
         setIsSavingSettings(true);
         try {
             await API.put('/appointments/settings', {
-                ...settings, salonName, ownerName, ownerPhone, barbers, taxNumber, bio, socialLinks,
+                ...settings, salonName, ownerName, ownerPhone, taxNumber, bio, socialLinks,
+                // أسعار الحلاقين تُدار من صفحة الخدمات؛ عدم إرسالها يُبقيها كما هي في الخادم
+                barbers: barbers.map((barber) => {
+                    if (typeof barber === 'string') return barber;
+                    const { servicePrices: _servicePrices, ...rest } = barber;
+                    return rest;
+                }),
                 branding: { logoUrl, primaryColor: themeColors.primaryColor, secondaryColor: themeColors.secondaryColor },
                 paymentSettings
             });
             // إعادة تحميل الحلاقين والدفع: الرموز والمفاتيح السرية لا تُرجع من السيرفر (فقط hasPin / hasSecretKey)
             let refreshedBarbers = null;
-            let refreshedServices = null;
             let refreshedPayment = null;
             try {
                 const refreshed = await API.get('/appointments/settings');
                 refreshedBarbers = refreshed.data.barbers || [];
                 setBarbers(refreshedBarbers);
-                // الخدمات الجديدة تأخذ معرفاتها الحقيقية حتى لا تُنشأ من جديد في الحفظ التالي
-                refreshedServices = refreshed.data.services || [];
-                setServices(refreshedServices);
                 if (refreshed.data.paymentSettings) {
                     refreshedPayment = refreshed.data.paymentSettings;
                     setPaymentSettings(refreshedPayment);
                 }
             } catch { /* الحفظ نجح؛ التحديث المحلي اختياري */ }
-            return { ok: true, barbers: refreshedBarbers, services: refreshedServices, paymentSettings: refreshedPayment };
+            return { ok: true, barbers: refreshedBarbers, paymentSettings: refreshedPayment };
         } catch (error) {
             return { ok: false, message: error.response?.data?.message || 'حدث خطأ أثناء حفظ الإعدادات' };
         } finally { setIsSavingSettings(false); }
@@ -488,7 +486,7 @@ const DashboardScreen = () => {
                         {activeTab === 'appointments' && <DailyTab selectedDate={selectedDate} setSelectedDate={setSelectedDate} isLoading={isLoading} appointments={appointments} handleStatusChange={handleStatusChange} handleSingleWhatsApp={handleSingleWhatsApp} whatsappSettings={whatsappSettings} reviewEnabled={Boolean(settings?.enableGoogleReviews && settings?.googleReviewLink)} refreshAppointments={fetchAppointments} onOpenCheckout={openAppointmentCheckout} />}
                         {activeTab === 'all' && <AllTab isLoading={isLoading} allAppointments={allAppointments} exportToExcel={exportToExcel} handleStatusChange={handleStatusChange} />}
                         {activeTab === 'sales' && <SalesTab />}
-                        {activeTab === 'services' && <ServicesTab onChanged={handleServicesChanged} />}
+                        {activeTab === 'services' && <ServicesTab />}
                         {activeTab === 'products' && <ProductsTab onOpenInventory={() => handleSetActiveTab('inventory')} />}
                         {activeTab === 'inventory' && <InventoryTab />}
                         {activeTab === 'expenses' && <ExpensesTab />}
@@ -513,7 +511,6 @@ const DashboardScreen = () => {
                                 newClosedDate={newClosedDate} setNewClosedDate={setNewClosedDate}
                                 barbers={barbers} setBarbers={setBarbers}
                                 subscription={subscription}
-                                services={services}
                                 setTaxNumber={setTaxNumber}
                                 bio={bio} setBio={setBio}
                                 socialLinks={socialLinks} setSocialLinks={setSocialLinks}

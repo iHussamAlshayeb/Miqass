@@ -44,6 +44,32 @@ const readServiceInput = (body = {}, partial = false) => {
   return { data };
 };
 
+/** يقرأ أسعار الحلاقين لهذه الخدمة: الفارغ يعني السعر الأساسي. null إن لم تُرسل (لا تُمس). */
+const readBarberPrices = (raw) => {
+  if (raw === undefined) return { prices: null };
+  if (!Array.isArray(raw)) return { error: "أسعار الحلاقين غير صالحة." };
+  const prices = new Map();
+  for (const entry of raw.slice(0, 200)) {
+    const barberId = String(entry?.barberId || "");
+    if (!mongoose.Types.ObjectId.isValid(barberId)) continue;
+    if (entry.price === "" || entry.price === null || entry.price === undefined) continue;
+    const price = toPrice(entry.price);
+    if (price === null) return { error: "سعر أحد الحلاقين غير صالح." };
+    prices.set(barberId, price);
+  }
+  return { prices };
+};
+
+/** يستبدل أسعار هذه الخدمة لدى كل حلاقي الصالون بالقائمة المرسلة */
+const saveBarberPrices = async (tenantId, serviceId, prices) => {
+  if (!prices) return;
+  await Barber.updateMany({ tenantId }, { $pull: { servicePrices: { serviceId } } });
+  if (!prices.size) return;
+  await Barber.bulkWrite([...prices].map(([barberId, price]) => ({
+    updateOne: { filter: { _id: barberId, tenantId }, update: { $push: { servicePrices: { serviceId, price } } } },
+  })));
+};
+
 const findOwnService = (req) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.serviceId)) return null;
   return Service.findOne({ _id: req.params.serviceId, tenantId: req.tenantId, archivedAt: null });
@@ -60,8 +86,22 @@ const listServices = async (req, res) => {
       { $group: { _id: "$serviceId", count: { $sum: "$quantity" } } },
     ]);
     const soldMap = new Map(sold.map((row) => [String(row._id), row.count]));
+    const barbers = await Barber.find({ tenantId: req.tenantId }).select("name isActive iconColor servicePrices").sort({ createdAt: 1 }).lean();
+    const pricesByService = new Map();
+    for (const barber of barbers) {
+      for (const entry of barber.servicePrices || []) {
+        const key = String(entry.serviceId);
+        if (!pricesByService.has(key)) pricesByService.set(key, []);
+        pricesByService.get(key).push({ barberId: String(barber._id), price: Number(entry.price) });
+      }
+    }
     return res.json({
-      services: services.map((service) => ({ ...presentService(service), soldCount: soldMap.get(String(service._id)) || 0 })),
+      services: services.map((service) => ({
+        ...presentService(service),
+        soldCount: soldMap.get(String(service._id)) || 0,
+        barberPrices: pricesByService.get(String(service._id)) || [],
+      })),
+      barbers: barbers.map((barber) => ({ _id: barber._id, name: barber.name, isActive: barber.isActive !== false, iconColor: barber.iconColor || "" })),
       durations: DURATIONS,
     });
   } catch (error) {
@@ -73,9 +113,12 @@ const createService = async (req, res) => {
   try {
     const { data, error } = readServiceInput(req.body);
     if (error) return res.status(400).json({ message: error });
+    const barberPrices = readBarberPrices(req.body.barberPrices);
+    if (barberPrices.error) return res.status(400).json({ message: barberPrices.error });
     const duplicate = await Service.exists({ tenantId: req.tenantId, archivedAt: null, name: data.name });
     if (duplicate) return res.status(409).json({ message: "توجد خدمة بنفس الاسم." });
     const service = await Service.create({ tenantId: req.tenantId, isActive: true, ...data });
+    await saveBarberPrices(req.tenantId, service._id, barberPrices.prices);
     return res.status(201).json({ message: "أُضيفت الخدمة.", service: presentService(service) });
   } catch (error) {
     return res.status(500).json({ message: "تعذر إضافة الخدمة." });
@@ -86,6 +129,8 @@ const updateService = async (req, res) => {
   try {
     const { data, error } = readServiceInput(req.body, true);
     if (error) return res.status(400).json({ message: error });
+    const barberPrices = readBarberPrices(req.body.barberPrices);
+    if (barberPrices.error) return res.status(400).json({ message: barberPrices.error });
     if (data.name) {
       const duplicate = await Service.exists({ tenantId: req.tenantId, archivedAt: null, name: data.name, _id: { $ne: req.params.serviceId } });
       if (duplicate) return res.status(409).json({ message: "توجد خدمة بنفس الاسم." });
@@ -94,6 +139,7 @@ const updateService = async (req, res) => {
     if (!service) return res.status(404).json({ message: "الخدمة غير موجودة." });
     service.set(data);
     await service.save();
+    await saveBarberPrices(req.tenantId, service._id, barberPrices.prices);
     return res.json({ message: "حُفظت الخدمة.", service: presentService(service) });
   } catch (error) {
     return res.status(500).json({ message: "تعذر حفظ الخدمة." });

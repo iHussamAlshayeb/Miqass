@@ -13,11 +13,12 @@ const durationLabel = (minutes) => {
     const hoursLabel = hours === 1 ? 'ساعة' : hours === 2 ? 'ساعتان' : `${hours} ساعات`;
     return rest ? `${hoursLabel} و${rest} د` : hoursLabel;
 };
-const emptyService = { name: '', category: 'عام', price: '', duration: 30, description: '', isActive: true };
+const emptyService = { name: '', category: 'عام', price: '', duration: 30, description: '', isActive: true, barberPrices: {} };
 
-/** الخدمات: إضافة وتعديل وإيقاف وحذف. onChanged يحدّث نسخة لوحة التحكم (أسعار الحلاقين). */
-const ServicesTab = ({ onChanged }) => {
+/** الخدمات: إضافة وتعديل وإيقاف وحذف، وأسعار كل حلاق للخدمة من نفس النافذة. */
+const ServicesTab = () => {
     const [services, setServices] = useState([]);
+    const [barbers, setBarbers] = useState([]);
     const [durations, setDurations] = useState(DEFAULT_DURATIONS);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
@@ -35,14 +36,14 @@ const ServicesTab = ({ onChanged }) => {
             const res = await API.get('/services');
             const list = res.data.services || [];
             setServices(list);
+            setBarbers(res.data.barbers || []);
             if (res.data.durations?.length) setDurations(res.data.durations);
-            onChanged?.(list.filter((service) => service.isActive));
         } catch (error) {
             setNotice({ ok: false, text: errorMessage(error, 'تعذر جلب الخدمات.') });
         } finally {
             setLoading(false);
         }
-    }, [onChanged]);
+    }, []);
 
     useEffect(() => { load(); }, [load]);
 
@@ -64,11 +65,17 @@ const ServicesTab = ({ onChanged }) => {
         setFormError('');
         setEditing(service || 'new');
         setForm(service
-            ? { name: service.name, category: service.category || 'عام', price: String(service.price), duration: service.duration, description: service.description || '', isActive: service.isActive }
+            ? {
+                name: service.name, category: service.category || 'عام', price: String(service.price), duration: service.duration,
+                description: service.description || '', isActive: service.isActive,
+                barberPrices: Object.fromEntries((service.barberPrices || []).map((entry) => [entry.barberId, String(entry.price)])),
+            }
             : emptyService);
     };
     const closeForm = useCallback(() => setEditing(null), []);
     const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+    const setBarberPrice = (barberId, value) => setForm((current) => ({ ...current, barberPrices: { ...current.barberPrices, [barberId]: value } }));
+    const barberName = (barberId) => barbers.find((barber) => String(barber._id) === String(barberId))?.name || '';
 
     const save = async (event) => {
         event?.preventDefault();
@@ -76,7 +83,15 @@ const ServicesTab = ({ onChanged }) => {
         if (form.price === '' || Number(form.price) < 0) { setFormError('اكتب سعر الخدمة.'); return; }
         setSaving(true);
         setFormError('');
-        const body = { ...form, price: Number(form.price), duration: Number(form.duration) };
+        const body = {
+            ...form,
+            price: Number(form.price),
+            duration: Number(form.duration),
+            // الفارغ = السعر الأساسي؛ تُرسل القائمة كاملة فتستبدل أسعار هذه الخدمة لدى كل الحلاقين
+            barberPrices: Object.entries(form.barberPrices || {})
+                .filter(([, price]) => price !== '')
+                .map(([barberId, price]) => ({ barberId, price: Number(price) })),
+        };
         try {
             const res = editing === 'new'
                 ? await API.post('/services', body)
@@ -168,6 +183,13 @@ const ServicesTab = ({ onChanged }) => {
                                         <td className="py-3">
                                             <p className="font-black text-slate-800">{service.name}</p>
                                             <p className="mt-0.5 text-xs font-bold text-slate-400">{service.category || 'عام'}{service.description ? ` · ${service.description}` : ''}</p>
+                                            {service.barberPrices?.length > 0 && (
+                                                <p className="mt-1 flex flex-wrap gap-1">
+                                                    {service.barberPrices.filter((entry) => barberName(entry.barberId)).map((entry) => (
+                                                        <span key={entry.barberId} className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-black text-emerald-800">{barberName(entry.barberId)}: <span dir="ltr">{toMoney(entry.price)}</span></span>
+                                                    ))}
+                                                </p>
+                                            )}
                                         </td>
                                         <td className="py-3 font-bold text-slate-600">{durationLabel(service.duration)}</td>
                                         <td className="py-3 text-left font-black text-slate-800" dir="ltr">{toMoney(service.price)} <span className="text-xs text-slate-400">ر.س</span></td>
@@ -189,7 +211,7 @@ const ServicesTab = ({ onChanged }) => {
                         </table>
                     </div>
                 )}
-                <p className="mt-4 text-xs font-bold text-slate-400">الأسعار شاملة ضريبة القيمة المضافة. لتحديد سعر مختلف لحلاق معيّن: الإعدادات ← الحلاقون.</p>
+                <p className="mt-4 text-xs font-bold text-slate-400">الأسعار شاملة ضريبة القيمة المضافة. لسعر مختلف لحلاق معيّن افتح الخدمة واكتب سعره في قسم "أسعار الحلاقين".</p>
             </section>
 
             {editing && (
@@ -227,6 +249,37 @@ const ServicesTab = ({ onChanged }) => {
                         <Field label="وصف مختصر (اختياري)">
                             <textarea value={form.description} maxLength={300} rows={3} onChange={(event) => update('description', event.target.value)} className={`${inputClass} h-auto py-2`} />
                         </Field>
+                        {barbers.length > 0 && (
+                            <div className="rounded-lg border border-slate-200">
+                                <div className="border-b border-slate-100 px-3 py-2.5">
+                                    <p className="text-sm font-black text-slate-800">أسعار الحلاقين</p>
+                                    <p className="mt-0.5 text-[11px] font-bold text-slate-500">اكتب سعراً خاصاً لحلاق معيّن، أو اتركه فارغاً ليأخذ السعر الأساسي{form.price !== '' ? ` (${toMoney(form.price)})` : ''}.</p>
+                                </div>
+                                <div className="divide-y divide-slate-100">
+                                    {barbers.map((barber) => {
+                                        const value = form.barberPrices?.[barber._id] ?? '';
+                                        return (
+                                            <div key={barber._id} className={`flex items-center gap-3 px-3 py-2 ${barber.isActive ? '' : 'opacity-60'}`}>
+                                                <span className="h-3 w-3 shrink-0 rounded-full border border-slate-200" style={{ backgroundColor: barber.iconColor || '#94a3b8' }} />
+                                                <span className="min-w-0 flex-1 truncate text-sm font-bold text-slate-700">{barber.name}{!barber.isActive && <span className="mr-1 text-xs text-slate-400">(متوقف)</span>}</span>
+                                                <input
+                                                    type="number" min="0" step="0.5" inputMode="decimal"
+                                                    value={value}
+                                                    placeholder={form.price === '' ? 'الأساسي' : String(Number(form.price))}
+                                                    onChange={(event) => setBarberPrice(barber._id, event.target.value)}
+                                                    aria-label={`سعر ${form.name || 'الخدمة'} لدى ${barber.name}`}
+                                                    className={`h-10 w-28 rounded-lg border px-3 text-sm font-black outline-none focus:border-emerald-400 ${value !== '' ? 'border-emerald-300 bg-emerald-50 text-emerald-900' : 'border-slate-200 bg-white text-slate-800'}`}
+                                                    dir="ltr"
+                                                />
+                                                {value !== '' && (
+                                                    <button type="button" onClick={() => setBarberPrice(barber._id, '')} className="text-xs font-black text-slate-400 hover:text-rose-600">مسح</button>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
                         <Toggle checked={form.isActive} onChange={(value) => update('isActive', value)} label="متاحة للحجز والبيع" description="أوقفها مؤقتاً بدل حذفها إن كانت ستعود لاحقاً." />
                     </form>
                 </Drawer>

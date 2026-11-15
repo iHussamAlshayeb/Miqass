@@ -48,7 +48,7 @@ const SETTINGS_GROUPS = [
     {
         label: 'الفريق',
         pages: [
-            { id: 'barbers', label: 'الحلاقون', icon: Users, description: 'الحلاقون وألوانهم في صفحة الحجز ورموز دخولهم وإجازاتهم وأسعارهم الخاصة. الخدمات نفسها تُدار من الإدارة المالية ← الخدمات.' },
+            { id: 'barbers', label: 'الحلاقون', icon: Users, description: 'الحلاقون وألوانهم في صفحة الحجز ورموز دخولهم وإجازاتهم. الخدمات وأسعار كل حلاق تُدار من الإدارة المالية ← الخدمات.' },
         ],
     },
     {
@@ -105,7 +105,6 @@ const SettingsTab = ({
     newClosedDate, setNewClosedDate,
     barbers, setBarbers,
     subscription,
-    services,
     setTaxNumber,
     bio, setBio,
     socialLinks, setSocialLinks,
@@ -503,7 +502,6 @@ const SettingsTab = ({
                                     settings={settings}
                                     barbers={barbers}
                                     setBarbers={setBarbers}
-                                    services={services}
                                     themeColors={themeColors}
                                     currentPlan={currentPlan}
                                     handleAddBarber={handleAddBarber}
