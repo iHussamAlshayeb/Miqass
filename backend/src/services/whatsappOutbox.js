@@ -194,7 +194,7 @@ const dispatchDue = async ({ postText, loadTenant, getCredential, limit = 25, pa
         $or: [{ expiresAt: null }, { expiresAt: { $gt: claimTime } }],
       },
       { $set: { status: "sending", lockUntil: new Date(claimTime.getTime() + SEND_LOCK_MS) }, $inc: { attempts: 1 } },
-      { sort: { nextAttemptAt: 1 }, new: true },
+      { sort: { nextAttemptAt: 1 }, returnDocument: "after" },
     ).lean();
     if (!record) break;
 
