@@ -1,527 +1,332 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { X, Printer, Settings } from 'lucide-react';
+import { X, Printer, Settings, AlertTriangle } from 'lucide-react';
 
 // ==========================================
-// ⚙️ إعدادات أحجام الورق الحرارية
+// ⚙️ أحجام الورق الحراري: mm للطباعة، px للمعاينة، وحجم الخط الأساسي
 // ==========================================
 const PAPER_SIZES = {
-    '58mm': { width: '58mm', px: 219, label: '58mm (صغير)' },
-    '72mm': { width: '72mm', px: 272, label: '72mm (متوسط)' },
-    '80mm': { width: '80mm', px: 302, label: '80mm (كبير)' },
-    '104mm': { width: '104mm', px: 393, label: '104mm (A4 حراري)' },
+    '58mm': { mm: 58, px: 219, font: 10, label: '58mm (صغير)' },
+    '72mm': { mm: 72, px: 272, font: 11, label: '72mm (متوسط)' },
+    '80mm': { mm: 80, px: 302, font: 12, label: '80mm (قياسي)' },
+    '104mm': { mm: 104, px: 393, font: 13, label: '104mm (عريض)' },
+};
+const PAPER_KEY = 'thermal_paper_size';
+
+const readSavedPaper = (fallback) => {
+    try {
+        const saved = localStorage.getItem(PAPER_KEY);
+        return saved && PAPER_SIZES[saved] ? saved : fallback;
+    } catch {
+        return fallback;
+    }
 };
 
 // ==========================================
-// 🖨️ CSS الطباعة المُحسَّن للطابعات الحرارية
+// 🎨 تنسيق الإيصال: نفس الـ CSS للمعاينة وللطباعة حتى يطابق المطبوع ما يراه الكاشير
 // ==========================================
-const buildPrintStyles = (paperWidth) => `
-    @charset "UTF-8";
-
-    @font-face {
-        font-family: 'ThermalArabic';
-        src: local('Tahoma'), local('Arial Unicode MS'), local('Amiri'), local('Cairo');
-        unicode-range: U+0600-06FF;
-    }
-
-    @media print {
-        @page {
-            size: ${paperWidth} auto;
-            margin: 0 !important;
-            padding: 0 !important;
-        }
-
-        html, body {
-            margin: 0 !important;
-            padding: 0 !important;
-            background: #fff !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-            color-adjust: exact !important;
-        }
-
-        body > *:not(#thermal-print-root) {
-            display: none !important;
-            visibility: hidden !important;
-        }
-
-        #thermal-print-root {
-            display: block !important;
-            visibility: visible !important;
-            position: absolute !important;
-            top: 0 !important;
-            left: 0 !important;
-            width: ${paperWidth} !important;
-            max-width: ${paperWidth} !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            background: #fff !important;
-            font-family: 'Tahoma', 'Arial Unicode MS', 'Arial', sans-serif !important;
-        }
-
-        #thermal-print-root * {
-            visibility: visible !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-            color-adjust: exact !important;
-            box-sizing: border-box !important;
-        }
-
-        .thermal-total-row {
-            background-color: #000 !important;
-            color: #fff !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-        }
-
-        table { page-break-inside: avoid !important; }
-        tr    { page-break-inside: avoid !important; }
-
-        html { height: auto !important; }
-        body { height: auto !important; overflow: visible !important; }
-    }
+const RECEIPT_CSS = `
+.rc{direction:rtl;color:#000;background:#fff;font-family:Tahoma,'Segoe UI','Arial Unicode MS',Arial,sans-serif;line-height:1.35;box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.rc *{box-sizing:border-box}
+.rc .num{direction:ltr;unicode-bidi:isolate;font-variant-numeric:tabular-nums;white-space:nowrap}
+.rc .center{text-align:center}
+.rc .logo{display:block;margin:0 auto 6px;max-height:56px;max-width:70%;object-fit:contain;filter:grayscale(100%) contrast(1.2)}
+.rc .trade{font-size:1.45em;font-weight:900;margin-bottom:1px}
+.rc .legal{font-size:.9em;font-weight:bold}
+.rc .muted{font-size:.85em}
+.rc .vat{font-size:.95em;font-weight:bold;margin-top:2px}
+.rc .rule{border-top:1.5px solid #000;margin:6px 0}
+.rc .dash{border-top:1px dashed #000;margin:5px 0}
+.rc .title{border:1.5px solid #000;border-radius:4px;padding:3px 4px;margin:6px 0;text-align:center}
+.rc .title b{display:block;font-size:1.1em;font-weight:900}
+.rc .title span{display:block;font-size:.8em;letter-spacing:.3px}
+.rc .row{display:flex;justify-content:space-between;align-items:baseline;gap:6px}
+.rc .meta .row{padding:1px 0}
+.rc .meta .k{font-size:.9em;white-space:nowrap}
+.rc .meta .v{font-weight:bold;text-align:left;min-width:0;overflow-wrap:anywhere}
+.rc .items-head{font-size:.85em;font-weight:bold;border-bottom:1px solid #000;padding-bottom:2px;margin-bottom:2px}
+.rc .item{padding:3px 0;border-bottom:1px dotted #777}
+.rc .item:last-child{border-bottom:0}
+.rc .item .name{font-weight:bold;min-width:0;overflow-wrap:anywhere}
+.rc .item .sub{font-size:.85em}
+.rc .totals .row{padding:1.5px 0}
+.rc .grand{background:#000;color:#fff;padding:5px 6px;margin-top:4px;border-radius:3px}
+.rc .grand .k{font-weight:900;font-size:.95em}
+.rc .grand .v{font-weight:900;font-size:1.3em}
+.rc .pay{font-size:.95em}
+.rc .qr{display:flex;flex-direction:column;align-items:center;margin:8px 0 4px}
+.rc .qr .box{padding:5px;border:1.5px solid #000;border-radius:4px;background:#fff;line-height:0}
+.rc .qr .cap{font-size:.8em;margin-top:3px}
+.rc .badge{display:inline-block;border:1px solid #000;border-radius:3px;padding:0 5px;font-size:.75em;font-weight:bold;margin-top:3px}
+.rc .foot{text-align:center;margin-top:6px}
+.rc .powered{font-size:.7em;color:#555;margin-top:4px}
 `;
 
-// ==========================================
-// 🧾 مكون محتوى الإيصال – مُحسَّن للحراري
-// ==========================================
-const ReceiptContent = ({ invoice, invoiceNumber, formatCurrency, baseAmount, vatAmount, totalAmount, paperSize }) => {
-    const pw = PAPER_SIZES[paperSize] || PAPER_SIZES['80mm'];
-    const isNarrow = pw.px < 272;   // 58mm
-    const isMedium = pw.px < 302;   // 72mm
+const PAGE_CSS = (paper) => `
+@page{margin:0}
+html,body{margin:0;padding:0;background:#fff}
+body{width:${paper.mm}mm}
+`;
 
-    /* خطوط ديناميكية حسب العرض */
-    const fs = {
-        title: isNarrow ? '13px' : isMedium ? '15px' : '17px',
-        normal: isNarrow ? '8px' : isMedium ? '9px' : '10px',
-        small: isNarrow ? '7px' : '8px',
-        mono: isNarrow ? '9px' : isMedium ? '10px' : '11px',
-        totalLbl: isNarrow ? '10px' : '12px',
-        totalVal: isNarrow ? '13px' : '15px',
-    };
+const money = (value) => (Number(value) || 0).toFixed(2);
+const Num = ({ children }) => <bdi className="num" dir="ltr">{children}</bdi>;
+const MetaRow = ({ label, children }) => (
+    <div className="row"><span className="k">{label}</span><span className="v">{children}</span></div>
+);
 
-    // الاعتماد الكلي على QR القادم من الباك إند
-    const zatcaBase64 = invoice?.qrCode;
+// ==========================================
+// 🧾 محتوى الإيصال (فاتورة ضريبية مبسطة / إشعار دائن)
+// ==========================================
+const ReceiptContent = ({ invoice, paper }) => {
+    const isCredit = invoice.documentType === 'credit_note' || Boolean(invoice.referenceInvoiceNumber);
+    const hasVat = Boolean(invoice.taxNumber);
+    const logo = invoice.logoUrl || invoice.branding?.logoUrl;
+    const title = !hasVat
+        ? { ar: isCredit ? 'إيصال استرجاع' : 'إيصال بيع', en: isCredit ? 'Refund Receipt' : 'Sales Receipt' }
+        : isCredit
+            ? { ar: 'إشعار دائن مبسط', en: 'Simplified Credit Note' }
+            : { ar: 'فاتورة ضريبية مبسطة', en: 'Simplified Tax Invoice' };
+    const qrSize = Math.round(paper.px * (paper.mm <= 58 ? 0.5 : 0.45));
+    const paymentLines = Array.isArray(invoice.paymentLines) && invoice.paymentLines.length > 1 ? invoice.paymentLines : null;
 
     return (
-        <div
-            dir="rtl"
-            className="text-black bg-white"
-            style={{
-                width: pw.width,
-                maxWidth: pw.width,
-                minHeight: '60mm',
-                fontFamily: "'Tahoma', 'Arial Unicode MS', 'Arial', sans-serif",
-                padding: isNarrow ? '6px 5px' : '8px 8px',
-                boxSizing: 'border-box',
-                direction: 'rtl',
-                unicodeBidi: 'embed',
-            }}
-        >
-            {/* ─── رأس الفاتورة بالشعار ─── */}
-            <div style={{ textAlign: 'center', borderBottom: '2px solid #000', paddingBottom: '6px', marginBottom: '5px' }}>
-
-                {(invoice?.logoUrl || invoice?.branding?.logoUrl) && (
-                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '6px' }}>
-                        <img
-                            src={invoice.logoUrl || invoice.branding?.logoUrl}
-                            alt="Logo"
-                            style={{
-                                maxHeight: '50px',
-                                maxWidth: '80%',
-                                objectFit: 'contain',
-                                filter: 'grayscale(100%) contrast(1.2)'
-                            }}
-                            onError={(e) => { e.target.style.display = 'none'; }}
-                        />
-                    </div>
-                )}
-
-                <div style={{ fontSize: fs.title, fontWeight: '900', marginBottom: '2px', letterSpacing: '0.5px' }}>
-                    {invoice?.salonName || 'صالون الحلاقة'}
-                </div>
-                {invoice?.address && (
-                    <div style={{ fontSize: fs.small, marginBottom: '1px' }}>{invoice.address}</div>
-                )}
-                {invoice?.phone && (
-                    <div style={{ fontSize: fs.small, direction: 'ltr', unicodeBidi: 'embed' }}>{invoice.phone}</div>
-                )}
-                {invoice?.taxNumber && (
-                    <div style={{ fontSize: fs.small, marginTop: '2px', fontWeight: 'bold' }}>
-                        الرقم الضريبي: <span style={{ fontFamily: 'monospace' }}>{invoice.taxNumber}</span>
-                    </div>
-                )}
+        <div className="rc" style={{ width: `${paper.mm}mm`, fontSize: `${paper.font}px`, padding: paper.mm <= 58 ? '6px 5px 10px' : '8px 9px 12px' }}>
+            {/* ─── البائع ─── */}
+            <div className="center">
+                {logo && <img className="logo" src={logo} alt="" onError={(e) => { e.currentTarget.style.display = 'none'; }} />}
+                <div className="trade">{invoice.salonName || 'الصالون'}</div>
+                {invoice.legalName && <div className="legal">{invoice.legalName}</div>}
+                {invoice.sellerAddress && <div className="muted">{invoice.sellerAddress}</div>}
+                {invoice.phone && <div className="muted">هاتف: <Num>{invoice.phone}</Num></div>}
+                {hasVat && <div className="vat">الرقم الضريبي: <Num>{invoice.taxNumber}</Num></div>}
+                {invoice.crNumber && <div className="muted">السجل التجاري: <Num>{invoice.crNumber}</Num></div>}
             </div>
 
-            {/* ─── شارة الفاتورة ─── */}
-            <div style={{ textAlign: 'center', marginBottom: '5px' }}>
-                <span style={{
-                    fontSize: fs.small,
-                    fontWeight: 'bold',
-                    border: '1px solid #000',
-                    padding: '1px 8px',
-                    borderRadius: '20px',
-                    display: 'inline-block',
-                }}>
-                    {invoice?.documentTitle || 'فاتورة ضريبية مبسطة'}
-                </span>
+            <div className="title"><b>{title.ar}</b><span>{title.en}</span></div>
+
+            {/* ─── بيانات المستند ─── */}
+            <div className="meta">
+                <MetaRow label={isCredit ? 'رقم الإشعار' : 'رقم الفاتورة'}><Num>{invoice.invoiceNumber}</Num></MetaRow>
+                <MetaRow label="التاريخ"><Num>{invoice.date}</Num></MetaRow>
+                {invoice.time && <MetaRow label="الوقت"><Num>{invoice.time}</Num></MetaRow>}
+                {isCredit && invoice.referenceInvoiceNumber && (
+                    <MetaRow label="الفاتورة الأصلية">
+                        <Num>{invoice.referenceInvoiceNumber}</Num>
+                        {invoice.referenceInvoiceDate && <> · <Num>{invoice.referenceInvoiceDate}</Num></>}
+                    </MetaRow>
+                )}
+                {isCredit && invoice.refundReason && <MetaRow label="سبب الإرجاع">{invoice.refundReason}</MetaRow>}
+                {invoice.cashierName && <MetaRow label="الكاشير">{invoice.cashierName}</MetaRow>}
+                {invoice.appointmentTime && <MetaRow label="وقت الموعد">{invoice.appointmentTime}</MetaRow>}
+                {invoice.customerName && <MetaRow label="العميل">{invoice.customerName}</MetaRow>}
+                {invoice.customerPhone && <MetaRow label="الجوال"><Num>{invoice.customerPhone}</Num></MetaRow>}
             </div>
 
-            {/* ─── بيانات الفاتورة ─── */}
-            <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '5px', fontSize: fs.normal }}>
-                <tbody>
-                    <tr style={{ borderBottom: '1px solid #000' }}>
-                        <td style={{ padding: '2px 3px', width: '50%', borderRight: '1px solid #000', verticalAlign: 'top' }}>
-                            <div style={{ fontSize: fs.small, color: '#555' }}>{invoice?.numberLabel || 'رقم الفاتورة'}</div>
-                            <div style={{ fontWeight: 'bold', fontFamily: 'monospace', fontSize: fs.mono, letterSpacing: '0.5px' }}>{invoiceNumber}</div>
-                        </td>
-                        <td style={{ padding: '2px 3px', verticalAlign: 'top' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                <div>
-                                    <div style={{ fontSize: fs.small, color: '#555' }}>التاريخ</div>
-                                    <div style={{ fontWeight: 'bold', fontFamily: 'monospace' }}>{invoice?.date}</div>
-                                </div>
-                                <div style={{ textAlign: 'left' }}>
-                                    <div style={{ fontSize: fs.small, color: '#555' }}>الوقت</div>
-                                    <div style={{ fontFamily: 'monospace' }}>{invoice?.time}</div>
-                                </div>
+            <div className="rule" />
+
+            {/* ─── البنود ─── */}
+            <div className="row items-head"><span>البيان</span><span>الإجمالي</span></div>
+            {(invoice.services || []).map((line, index) => {
+                const qty = Number(line.qty || line.quantity || 1);
+                const unit = Number(line.unitPrice);
+                const discount = Number(line.discountAmount) || 0;
+                return (
+                    <div className="item" key={index}>
+                        <div className="row">
+                            <span className="name">{line.name}</span>
+                            <Num>{money(line.price)}</Num>
+                        </div>
+                        {(unit > 0 || line.barberName) && (
+                            <div className="sub">
+                                {unit > 0 && <Num>{`${qty} × ${money(unit)}`}</Num>}
+                                {unit > 0 && line.barberName && ' · '}
+                                {line.barberName && <>الحلاق: {line.barberName}</>}
                             </div>
-                        </td>
-                    </tr>
-                    {invoice?.referenceInvoiceNumber && (
-                        <tr style={{ borderBottom: '1px solid #000' }}>
-                            <td colSpan={2} style={{ padding: '2px 3px' }}>
-                                <span style={{ fontSize: fs.small, color: '#555' }}>مرجع الفاتورة الأصلية: </span>
-                                <span style={{ fontWeight: 'bold', fontFamily: 'monospace' }}>{invoice.referenceInvoiceNumber}</span>
-                                {invoice.refundReason && <div style={{ fontSize: fs.small }}>السبب: {invoice.refundReason}</div>}
-                            </td>
-                        </tr>
-                    )}
-                    {(invoice?.customerName || invoice?.customerPhone) && (
-                        <tr>
-                            <td style={{ padding: '2px 3px', borderRight: '1px solid #000', verticalAlign: 'top' }}>
-                                <div style={{ fontSize: fs.small, color: '#555' }}>العميل</div>
-                                <div style={{ fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {invoice.customerName || 'عميل نقدي'}
-                                </div>
-                            </td>
-                            <td style={{ padding: '2px 3px', verticalAlign: 'top' }}>
-                                <div style={{ fontSize: fs.small, color: '#555' }}>الجوال</div>
-                                <div style={{ fontFamily: 'monospace', direction: 'ltr', textAlign: 'right', unicodeBidi: 'embed' }}>
-                                    {invoice.customerPhone || '---'}
-                                </div>
-                            </td>
-                        </tr>
-                    )}
-                </tbody>
-            </table>
-
-            {/* ─── جدول الخدمات ─── */}
-            <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '8px', fontSize: fs.normal, border: '1px solid #000' }}>
-                <thead>
-                    <tr style={{ background: '#f0f0f0', borderBottom: '1px solid #000' }}>
-                        <th style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'right', width: '55%' }}>{invoice?.itemType === 'product' ? 'المنتج' : invoice?.itemType === 'mixed' ? 'البند' : 'الخدمة'}</th>
-                        {!isNarrow && (
-                            <th style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'center', width: '15%' }}>ك</th>
                         )}
-                        <th style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'center' }}>السعر</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {invoice?.services?.map((srv, idx) => (
-                        <tr key={idx} style={{ borderBottom: '1px dashed #ccc' }}>
-                            <td style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'right', fontWeight: 'bold', verticalAlign: 'top' }}>
-                                {srv.name}
-                                {srv.barberName && (
-                                    <div style={{ fontSize: fs.small, fontWeight: 'normal' }}>الحلاق: {srv.barberName}</div>
-                                )}
-                                {Number(srv.discountAmount) > 0 && (
-                                    <div style={{ fontSize: fs.small, fontWeight: 'normal' }}>
-                                        خصم {formatCurrency(srv.discountAmount)} من {formatCurrency(srv.unitPrice * (srv.qty || 1))}
-                                    </div>
-                                )}
-                            </td>
-                            {!isNarrow && (
-                                <td style={{ border: '1px solid #000', padding: '2px', textAlign: 'center', fontFamily: 'monospace', verticalAlign: 'top' }}>
-                                    {srv.qty || 1}
-                                </td>
-                            )}
-                            <td style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'center', fontFamily: 'monospace', fontWeight: 'bold', verticalAlign: 'top' }}>
-                                {formatCurrency(srv.price)}
-                            </td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
+                        {discount > 0 && <div className="sub">خصم <Num>{money(discount)}</Num></div>}
+                    </div>
+                );
+            })}
+
+            <div className="rule" />
 
             {/* ─── الإجماليات ─── */}
-            <div style={{ width: '100%', border: '1px solid #000', overflow: 'hidden', fontSize: fs.normal, marginBottom: '10px' }}>
-                {Number(invoice?.discountAmount) > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 4px', borderBottom: '1px dashed #000' }}>
-                        <span>إجمالي الخصم</span>
-                        <span style={{ fontFamily: 'monospace' }}>-{formatCurrency(invoice.discountAmount)}</span>
-                    </div>
+            <div className="totals">
+                {Number(invoice.discountAmount) > 0 && (
+                    <div className="row"><span>إجمالي الخصم</span><Num>-{money(invoice.discountAmount)}</Num></div>
                 )}
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 4px', borderBottom: '1px dashed #000' }}>
-                    <span>المبلغ الأساسي</span>
-                    <span style={{ fontFamily: 'monospace' }}>{formatCurrency(baseAmount)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 4px', borderBottom: '1px solid #000' }}>
-                    <span>ضريبة 15%</span>
-                    <span style={{ fontFamily: 'monospace' }}>{formatCurrency(vatAmount)}</span>
-                </div>
-                <div
-                    className="thermal-total-row"
-                    style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        padding: '4px',
-                        backgroundColor: '#000',
-                        color: '#fff',
-                    }}
-                >
-                    <span style={{ fontSize: fs.totalLbl, fontWeight: '900', color: '#fff' }}>{invoice?.totalLabel || 'الإجمالي'}</span>
-                    <span style={{ fontFamily: 'monospace', fontSize: fs.totalVal, fontWeight: '900', color: '#fff' }}>
-                        {formatCurrency(totalAmount)}
-                        <span style={{ fontSize: fs.small, fontWeight: 'normal', color: '#fff' }}> ر.س</span>
-                    </span>
+                {hasVat && (
+                    <>
+                        <div className="row"><span>الإجمالي غير شامل الضريبة</span><Num>{money(invoice.baseAmount)}</Num></div>
+                        <div className="row"><span>ضريبة القيمة المضافة 15%</span><Num>{money(invoice.vatAmount)}</Num></div>
+                    </>
+                )}
+                <div className="row grand">
+                    <span className="k">{isCredit ? 'المبلغ المسترجع' : 'الإجمالي'}{hasVat ? ' شامل الضريبة' : ''}</span>
+                    <span className="v"><Num>{money(invoice.totalAmount)}</Num> <span style={{ fontSize: '.7em' }}>ر.س</span></span>
                 </div>
             </div>
 
-            {/* ─── طريقة الدفع ─── */}
-            {invoice?.paymentMethod && (
-                <div style={{
-                    textAlign: 'center',
-                    fontSize: fs.normal,
-                    border: '1px solid #000',
-                    padding: '2px',
-                    marginBottom: '10px',
-                    fontWeight: 'bold',
-                }}>
-                    {invoice?.paymentLabel || 'طريقة الدفع'}: {invoice.paymentMethod}
+            {/* ─── الدفع ─── */}
+            {invoice.paymentMethod && (
+                <div className="pay" style={{ marginTop: 6 }}>
+                    {paymentLines ? (
+                        <>
+                            <div style={{ fontWeight: 'bold' }}>{isCredit ? 'طريقة الإرجاع' : 'الدفع'}</div>
+                            {paymentLines.map((line, index) => (
+                                <div className="row" key={index}><span>{line.method}</span><Num>{money(line.amount)}</Num></div>
+                            ))}
+                        </>
+                    ) : (
+                        <div className="row"><span>{isCredit ? 'طريقة الإرجاع' : 'طريقة الدفع'}</span><b>{invoice.paymentMethod}</b></div>
+                    )}
                 </div>
             )}
 
-            {/* QR الزكاة */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '10px' }}>
-                {zatcaBase64 ? (
-                    <>
-                        <div style={{ border: '2px solid #000', padding: '6px', background: '#fff', borderRadius: '4px' }}>
-                            <QRCodeSVG
-                                value={zatcaBase64}
-                                size={isNarrow ? 90 : isMedium ? 110 : 130}
-                                level="M"
-                                bgColor="#ffffff"
-                                fgColor="#000000"
-                            />
-                        </div>
-                        <div style={{ fontSize: fs.normal, marginTop: '4px', fontWeight: '900', textAlign: 'center' }}>{invoice?.referenceInvoiceNumber ? 'QR إشعار دائن' : 'QR فاتورة ضريبية'}</div>
-
-                        {invoice?.isZatcaPhase2 && (
-                            <div style={{ fontSize: '8px', fontWeight: 'bold', border: '1px solid #000', padding: '2px 4px', borderRadius: '2px', marginTop: '2px' }}>
-                                ZATCA Phase 2
-                            </div>
-                        )}
-                    </>
-                ) : (
-                    <div style={{ width: '80px', height: '80px', border: '1px dashed #999', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <span style={{ fontSize: '10px', color: '#888', textAlign: 'center' }}>لا يوجد ضريبة</span>
+            {/* ─── رمز QR (هيئة الزكاة والضريبة والجمارك) ─── */}
+            {hasVat && invoice.qrCode && (
+                <div className="qr">
+                    <div className="box">
+                        <QRCodeSVG value={invoice.qrCode} size={qrSize} level="M" marginSize={0} bgColor="#ffffff" fgColor="#000000" />
                     </div>
-                )}
-            </div>
-
-            {/* ─── رسالة الختام ─── */}
-            <div style={{ textAlign: 'center', borderTop: '2px solid #000', paddingTop: '6px', marginTop: '4px' }}>
-                <div style={{ fontSize: fs.normal, fontWeight: 'bold', marginBottom: '2px' }}>
-                    {invoice?.thankYouMsg || 'شكراً لزيارتكم! 🌟'}
+                    <div className="cap">امسح الرمز للتحقق عبر تطبيق هيئة الزكاة والضريبة</div>
+                    {invoice.isZatcaPhase2 && <span className="badge">ZATCA · المرحلة الثانية</span>}
                 </div>
-                {invoice?.website && (
-                    <div style={{ fontSize: fs.small, direction: 'ltr', unicodeBidi: 'embed' }}>{invoice.website}</div>
-                )}
-                <div style={{ fontSize: '8px', color: '#aaa', marginTop: '4px' }}>Powered by Miqass.app</div>
-            </div>
+            )}
 
-            <div style={{ height: '8mm' }} />
+            <div className="dash" />
+            <div className="foot">
+                {hasVat && <div className="muted">الأسعار شاملة ضريبة القيمة المضافة</div>}
+                <div style={{ fontWeight: 'bold', marginTop: 2 }}>{invoice.thankYouMsg || 'شكراً لزيارتكم'}</div>
+                {invoice.website && <div className="muted"><Num>{invoice.website}</Num></div>}
+                <div className="powered">Powered by Miqass.app</div>
+            </div>
         </div>
     );
 };
 
 // ==========================================
-// 🖨️ مكون InvoiceModal الرئيسي
+// 🖨️ الطباعة عبر إطار مستقل: لا تتأثر بتنسيقات الصفحة، وطول الورقة بطول الإيصال
+// ==========================================
+const printReceiptHtml = (html, paper) => {
+    document.getElementById('thermal-print-frame')?.remove();
+    const frame = document.createElement('iframe');
+    frame.id = 'thermal-print-frame';
+    frame.setAttribute('aria-hidden', 'true');
+    frame.style.cssText = `position:fixed;left:-10000px;top:0;width:${paper.px + 20}px;height:10px;border:0;opacity:0`;
+    frame.srcdoc = `<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><base href="${window.location.origin}/"><title>&#8203;</title>
+<style>${PAGE_CSS(paper)}${RECEIPT_CSS}</style></head><body>${html}</body></html>`;
+
+    let printed = false;
+    const doPrint = () => {
+        if (printed || !frame.isConnected) return;
+        printed = true;
+        const win = frame.contentWindow;
+        const doc = frame.contentDocument;
+        // طول الصفحة = طول المحتوى فعلياً، حتى لا تُقص الفاتورة أو يخرج ورق فارغ
+        const heightMm = Math.ceil((doc.body.scrollHeight * 25.4) / 96) + 4;
+        const style = doc.createElement('style');
+        style.textContent = `@page{size:${paper.mm}mm ${heightMm}mm;margin:0}`;
+        doc.head.appendChild(style);
+        win.focus();
+        win.print();
+        setTimeout(() => frame.remove(), 1500);
+    };
+    // load ينتظر الشعار؛ ومهلة احتياطية لو تعطل تحميله
+    frame.onload = () => setTimeout(doPrint, 50);
+    setTimeout(doPrint, 3000);
+    document.body.appendChild(frame);
+};
+
+// ==========================================
+// 🧾 نافذة المعاينة والطباعة
 // ==========================================
 const InvoiceModal = ({ invoice, onClose, autoPrint = false, defaultPaperSize = '80mm' }) => {
-    const [paperSize, setPaperSize] = useState(defaultPaperSize);
+    const [paperSize, setPaperSize] = useState(() => readSavedPaper(defaultPaperSize));
     const [showSizeMenu, setShowSizeMenu] = useState(false);
+    const previewRef = useRef(null);
     const autoPrintedRef = useRef(false);
-    const paperSizeRef = useRef(paperSize);
-
-    useEffect(() => { paperSizeRef.current = paperSize; }, [paperSize]);
-
-    useEffect(() => {
-        const saved = localStorage.getItem('thermal_paper_size');
-        if (saved && PAPER_SIZES[saved]) setPaperSize(saved);
-    }, []);
-
-    const formatCurrency = (amount) => (Number(amount) || 0).toFixed(2);
-
-    const baseAmount = Number(invoice?.baseAmount) || 0;
-    const vatAmount = Number(invoice?.vatAmount) || 0;
-    const totalAmount = Number(invoice?.totalAmount) || 0;
-    const invoiceNumber = invoice?.invoiceNumber || `INV-000000`;
+    const paper = PAPER_SIZES[paperSize] || PAPER_SIZES['80mm'];
 
     const handlePrint = useCallback(() => {
-        const source = document.getElementById('thermal-receipt-preview');
-        if (!source) return;
-
-        const existingRoot = document.getElementById('thermal-print-root');
-        if (existingRoot) document.body.removeChild(existingRoot);
-
-        const printRoot = document.createElement('div');
-        printRoot.id = 'thermal-print-root';
-        printRoot.innerHTML = source.innerHTML;
-        document.body.appendChild(printRoot);
-
-        const existingStyle = document.getElementById('thermal-print-style');
-        if (existingStyle) document.head.removeChild(existingStyle);
-
-        const style = document.createElement('style');
-        style.id = 'thermal-print-style';
-        style.innerHTML = buildPrintStyles(PAPER_SIZES[paperSizeRef.current].width);
-        document.head.appendChild(style);
-
-        requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                window.print();
-                setTimeout(() => {
-                    if (document.getElementById('thermal-print-root')) {
-                        document.body.removeChild(printRoot);
-                    }
-                    if (document.getElementById('thermal-print-style')) {
-                        document.head.removeChild(style);
-                    }
-                }, 300);
-            });
-        });
-    }, []);
+        const node = previewRef.current?.querySelector('.rc');
+        if (node) printReceiptHtml(node.outerHTML, paper);
+    }, [paper]);
 
     useEffect(() => {
-        if (!autoPrint || autoPrintedRef.current || !invoice) return;
+        if (!autoPrint || autoPrintedRef.current || !invoice) return undefined;
         autoPrintedRef.current = true;
-
-        const waitForImages = () => {
-            const container = document.getElementById('thermal-receipt-preview');
-            if (!container) return;
-
-            const images = Array.from(container.querySelectorAll('img'));
-            if (images.length === 0) {
-                handlePrint();
-                return;
-            }
-
-            let loaded = 0;
-            const checkAll = () => {
-                loaded++;
-                if (loaded >= images.length) handlePrint();
-            };
-
-            images.forEach(img => {
-                if (img.complete) {
-                    checkAll();
-                } else {
-                    img.addEventListener('load', checkAll, { once: true });
-                    img.addEventListener('error', checkAll, { once: true });
-                }
-            });
-
-            setTimeout(() => { if (!autoPrintedRef.current) return; handlePrint(); }, 2000);
-        };
-
-        const timer = setTimeout(waitForImages, 200);
+        const timer = setTimeout(handlePrint, 150);
         return () => clearTimeout(timer);
     }, [autoPrint, invoice, handlePrint]);
 
     const handleSizeChange = (size) => {
         setPaperSize(size);
-        localStorage.setItem('thermal_paper_size', size);
+        try { localStorage.setItem(PAPER_KEY, size); } catch { /* المتصفح يمنع التخزين */ }
         setShowSizeMenu(false);
     };
 
-    if (!invoice) return null; // حماية إضافية إذا لم يتم تمرير الفاتورة بعد
+    if (!invoice) return null;
+
+    // تنبيهات للمعاينة فقط (لا تُطبع)
+    const warnings = [];
+    if (invoice.taxNumber && !invoice.sellerAddress) warnings.push('عنوان المنشأة غير مضبوط، وهو من بيانات الفاتورة الضريبية الإلزامية. أضفه من الإعدادات ← الفوترة الإلكترونية.');
+    if (!invoice.taxNumber) warnings.push('لا يوجد رقم ضريبي، لذلك يُطبع المستند كإيصال وليس فاتورة ضريبية.');
 
     return (
-        <div
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4"
-            style={{ animation: 'fadeIn 0.2s ease' }}
-        >
-            <div className="bg-white rounded-lg shadow-2xl w-full max-w-md flex flex-col max-h-[90vh]">
-
-                {/* ─── شريط الأدوات ─── */}
-                <div className="flex justify-between items-center p-3 border-b border-slate-100 bg-slate-50 rounded-t-2xl gap-2">
-                    <h3 className="font-black text-slate-800 text-base whitespace-nowrap">معاينة الفاتورة 🧾</h3>
-
-                    <div className="flex gap-2 items-center flex-wrap justify-end">
-
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 p-4 backdrop-blur-sm" onClick={onClose}>
+            <style>{RECEIPT_CSS}</style>
+            <div className="flex max-h-[92vh] w-full max-w-md flex-col rounded-2xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+                <div className="flex items-center justify-between gap-2 rounded-t-2xl border-b border-slate-100 bg-slate-50 p-3">
+                    <h3 className="whitespace-nowrap text-base font-black text-slate-800">معاينة الفاتورة</h3>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
                         <div className="relative">
                             <button
-                                onClick={() => setShowSizeMenu(v => !v)}
-                                className="flex items-center gap-1 bg-white border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-100 transition"
-                                title="اختر حجم الورق"
+                                type="button"
+                                onClick={() => setShowSizeMenu((value) => !value)}
+                                className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 transition hover:bg-slate-100"
+                                title="حجم ورق الطابعة"
                             >
-                                <Settings size={13} />
-                                {PAPER_SIZES[paperSize]?.label}
+                                <Settings size={13} /> {paper.label}
                             </button>
                             {showSizeMenu && (
-                                <div className="absolute left-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-50 min-w-[150px] overflow-hidden">
-                                    {Object.entries(PAPER_SIZES).map(([key, val]) => (
+                                <div className="absolute left-0 top-full z-50 mt-1 min-w-[150px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
+                                    {Object.entries(PAPER_SIZES).map(([key, value]) => (
                                         <button
                                             key={key}
+                                            type="button"
                                             onClick={() => handleSizeChange(key)}
-                                            className={`w-full text-right px-3 py-2 text-xs font-bold hover:bg-slate-100 transition block ${paperSize === key ? 'bg-slate-900 text-white' : 'text-slate-700'}`}
+                                            className={`block w-full px-3 py-2 text-right text-xs font-bold transition hover:bg-slate-100 ${paperSize === key ? 'bg-slate-900 text-white hover:bg-slate-800' : 'text-slate-700'}`}
                                         >
-                                            {val.label}
+                                            {value.label}
                                         </button>
                                     ))}
                                 </div>
                             )}
                         </div>
-
-                        <button
-                            onClick={handlePrint}
-                            className="bg-slate-900 text-white px-4 py-1.5 rounded-lg flex items-center gap-1.5 hover:bg-slate-700 transition font-black text-sm active:scale-95"
-                        >
+                        <button type="button" onClick={handlePrint} className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-1.5 text-sm font-black text-white transition hover:bg-slate-700 active:scale-95">
                             <Printer size={14} /> طباعة
                         </button>
-
-                        <button
-                            onClick={onClose}
-                            className="bg-white border border-slate-200 text-slate-500 p-1.5 rounded-lg hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition"
-                        >
+                        <button type="button" onClick={onClose} aria-label="إغلاق" className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-500">
                             <X size={16} />
                         </button>
                     </div>
                 </div>
 
-                {/* ─── منطقة المعاينة ─── */}
-                <div className="overflow-y-auto p-4 bg-slate-200 flex-1 flex justify-center rounded-b-2xl">
-                    <div id="thermal-receipt-preview" className="shadow bg-white">
-                        <ReceiptContent
-                            invoice={invoice}
-                            invoiceNumber={invoiceNumber}
-                            formatCurrency={formatCurrency}
-                            baseAmount={baseAmount}
-                            vatAmount={vatAmount}
-                            totalAmount={totalAmount}
-                            paperSize={paperSize}
-                        />
+                {warnings.length > 0 && (
+                    <div className="space-y-1 border-b border-amber-100 bg-amber-50 px-4 py-2">
+                        {warnings.map((text) => (
+                            <p key={text} className="flex items-start gap-1.5 text-xs font-bold text-amber-800"><AlertTriangle size={14} className="mt-0.5 shrink-0" /> {text}</p>
+                        ))}
+                    </div>
+                )}
+
+                <div className="flex flex-1 justify-center overflow-y-auto rounded-b-2xl bg-slate-200 p-4">
+                    <div id="thermal-receipt-preview" ref={previewRef} className="h-fit bg-white shadow">
+                        <ReceiptContent invoice={invoice} paper={paper} />
                     </div>
                 </div>
-
             </div>
-
-            <style>{`
-                @keyframes fadeIn { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
-            `}</style>
         </div>
     );
 };

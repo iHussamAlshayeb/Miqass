@@ -3,6 +3,7 @@ const Appointment = require("../models/Appointment");
 const Tenant = require("../models/Tenant");
 
 const { generateZatcaQR } = require("../utils/zatca");
+const { riyadhDateTime, zatcaTimestamp, sellerInfo } = require("../utils/invoiceHeader");
 
 const { sendWhatsAppMessage } = require("../utils/whatsapp");
 const { sendAdminNotification } = require("../utils/onesignal");
@@ -147,30 +148,23 @@ const getInvoiceData = async (req, res) => {
       return `${h}:${m} ${ampm}`;
     };
 
-    let qrCodeBase64 = null;
-
-    const timestamp = new Date().toISOString();
-
-    if (tenant.taxSettings?.taxNumber) {
-      qrCodeBase64 = generateZatcaQR(
-        tenant.salonName,
-        tenant.taxSettings.taxNumber,
-        timestamp,
-        total.toFixed(2),
-        vatAmount.toFixed(2),
-      );
-    }
+    // تاريخ الإصدار ثابت (وقت الحجز) حتى لا يتغير QR والتاريخ مع كل إعادة طباعة
+    const issuedAt = appointment.createdAt || new Date();
+    const seller = sellerInfo(tenant);
+    const issued = riyadhDateTime(issuedAt);
+    const qrCodeBase64 = seller.taxNumber
+      ? generateZatcaQR(seller.sellerName, seller.taxNumber, zatcaTimestamp(issuedAt), total.toFixed(2), vatAmount.toFixed(2))
+      : null;
 
     res.status(200).json({
       invoice: {
         invoiceNumber: appointment.invoiceNumber || "INV-0000",
-        salonName: tenant.salonName,
+        ...seller,
         logoUrl: tenant.branding?.logoUrl || "",
-        phone: tenant.ownerPhone || "",
-        taxNumber: tenant.taxSettings?.taxNumber,
-        date: new Date().toLocaleDateString("en-GB"),
-        isoDate: timestamp,
-        time: formatTime(appointment.timeSlot),
+        date: issued.date,
+        isoDate: issuedAt,
+        time: issued.time,
+        appointmentTime: formatTime(appointment.timeSlot),
         customerName: appointment.childName,
         customerPhone: appointment.customerId?.phone || "",
         services:

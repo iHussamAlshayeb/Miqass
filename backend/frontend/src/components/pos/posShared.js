@@ -25,33 +25,37 @@ export const applyKey = (current, key) => {
 
 
 /** إيصال الاسترجاع بنفس قالب الفاتورة الحرارية (InvoiceModal) */
-export const refundReceiptToInvoice = (receipt) => {
-    const created = new Date(receipt.createdAt);
-    return {
-        invoiceNumber: receipt.refundNumber,
-        documentTitle: 'إشعار دائن مبسط (استرجاع)',
-        numberLabel: 'رقم الإشعار',
-        totalLabel: 'المبلغ المسترجع',
-        paymentLabel: 'طريقة الإرجاع',
-        referenceInvoiceNumber: receipt.originalInvoiceNumber,
-        refundReason: receipt.reason,
-        salonName: receipt.salonName,
-        logoUrl: receipt.logoUrl,
-        phone: receipt.phone,
-        taxNumber: receipt.taxNumber,
-        date: created.toLocaleDateString('en-GB', { timeZone: 'Asia/Riyadh' }),
-        time: created.toLocaleTimeString('ar-SA', { timeZone: 'Asia/Riyadh', hour: '2-digit', minute: '2-digit' }),
-        customerName: receipt.customerName,
-        itemType: 'mixed',
-        services: receipt.items.map((item) => ({ name: item.name, qty: item.quantity, quantity: item.quantity, price: item.totalAmount })),
-        discountAmount: '0.00',
-        baseAmount: receipt.baseAmount,
-        vatAmount: receipt.vatAmount,
-        totalAmount: receipt.totalAmount,
-        paymentMethod: methodLabel(receipt.method),
-        qrCode: receipt.qrCode,
-    };
-};
+export const refundReceiptToInvoice = (receipt) => ({
+    invoiceNumber: receipt.refundNumber,
+    documentType: 'credit_note',
+    referenceInvoiceNumber: receipt.originalInvoiceNumber,
+    referenceInvoiceDate: receipt.originalIssueDate,
+    refundReason: receipt.reason,
+    salonName: receipt.salonName,
+    legalName: receipt.legalName,
+    sellerAddress: receipt.sellerAddress,
+    crNumber: receipt.crNumber,
+    logoUrl: receipt.logoUrl,
+    phone: receipt.phone,
+    taxNumber: receipt.taxNumber,
+    date: receipt.date,
+    time: receipt.time,
+    cashierName: receipt.refundedBy,
+    customerName: receipt.customerName,
+    services: receipt.items.map((item) => ({
+        name: item.name,
+        qty: item.quantity,
+        unitPrice: item.unitPrice,
+        discountAmount: item.discountAmount,
+        price: item.totalAmount,
+    })),
+    discountAmount: '0.00',
+    baseAmount: receipt.baseAmount,
+    vatAmount: receipt.vatAmount,
+    totalAmount: receipt.totalAmount,
+    paymentMethod: methodLabel(receipt.method),
+    qrCode: receipt.qrCode,
+});
 
 export const formatDateTime = (value) => value
     ? new Date(value).toLocaleString('ar-SA-u-nu-latn', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Riyadh' })

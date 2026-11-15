@@ -18,6 +18,7 @@ const { applyBarberServicePrices } = require("../utils/servicePricing");
 const SaleRefund = require("../models/SaleRefund");
 const { getRefundable, createRefund } = require("../services/refundService");
 const { generateZatcaQR } = require("../utils/zatca");
+const { riyadhDateTime, zatcaTimestamp, sellerInfo, SELLER_SELECT } = require("../utils/invoiceHeader");
 const { publicLogoUrl } = require("../utils/logoImage");
 const Cashier = require("../models/Cashier");
 const Expense = require("../models/Expense");
@@ -484,9 +485,11 @@ const getRefundReceipt = async (req, res) => {
     if (!refund) return res.status(404).json({ message: "الإشعار غير موجود." });
     const [sale, tenant] = await Promise.all([
       Sale.findOne({ _id: refund.saleId, tenantId: req.tenantId }).select("invoiceNumber createdAt customerSnapshot").lean(),
-      Tenant.findById(req.tenantId).select("salonName ownerPhone branding taxSettings.taxNumber").lean(),
+      Tenant.findById(req.tenantId).select(SELLER_SELECT).lean(),
     ]);
-    const taxNumber = tenant?.taxSettings?.taxNumber || "";
+    const seller = sellerInfo(tenant);
+    const { taxNumber } = seller;
+    const issued = riyadhDateTime(refund.createdAt);
     const accepted = ["Accepted", "AcceptedWithWarnings"].includes(refund.zakaty?.status);
     const total = Number(refund.totalAmount || 0);
     const vat = Number(refund.vatAmount || 0);
@@ -496,12 +499,13 @@ const getRefundReceipt = async (req, res) => {
         originalInvoiceNumber: sale?.invoiceNumber || "",
         originalDate: sale?.createdAt || null,
         createdAt: refund.createdAt,
-        salonName: tenant?.salonName || "",
+        date: issued.date,
+        time: issued.time,
+        originalIssueDate: sale?.createdAt ? riyadhDateTime(sale.createdAt).date : "",
+        ...seller,
         logoUrl: publicLogoUrl(tenant),
-        phone: tenant?.ownerPhone || "",
-        taxNumber,
         customerName: sale?.customerSnapshot?.name || "",
-        items: refund.items.map((item) => ({ name: item.name, quantity: item.quantity, totalAmount: Math.round(item.totalAmount * 100) / 100 })),
+        items: refund.items.map((item) => ({ name: item.name, quantity: item.quantity, unitPrice: item.unitPrice, discountAmount: Math.round((item.discountAmount || 0) * 100) / 100, totalAmount: Math.round(item.totalAmount * 100) / 100 })),
         totalAmount: total.toFixed(2),
         vatAmount: vat.toFixed(2),
         baseAmount: (total - vat).toFixed(2),
@@ -510,7 +514,7 @@ const getRefundReceipt = async (req, res) => {
         refundedBy: refund.refundedBy,
         qrCode: accepted && refund.zakaty?.qrBase64
           ? refund.zakaty.qrBase64
-          : taxNumber ? generateZatcaQR(tenant?.salonName || "", taxNumber, new Date(refund.createdAt).toISOString(), total.toFixed(2), vat.toFixed(2)) : null,
+          : taxNumber ? generateZatcaQR(seller.sellerName, taxNumber, zatcaTimestamp(refund.createdAt), total.toFixed(2), vat.toFixed(2)) : null,
       },
     });
   } catch (error) {

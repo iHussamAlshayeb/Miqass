@@ -3,6 +3,7 @@ const mongoose = require("mongoose");
 const Sale = require("../models/Sale");
 const SaleItem = require("../models/SaleItem");
 const Payment = require("../models/Payment");
+const CashShift = require("../models/CashShift");
 const Customer = require("../models/Customer");
 const Appointment = require("../models/Appointment");
 const Service = require("../models/Service");
@@ -13,6 +14,7 @@ const Barber = require("../models/Barber");
 const { applyBarberServicePrices } = require("../utils/servicePricing");
 const { priceLines } = require("../utils/posPricing");
 const { generateZatcaQR } = require("../utils/zatca");
+const { riyadhDateTime, zatcaTimestamp, sellerInfo, SELLER_SELECT } = require("../utils/invoiceHeader");
 const { prepareZakatyInvoice } = require('../services/zakatyIntegration');
 const { getOpenShift } = require("../services/cashShiftService");
 const { normalizeSaudiMobile } = require("../utils/saudiMobile");
@@ -601,24 +603,27 @@ const getSaleInvoice = async (req, res) => {
 
     if (!sale) return res.status(404).json({ message: "عملية البيع غير موجودة" });
 
-    const [tenant, items, payments] = await Promise.all([
-      Tenant.findById(req.tenantId).select("salonName ownerPhone branding taxSettings").lean(),
+    const [tenant, items, payments, shift] = await Promise.all([
+      Tenant.findById(req.tenantId).select(SELLER_SELECT).lean(),
       SaleItem.find({ tenantId: req.tenantId, saleId: sale._id }).lean(),
-      Payment.find({ tenantId: req.tenantId, saleId: sale._id }).lean(),
+      Payment.find({ tenantId: req.tenantId, saleId: sale._id }).sort({ createdAt: 1 }).lean(),
+      sale.shiftId ? CashShift.findOne({ _id: sale.shiftId, tenantId: req.tenantId }).select("openedBy").lean() : null,
     ]);
 
     const createdAt = new Date(sale.createdAt);
     const totalAmount = toMoney(sale.totalAmount);
     const vatAmount = toMoney(sale.vatAmount);
     const baseAmount = toMoney(sale.subtotal);
-    const taxNumber = tenant?.taxSettings?.taxNumber || "";
+    const seller = sellerInfo(tenant);
+    const { taxNumber } = seller;
+    const issued = riyadhDateTime(createdAt);
     const zakatyAccepted = ['Accepted', 'AcceptedWithWarnings'].includes(sale.zakaty?.status);
     const qrCode = zakatyAccepted
       ? sale.zakaty?.qrBase64 || null
       : taxNumber ? generateZatcaQR(
-          tenant?.salonName || "",
+          seller.sellerName,
           taxNumber,
-          createdAt.toISOString(),
+          zatcaTimestamp(createdAt),
           totalAmount.toFixed(2),
           vatAmount.toFixed(2),
         )
@@ -643,17 +648,12 @@ const getSaleInvoice = async (req, res) => {
     res.status(200).json({
       invoice: {
         invoiceNumber: sale.invoiceNumber,
-        salonName: tenant?.salonName || "",
+        ...seller,
         logoUrl: tenant?.branding?.logoUrl || "",
-        phone: tenant?.ownerPhone || "",
-        taxNumber,
-        date: createdAt.toLocaleDateString("en-GB", { timeZone: "Asia/Riyadh" }),
+        date: issued.date,
         isoDate: sale.createdAt,
-        time: createdAt.toLocaleTimeString("ar-SA", {
-          timeZone: "Asia/Riyadh",
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
+        time: issued.time,
+        cashierName: shift?.openedBy || "",
         customerName: sale.customerSnapshot?.name || "عميل نقدي",
         customerPhone: sale.customerSnapshot?.phone || "",
         itemType: items.some((item) => item.itemType === "service" || item.itemType === "custom")
@@ -676,6 +676,12 @@ const getSaleInvoice = async (req, res) => {
         vatAmount: vatAmount.toFixed(2),
         paidAmount: toMoney(sale.paidAmount).toFixed(2),
         paymentMethod,
+        // تفصيل الدفعات عند تقسيم السداد
+        paymentLines: payments.map((payment) => ({
+          method: paymentMethodLabels[payment.method] || payment.method,
+          amount: toMoney(payment.amount).toFixed(2),
+        })),
+        refundedAmount: toMoney(sale.refundedAmount).toFixed(2),
         status: sale.status,
         qrCode,
         isZatcaPhase2: !!(zakatyAccepted && sale.zakaty?.qrBase64),

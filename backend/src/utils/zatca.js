@@ -5,9 +5,12 @@ const getTLV = (tag, value) => {
 
   const valueBuffer = Buffer.from(stringValue, "utf8");
 
+  // الطول بايت واحد: نقص بحدود الحروف حتى لا ينكسر حرف عربي متعدد البايتات
   let safeBuffer = valueBuffer;
   if (valueBuffer.length > 255) {
-    safeBuffer = valueBuffer.subarray(0, 255);
+    let chars = Array.from(stringValue);
+    while (Buffer.byteLength(chars.join(""), "utf8") > 255) chars = chars.slice(0, -1);
+    safeBuffer = Buffer.from(chars.join(""), "utf8");
   }
 
   const tagBuffer = Buffer.from([tag]);
