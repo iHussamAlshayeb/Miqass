@@ -23,6 +23,12 @@ services:
       DISABLE_CRON_JOBS: ${MIQASS_DISABLE_CRON_JOBS:-false}
     ports:
       - "127.0.0.1:15000:5000"
+    # DNS خارجي ثابت: خادم DNS الداخلي في Docker Desktop يتعطل أحياناً ("server misbehaving")
+    # فتنقطع MongoDB Atlas ومزوّد واتساب. أسماء الخدمات (app وغيرها) تبقى تعمل كما هي.
+    dns: &public-dns
+      - 1.1.1.1
+      - 8.8.8.8
+      - 1.0.0.1
     restart: unless-stopped
     stop_grace_period: 30s
     healthcheck:
@@ -54,6 +60,7 @@ services:
       FRONTEND_URL: https://www.miqass.app
       DISABLE_CRON_JOBS: ${MIQASS_DISABLE_CRON_JOBS:-false}
       WHATSAPP_SERVICE_PORT: 5100
+    dns: *public-dns
     restart: unless-stopped
     stop_grace_period: 30s
     healthcheck:
@@ -80,9 +87,9 @@ services:
     restart: unless-stopped
 
   cloudflared:
-    # أحدث إصدار دائماً: يُسحب عند كل تشغيل، ومهمة مجدولة تحدّثه يومياً (scripts/update-tunnel.ps1)
+    # التحديث يتم بمهمة يومية (scripts/update-tunnel.ps1) وليس عند كل تشغيل:
+    # السحب الإجباري كان يؤخر تشغيل النفق أو يمنعه إذا تأخر Docker Hub بعد إعادة تشغيل الجهاز.
     image: cloudflare/cloudflared:latest
-    pull_policy: always
     env_file:
       - .cloudflared/tunnel.env
     command:
@@ -90,13 +97,20 @@ services:
       - --no-autoupdate
       - --protocol
       - http2
+      # إغلاق أسرع عند التحديث اليومي أو إعادة التشغيل (الافتراضي 30 ثانية يبقي الموقع متوقفاً أطول)
+      - --grace-period
+      - 10s
       - run
       - --url
       - http://app:5000
       - d8545d1d-baaf-460c-bc04-8663c5ee9e23
+    # نفس DNS الخارجي: إعادة الاتصال بـ Cloudflare تبحث عن عناوين الحافة في كل مرة
+    dns: *public-dns
+    # النفق لا ينتظر "صحة" التطبيق: انتظارها كان يمنع تشغيل النفق كلياً إذا تأخر التطبيق،
+    # والتطبيق يقلع خلال ثوانٍ فتمر الطلبات الأولى فقط بخطأ مؤقت
     depends_on:
       app:
-        condition: service_healthy
+        condition: service_started
     restart: unless-stopped
     profiles:
       - public
