@@ -95,8 +95,11 @@ services:
     command:
       - tunnel
       - --no-autoupdate
+      # QUIC (UDP) بدل http2: اتصالات TCP الطويلة كانت تُقطع كل 1-3 دقائق داخل شبكة Docker Desktop
+      # ("connection with edge closed")، وQUIC يتحمل ذلك ويستعيد الاتصال أسرع.
+      # auto يرجع تلقائياً إلى http2 إن تعذر UDP.
       - --protocol
-      - http2
+      - auto
       # إغلاق أسرع عند التحديث اليومي أو إعادة التشغيل (الافتراضي 30 ثانية يبقي الموقع متوقفاً أطول)
       - --grace-period
       - 10s
