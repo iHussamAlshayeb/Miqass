@@ -1,15 +1,24 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
+import { Minus, Plus, X } from 'lucide-react';
 import { formatTime12Hour, getTimePeriod } from '../../utils/helpers';
 import LoyaltyCard from './LoyaltyCard';
 import { getSelectedBarberColor } from '../../utils/barberTheme';
 
+// نفس هوية صفحة الحجز
+const INK = { stone: '#EEF0EC', ink: '#1C1F22', muted: '#6A7068', line: '#DCDFD8' };
+const DISPLAY_FONT = "'Noto Kufi Arabic', 'IBM Plex Sans Arabic', sans-serif";
+const FIELD = 'h-14 w-full rounded-[14px] border bg-white px-4 text-base font-semibold outline-none transition-shadow focus:ring-4';
+
+/** خطوة "بياناتك": ملخص الموعد، الجوال، أسماء الأشخاص، ثم التأكيد */
 const BookingModal = ({
     isOpen,
     onClose,
     tenantData,
     selectedTime,
     selectedChair,
+    selectedDateLabel,
+    selectedServices = [],
     phone,
     setPhone,
     childrenNames,
@@ -19,235 +28,205 @@ const BookingModal = ({
     totals,
     isCheckingLoyalty,
     loyaltyVisits,
-    savedChildren, // 💡 استلام مصفوفة الأسماء
-    onRequestSavedNames, // فتح التحقق برمز الجوال لعرض الأسماء المحفوظة
+    savedChildren,
+    onRequestSavedNames,
     handleBookingSubmit,
     isLoading,
     bookingError,
     bookingErrorField,
-    clearBookingError
+    clearBookingError,
 }) => {
     const [quickSelectError, setQuickSelectError] = useState('');
 
-    // 💡 منطق التلوين الديناميكي (يتطابق مع الشاشة الرئيسية)
     const brandPrimary = tenantData?.branding?.primaryColor || '#3b82f6';
     const brandSecondary = tenantData?.branding?.secondaryColor || '#64748b';
-    const activeThemeColor = getSelectedBarberColor(tenantData?.barbers || [], selectedChair, brandPrimary, brandSecondary);
+    const accent = getSelectedBarberColor(tenantData?.barbers || [], selectedChair, brandPrimary, brandSecondary);
+    const people = Math.max(childrenNames.filter((name) => name.trim() !== '').length, 1);
+    const deposit = tenantData?.paymentSettings?.isOnlinePaymentEnabled && tenantData?.paymentSettings?.depositAmount > 0
+        ? tenantData.paymentSettings.depositAmount : 0;
 
     const handleClose = () => {
         setQuickSelectError('');
         onClose();
     };
 
-    // 💡 دالة التعامل مع الأزرار السريعة
+    // إغلاق بزر Esc
+    useEffect(() => {
+        if (!isOpen) return undefined;
+        const onKey = (event) => { if (event.key === 'Escape') onClose(); };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [isOpen, onClose]);
+
     const handleQuickSelect = (childName) => {
         if (childrenNames.includes(childName)) return;
         setQuickSelectError('');
-
-        const emptyIndex = childrenNames.findIndex(n => n.trim() === '');
-
+        const emptyIndex = childrenNames.findIndex((name) => name.trim() === '');
         if (emptyIndex !== -1) {
-            const newNames = [...childrenNames];
-            newNames[emptyIndex] = childName;
-            setChildrenNames(newNames);
+            const next = [...childrenNames];
+            next[emptyIndex] = childName;
+            setChildrenNames(next);
             clearBookingError();
         } else if (childrenNames.length < maxConsecutiveSlots) {
             setChildrenNames([...childrenNames, childName]);
             clearBookingError();
         } else {
-            setQuickSelectError('الوقت المتاح لا يتسع لإضافة شخص آخر.');
+            setQuickSelectError('الوقت المتاح لا يتسع لشخص آخر بعد هذا الموعد.');
         }
+    };
+
+    const setName = (index, value) => {
+        const next = [...childrenNames];
+        next[index] = value;
+        setChildrenNames(next);
+        clearBookingError();
     };
 
     return (
         <AnimatePresence>
             {isOpen && (
-                <>
-                    {/* الخلفية المعتمة */}
+                <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="booking-details-title">
                     <Motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ duration: 0.2 }}
-                        className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40"
+                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}
+                        className="absolute inset-0 bg-[rgba(28,31,34,0.55)]"
                         onClick={handleClose}
                     />
+                    <Motion.div
+                        initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+                        transition={{ type: 'spring', damping: 32, stiffness: 320 }}
+                        className="relative max-h-[94vh] w-full max-w-md overflow-y-auto rounded-t-[24px] bg-white sm:rounded-[24px]"
+                        dir="rtl"
+                    >
+                        <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-white px-5 py-4" style={{ borderColor: INK.line }}>
+                            <h3 id="booking-details-title" className="text-lg font-bold" style={{ fontFamily: DISPLAY_FONT }}>بياناتك لتأكيد الموعد</h3>
+                            <button type="button" onClick={handleClose} aria-label="إغلاق" className="flex h-9 w-9 items-center justify-center rounded-full" style={{ backgroundColor: INK.stone }}>
+                                <X size={18} />
+                            </button>
+                        </div>
 
-                    {/* النافذة المنبثقة */}
-                    <div className="fixed inset-x-0 bottom-0 z-50 flex justify-center pointer-events-none">
-                        <Motion.div
-                            initial={{ y: "100%" }}
-                            animate={{ y: 0 }}
-                            exit={{ y: "100%" }}
-                            transition={{ type: "spring", damping: 26, stiffness: 300 }}
-                            className="bg-white w-full max-w-md rounded-t-[40px] p-6 pt-8 shadow-2xl pointer-events-auto relative max-h-[92vh] overflow-y-auto hide-scrollbar"
-                        >
-                            {/* المؤشر العلوي */}
-                            <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto absolute top-3 left-1/2 transform -translate-x-1/2"></div>
-
-                            {/* هيدر النافذة */}
-                            <div className="flex justify-between items-start mb-6 mt-2">
-                                <div>
-                                    <h3 className="text-2xl font-black text-slate-900">تأكيد الموعد ✨</h3>
-                                    <p className="font-bold text-sm mt-1 transition-colors duration-300" style={{ color: activeThemeColor }}>
-                                        <span dir="ltr" className="text-slate-500">{formatTime12Hour(selectedTime)}</span> <span className="text-slate-500">{getTimePeriod(selectedTime)}</span> • {selectedChair} ✂️
+                        <form onSubmit={handleBookingSubmit} noValidate className="space-y-5 p-5">
+                            {/* ملخص الموعد */}
+                            <div className="rounded-[16px] p-4" style={{ backgroundColor: INK.stone }}>
+                                <div className="flex items-baseline justify-between gap-3">
+                                    <p className="text-2xl font-bold" style={{ fontFamily: DISPLAY_FONT }}>
+                                        <bdi dir="ltr">{formatTime12Hour(selectedTime)}</bdi> <span className="text-sm font-semibold">{getTimePeriod(selectedTime)}</span>
                                     </p>
+                                    <p className="text-sm font-semibold" style={{ color: accent }}>{selectedChair}</p>
                                 </div>
-                                <button onClick={handleClose} aria-label="إغلاق نافذة الحجز" className="bg-slate-100 text-slate-400 hover:text-slate-600 hover:bg-slate-200 w-8 h-8 rounded-full flex items-center justify-center font-bold transition-colors">✕</button>
+                                <p className="mt-0.5 text-sm" style={{ color: INK.muted }}>{selectedDateLabel}</p>
+                                {selectedServices.length > 0 && (
+                                    <p className="mt-2 text-sm">{selectedServices.map((service) => service.name).join('، ')}</p>
+                                )}
                             </div>
 
-                            {/* نموذج الحجز */}
-                            <form onSubmit={handleBookingSubmit} noValidate className="space-y-4">
+                            {bookingError && !bookingErrorField && (
+                                <p role="alert" className="rounded-[12px] bg-rose-50 p-3 text-sm font-semibold text-rose-700">{bookingError}</p>
+                            )}
 
-                                {bookingError && !bookingErrorField && (
-                                    <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm font-bold text-rose-700">{bookingError}</p>
+                            <div>
+                                <label htmlFor="booking-phone" className="mb-1.5 block text-sm font-bold">رقم الجوال</label>
+                                <input
+                                    id="booking-phone" type="tel" inputMode="numeric" autoComplete="tel" required maxLength="10" placeholder="05XXXXXXXX" dir="ltr"
+                                    aria-invalid={bookingErrorField === 'phone'} aria-describedby="booking-phone-hint"
+                                    value={phone}
+                                    onChange={(event) => { setPhone(event.target.value.replace(/\D/g, '')); clearBookingError(); }}
+                                    className={`${FIELD} text-left text-lg tracking-wider`}
+                                    style={{ borderColor: bookingErrorField === 'phone' ? '#E11D48' : phone.length === 10 ? accent : INK.line, '--tw-ring-color': `${accent}33` }}
+                                />
+                                <p id="booking-phone-hint" role={bookingErrorField === 'phone' ? 'alert' : undefined} className={`mt-1.5 text-xs ${bookingErrorField === 'phone' ? 'font-semibold text-rose-700' : ''}`} style={bookingErrorField === 'phone' ? undefined : { color: INK.muted }}>
+                                    {bookingErrorField === 'phone' ? bookingError : 'يصلك تأكيد الموعد والتذكير عليه.'}
+                                </p>
+                            </div>
+
+                            <AnimatePresence>
+                                {tenantData?.settings?.isLoyaltyEnabled && isCheckingLoyalty && (
+                                    <Motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-xs" style={{ color: INK.muted }}>
+                                        جاري التحقق من بطاقة الولاء…
+                                    </Motion.p>
                                 )}
+                                {tenantData?.settings?.isLoyaltyEnabled && loyaltyVisits !== null && !isCheckingLoyalty && (
+                                    <LoyaltyCard visits={loyaltyVisits} primaryColor={accent} requiredVisits={tenantData.settings.loyaltyVisitsRequired || 5} />
+                                )}
+                            </AnimatePresence>
 
-                                {/* رقم الجوال */}
-                                <div>
-                                    <label htmlFor="booking-phone" className="block text-sm font-bold text-slate-700 mb-2">رقم الجوال</label>
-                                    <input
-                                        id="booking-phone" aria-invalid={bookingErrorField === 'phone'} aria-describedby={bookingErrorField === 'phone' ? 'booking-phone-error' : undefined}
-                                        type="tel" required pattern="^05[0-9]{8}$" maxLength="10" placeholder="رقم الجوال (05XXXXXXXX)"
-                                        value={phone} onChange={(e) => { setPhone(e.target.value.replace(/\D/g, '')); clearBookingError(); }}
-                                        className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:bg-white outline-none text-right font-black text-slate-800 placeholder-slate-400 transition-all duration-300 text-lg tracking-wider focus:ring-4" dir="ltr"
-                                        style={{ '--tw-ring-color': `${activeThemeColor}30`, borderColor: phone.length === 10 ? activeThemeColor : undefined }}
-                                    />
-                                    {bookingErrorField === 'phone' && <p id="booking-phone-error" role="alert" className="text-sm font-bold text-rose-700 mt-2">{bookingError}</p>}
-                                </div>
-
-                                {/* بطاقة الولاء */}
-                                <AnimatePresence>
-                                    {tenantData?.settings?.isLoyaltyEnabled && isCheckingLoyalty && (
-                                        <Motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="text-center text-xs text-slate-400 font-bold py-2">
-                                            جاري التحقق من الولاء... ⏳
-                                        </Motion.div>
-                                    )}
-                                    {tenantData?.settings?.isLoyaltyEnabled && loyaltyVisits !== null && !isCheckingLoyalty && (
-                                        <LoyaltyCard visits={loyaltyVisits} primaryColor={activeThemeColor} requiredVisits={tenantData.settings.loyaltyVisitsRequired || 5} />
-                                    )}
-                                </AnimatePresence>
-
-                                {/* أسماء الأشخاص */}
-                                <div className="space-y-3 bg-slate-50/50 p-4 rounded-3xl border border-slate-100">
-                                    <div className="flex justify-between items-center px-1 mb-2">
-                                        <label className="text-sm font-black text-slate-700 flex items-center gap-2">👥 أسماء الأشخاص</label>
-                                        <div className="flex items-center gap-2">
-                                            {childrenNames.length < maxConsecutiveSlots && (
-                                                <button type="button" onClick={() => setChildrenNames([...childrenNames, ''])}
-                                                    className="text-xs font-black px-3 py-1.5 rounded-xl transition-colors duration-300 shadow-sm"
-                                                    style={{ color: activeThemeColor, backgroundColor: `${activeThemeColor}15` }}>
-                                                    + شخص إضافي
+                            <fieldset>
+                                <legend className="mb-1.5 text-sm font-bold">{childrenNames.length > 1 ? 'أسماء الأشخاص' : 'الاسم'}</legend>
+                                <div className="space-y-2">
+                                    {childrenNames.map((name, index) => (
+                                        <div key={index} className="flex gap-2">
+                                            <input
+                                                type="text" required autoComplete={index === 0 ? 'given-name' : 'off'}
+                                                aria-label={`اسم الشخص ${index + 1}`} aria-invalid={bookingErrorField === 'names'}
+                                                placeholder={index === 0 ? 'اسمك' : `اسم الشخص ${index + 1}`}
+                                                value={name}
+                                                onChange={(event) => setName(index, event.target.value)}
+                                                className={FIELD}
+                                                style={{ borderColor: bookingErrorField === 'names' && !name.trim() ? '#E11D48' : INK.line, '--tw-ring-color': `${accent}33` }}
+                                            />
+                                            {index > 0 && (
+                                                <button type="button" onClick={() => setChildrenNames(childrenNames.filter((_, i) => i !== index))} aria-label={`حذف الشخص ${index + 1}`}
+                                                    className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[14px] border text-rose-600" style={{ borderColor: INK.line }}>
+                                                    <Minus size={18} />
                                                 </button>
                                             )}
-                                            {childrenNames.length === maxConsecutiveSlots && maxConsecutiveSlots < 4 && (
-                                                <span className="text-[10px] text-orange-500 font-bold bg-orange-50 px-2 py-1 rounded-lg">لا توجد أوقات متتالية إضافية ⚠️</span>
-                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                                {bookingErrorField === 'names' && <p role="alert" className="mt-1.5 text-xs font-semibold text-rose-700">{bookingError}</p>}
+
+                                {childrenNames.length < maxConsecutiveSlots ? (
+                                    <button type="button" onClick={() => setChildrenNames([...childrenNames, ''])} className="mt-2 inline-flex h-10 items-center gap-1.5 text-sm font-bold" style={{ color: accent }}>
+                                        <Plus size={16} /> إضافة شخص معك
+                                    </button>
+                                ) : childrenNames.length > 1 || maxConsecutiveSlots === 1 ? (
+                                    <p className="mt-2 text-xs" style={{ color: INK.muted }}>الأوقات بعد هذا الموعد محجوزة، فلا يتسع لشخص آخر.</p>
+                                ) : null}
+
+                                {savedChildren?.length > 0 && (
+                                    <div className="mt-3">
+                                        <p className="mb-2 text-xs" style={{ color: INK.muted }}>أسماء حجزت بها سابقاً</p>
+                                        <div className="flex flex-wrap gap-2">
+                                            {savedChildren.map((childName) => {
+                                                const used = childrenNames.includes(childName);
+                                                return (
+                                                    <button key={childName} type="button" disabled={used} onClick={() => handleQuickSelect(childName)}
+                                                        className="h-9 rounded-full border px-3 text-sm font-semibold disabled:opacity-60"
+                                                        style={used ? { backgroundColor: `${accent}14`, borderColor: 'transparent', color: accent } : { borderColor: INK.line }}>
+                                                        {childName}
+                                                    </button>
+                                                );
+                                            })}
                                         </div>
                                     </div>
+                                )}
+                                {onRequestSavedNames && (
+                                    <button type="button" onClick={onRequestSavedNames} className="mt-2 block text-xs font-bold underline underline-offset-4" style={{ color: INK.ink }}>
+                                        عرض الأسماء التي حجزت بها سابقاً (رمز تحقق على واتساب)
+                                    </button>
+                                )}
+                                {quickSelectError && <p role="alert" className="mt-1.5 text-xs font-semibold text-rose-700">{quickSelectError}</p>}
+                            </fieldset>
 
-                                    <AnimatePresence>
-                                        {childrenNames.map((name, index) => (
-                                            <Motion.div key={index} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, scale: 0.9 }} className="flex gap-2 relative">
-                                                <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 font-black">{index + 1}</div>
-                                                <input
-                                                    aria-label={`اسم الشخص ${index + 1}`} aria-invalid={bookingErrorField === 'names'} aria-describedby={bookingErrorField === 'names' ? 'booking-names-error' : undefined}
-                                                    type="text" required placeholder={index === 0 ? "الاسم الكريم (مثال: محمد)" : "اسم المرافق (مثال: علي)"} value={name}
-                                                    onChange={(e) => { const newNames = [...childrenNames]; newNames[index] = e.target.value; setChildrenNames(newNames); clearBookingError(); }}
-                                                    className="w-full p-4 pr-10 bg-white border border-slate-200 rounded-2xl focus:bg-slate-50 outline-none font-black text-slate-800 placeholder-slate-400 transition-all duration-300 text-sm focus:ring-2 focus:border-transparent shadow-sm"
-                                                    style={{ '--tw-ring-color': `${activeThemeColor}40` }}
-                                                />
-                                                {index > 0 && <button type="button" onClick={() => setChildrenNames(childrenNames.filter((_, i) => i !== index))} className="w-14 shrink-0 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center text-lg hover:bg-red-100 transition-colors shadow-sm">🗑️</button>}
-                                            </Motion.div>
-                                        ))}
-                                    </AnimatePresence>
-                                    {bookingErrorField === 'names' && <p id="booking-names-error" role="alert" className="text-sm font-bold text-rose-700">{bookingError}</p>}
-
-                                    {/* 💡 أزرار الاستكمال السريع (تظهر فقط إذا كان هناك أسماء محفوظة) */}
-                                    <AnimatePresence>
-                                        {savedChildren && savedChildren.length > 0 && (
-                                            <Motion.div
-                                                initial={{ opacity: 0, y: -10 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                exit={{ opacity: 0, height: 0 }}
-                                                className="mt-4 pt-4 border-t border-slate-200/60"
-                                            >
-                                                <p className="text-[11px] font-bold text-slate-400 mb-3">اختر من الأسماء المسجلة مسبقاً (لحجز أسرع):</p>
-                                                <div className="flex flex-wrap gap-2">
-                                                    {savedChildren.map((childName, idx) => {
-                                                        const isSelected = childrenNames.includes(childName);
-                                                        return (
-                                                            <button
-                                                                key={idx}
-                                                                type="button"
-                                                                onClick={() => handleQuickSelect(childName)}
-                                                                disabled={isSelected}
-                                                                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all duration-300 shadow-sm border
-                                                                    ${isSelected ? 'cursor-not-allowed opacity-70' : 'bg-white active:scale-95'}`}
-                                                                style={
-                                                                    isSelected
-                                                                        ? { backgroundColor: `${activeThemeColor}15`, color: activeThemeColor, borderColor: 'transparent' }
-                                                                        : { color: activeThemeColor, borderColor: `${activeThemeColor}40` }
-                                                                }
-                                                            >
-                                                                {isSelected ? `✓ ${childName}` : `+ ${childName}`}
-                                                            </button>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </Motion.div>
-                                        )}
-                                    </AnimatePresence>
-                                    {onRequestSavedNames && (
-                                        <button
-                                            type="button"
-                                            onClick={onRequestSavedNames}
-                                            className="mt-3 text-[11px] font-black underline underline-offset-4"
-                                            style={{ color: activeThemeColor }}
-                                        >
-                                            عرض الأسماء المحفوظة (تحقق برمز واتساب)
-                                        </button>
-                                    )}
-                                    {quickSelectError && <p role="alert" className="text-sm font-bold text-rose-700">{quickSelectError}</p>}
-
-                                    {/* ملخص الفاتورة */}
-                                    {selectedServicesIds.length > 0 && (
-                                        <div className="mt-4 pt-4 border-t border-slate-200/60 flex justify-between items-center">
-                                            <div>
-                                                <p className="text-slate-400 text-[10px] font-bold mb-0.5">الإجمالي التقريبي ({childrenNames.filter(n => n.trim() !== '').length} شخص):</p>
-                                                <h4 className="font-black text-lg text-slate-800">{totals.price * childrenNames.filter(n => n.trim() !== '').length} <span className="text-xs text-slate-500">ر.س</span></h4>
-                                            </div>
-                                            <div className="text-left">
-                                                <p className="text-slate-400 text-[10px] font-bold mb-0.5">المدة المحجوزة:</p>
-                                                <h4 className="font-black text-sm text-slate-700 bg-white px-2 py-1 rounded-md border border-slate-100">⏱️ {totals.duration * childrenNames.filter(n => n.trim() !== '').length} دقيقة</h4>
-                                            </div>
-                                        </div>
-                                    )}
+                            {selectedServicesIds.length > 0 && (
+                                <div className="flex items-baseline justify-between border-t pt-4" style={{ borderColor: INK.line }}>
+                                    <span className="text-sm" style={{ color: INK.muted }}>
+                                        الإجمالي{people > 1 ? ` لـ ${people} أشخاص` : ''}، {totals.duration * people} دقيقة
+                                    </span>
+                                    <span className="text-xl font-bold" style={{ fontFamily: DISPLAY_FONT }}>
+                                        {totals.price * people} <span className="text-xs font-semibold" style={{ color: INK.muted }}>ر.س</span>
+                                    </span>
                                 </div>
+                            )}
 
-                                {/* زر التأكيد */}
-                                <div className="pt-2 pb-safe">
-                                    <Motion.button
-                                        whileTap={{ scale: 0.95 }} type="submit" disabled={isLoading}
-                                        className="w-full py-4 text-white rounded-2xl font-black text-lg transition-all duration-300 disabled:opacity-70 disabled:scale-100 flex justify-center items-center gap-2"
-                                        style={{ backgroundColor: activeThemeColor, boxShadow: `0 8px 25px ${activeThemeColor}40` }}
-                                    >
-                                        {isLoading ? (
-                                            <span className="animate-pulse">جاري المعالجة...</span>
-                                        ) : (
-                                            <>
-                                                {/* 💡 تغيير نص الزر بذكاء إذا كان الصالون يفعل الدفع الإلكتروني */}
-                                                {tenantData?.paymentSettings?.isOnlinePaymentEnabled && tenantData?.paymentSettings?.depositAmount > 0
-                                                    ? `دفع عربون (${tenantData.paymentSettings.depositAmount} ر.س)`
-                                                    : `تأكيد الحجز ✨`}
-                                            </>
-                                        )}
-                                    </Motion.button>
-                                </div>
-                            </form>
-                        </Motion.div>
-                    </div>
-                </>
+                            <div className="pb-[env(safe-area-inset-bottom)]">
+                                <button type="submit" disabled={isLoading} className="h-14 w-full rounded-[14px] text-lg font-bold text-white transition-opacity disabled:opacity-60" style={{ backgroundColor: accent }}>
+                                    {isLoading ? 'جاري الحجز…' : deposit ? `تأكيد ودفع عربون ${deposit} ر.س` : 'تأكيد الحجز'}
+                                </button>
+                                {deposit > 0 && <p className="mt-2 text-center text-xs" style={{ color: INK.muted }}>يُخصم العربون من الحساب في الصالون.</p>}
+                            </div>
+                        </form>
+                    </Motion.div>
+                </div>
             )}
         </AnimatePresence>
     );
