@@ -2,12 +2,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
     ArrowRight, Maximize, Minus, Plus, Trash2, Percent, Scissors, Package, Search,
-    UserRound, LockKeyhole, Printer, CheckCircle2, ScanBarcode, X, CalendarDays, RefreshCw, ReceiptText, LogOut,
+    UserRound, LockKeyhole, Printer, CheckCircle2, ScanBarcode, X, CalendarDays, RefreshCw, ReceiptText, LogOut, History,
 } from 'lucide-react';
 import posApi, { endCashierSession, forgetDevice, hasPosSession, isCashierSession, isDeviceNotActivated, reportInstalledApp } from '../services/posApi';
 import CashierLogin from '../components/pos/CashierLogin';
 import TodayBookings from '../components/pos/TodayBookings';
 import ShiftPanel from '../components/pos/ShiftPanel';
+import PosHistory from '../components/pos/PosHistory';
 import WalkInModal from '../components/pos/WalkInModal';
 import RefundModal from '../components/pos/RefundModal';
 import { getBarberServicePrice } from '../utils/servicePricing';
@@ -62,6 +63,7 @@ function POSScreen() {
     const [actionError, setActionError] = useState('');
 
     const [mode, setMode] = useState('appointments');
+    const isCatalogMode = mode === 'services' || mode === 'products';
     const firstBookingsLoad = useRef(true);
     const [category, setCategory] = useState(ALL);
     const [search, setSearch] = useState('');
@@ -541,9 +543,9 @@ function POSScreen() {
                 <main className="flex min-w-0 flex-1 flex-col">
                     <div className="space-y-3 border-b border-slate-200 bg-white px-4 py-3">
                         <div className="flex flex-wrap gap-2">
-                            <div className="grid shrink-0 grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1">
-                                {[['appointments', 'الحجوزات', <CalendarDays key="a" size={18} />], ['services', 'الخدمات', <Scissors key="s" size={18} />], ['products', 'المنتجات', <Package key="p" size={18} />]].map(([id, label, icon]) => (
-                                    <button key={id} type="button" onClick={() => { setMode(id); setCategory(ALL); if (id === 'appointments') loadOpenAppointments(); }} className={`flex h-11 items-center gap-2 rounded-lg px-4 font-extrabold ${mode === id ? 'bg-white text-slate-900 shadow' : 'text-slate-500'}`}>
+                            <div className="grid shrink-0 grid-cols-4 gap-1 rounded-xl bg-slate-100 p-1">
+                                {[['appointments', 'الحجوزات', <CalendarDays key="a" size={18} />], ['services', 'الخدمات', <Scissors key="s" size={18} />], ['products', 'المنتجات', <Package key="p" size={18} />], ['history', 'السجل', <History key="h" size={18} />]].map(([id, label, icon]) => (
+                                    <button key={id} type="button" onClick={() => { setMode(id); setCategory(ALL); if (id === 'appointments') loadOpenAppointments(); }} className={`flex h-11 items-center justify-center gap-2 rounded-lg px-3 font-extrabold xl:px-4 ${mode === id ? 'bg-white text-slate-900 shadow' : 'text-slate-500'}`}>
                                         {icon} {label}
                                         {id === 'appointments' && pendingCount > 0 && (
                                             <span className="min-w-[22px] rounded-full bg-emerald-600 px-1.5 text-xs font-extrabold leading-[22px] text-white">{pendingCount}</span>
@@ -551,7 +553,7 @@ function POSScreen() {
                                     </button>
                                 ))}
                             </div>
-                            {mode !== 'appointments' && <label className="flex h-[52px] min-w-[240px] flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 focus-within:border-slate-900">
+                            {isCatalogMode && <label className="flex h-[52px] min-w-[240px] flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 focus-within:border-slate-900">
                                 <Search size={20} className="text-slate-400" />
                                 <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={mode === 'products' ? 'ابحث بالاسم أو الباركود' : 'ابحث عن خدمة'} className="h-full min-w-0 flex-1 bg-transparent text-base font-semibold outline-none" />
                                 {search && <button type="button" onClick={() => setSearch('')} className="p-1 text-slate-400" aria-label="مسح"><X size={18} /></button>}
@@ -579,7 +581,7 @@ function POSScreen() {
                                 ))}
                             </div>
                         )}
-                        {mode !== 'appointments' && categories.length > 1 && (
+                        {isCatalogMode && categories.length > 1 && (
                             <div className="flex gap-2 overflow-x-auto pb-0.5">
                                 {[ALL, ...categories].map((name) => (
                                     <button key={name} type="button" onClick={() => setCategory(name)} className={`h-9 shrink-0 rounded-lg px-3 text-sm font-bold ${category === name ? 'bg-slate-200 text-slate-900' : 'text-slate-500'}`}>
@@ -591,7 +593,13 @@ function POSScreen() {
                     </div>
 
                     <div className="min-h-0 flex-1 overflow-y-auto p-4">
-                        {mode === 'appointments' ? (
+                        {mode === 'history' ? (
+                            <PosHistory
+                                onReceipt={openInvoice}
+                                onRefund={setRefundSaleId}
+                                reloadKey={shiftReload}
+                            />
+                        ) : mode === 'appointments' ? (
                             <TodayBookings
                                 appointments={openAppointments}
                                 barbers={barbers}

@@ -8,6 +8,8 @@ const CashShift = require("../models/CashShift");
 const Customer = require("../models/Customer");
 const Appointment = require("../models/Appointment");
 const Sale = require("../models/Sale");
+const SaleItem = require("../models/SaleItem");
+const Payment = require("../models/Payment");
 const {
   formatKsaDate, formatWalkInTimeSlot, getKsaNow, WALK_IN_BARBER_NAME, BOOKING_SOURCE_KIOSK_WALK_IN,
 } = require("./booking/helpers");
@@ -219,6 +221,28 @@ const getCheckoutAppointment = async (req, res) => {
 };
 
 /** مواعيد اليوم كاملة لنقطة البيع: المحجوز والمكتمل والمدفوع والملغي */
+const POS_APPOINTMENT_SELECT = "childName date timeSlot barberName status selectedServices.name totalPrice payment.status payment.amount bookingSource isWalkIn isReviewRequested cancelReason saleId customerId";
+
+const presentPosAppointment = (appointment) => ({
+  _id: appointment._id,
+  childName: appointment.childName,
+  customerPhone: appointment.customerId?.phone || "",
+  date: appointment.date || "",
+  timeSlot: displayTimeSlot(appointment.timeSlot),
+  barberName: appointment.barberName || "",
+  status: appointment.status,
+  isWalkIn: Boolean(appointment.isWalkIn || appointment.bookingSource === "kiosk_walk_in"),
+  servicesLabel: (appointment.selectedServices || []).map((service) => service.name).filter(Boolean).join("، "),
+  totalPrice: Number(appointment.totalPrice || 0),
+  deposit: appointment.payment?.status === "Paid" ? Number(appointment.payment.amount || 0) : 0,
+  saleId: appointment.saleId || null,
+  isPaid: Boolean(appointment.saleId),
+  canRequestReview: Boolean(
+    appointment.status === "Completed" && !appointment.isReviewRequested,
+  ),
+  cancelReason: appointment.cancelReason || "",
+});
+
 const listTodayAppointments = async (req, res) => {
   try {
     const appointments = await Appointment.find({
@@ -227,30 +251,11 @@ const listTodayAppointments = async (req, res) => {
       status: { $in: ["Booked", "Completed", "Cancelled"] },
     })
       .populate("customerId", "phone")
-      .select("childName timeSlot barberName status selectedServices.name totalPrice payment.status payment.amount bookingSource isWalkIn isReviewRequested cancelReason saleId customerId")
+      .select(POS_APPOINTMENT_SELECT)
       .sort({ timeSlot: 1 })
       .limit(200)
       .lean();
-    return res.json({
-      appointments: appointments.map((appointment) => ({
-        _id: appointment._id,
-        childName: appointment.childName,
-        customerPhone: appointment.customerId?.phone || "",
-        timeSlot: displayTimeSlot(appointment.timeSlot),
-        barberName: appointment.barberName || "",
-        status: appointment.status,
-        isWalkIn: Boolean(appointment.isWalkIn || appointment.bookingSource === "kiosk_walk_in"),
-        servicesLabel: (appointment.selectedServices || []).map((service) => service.name).filter(Boolean).join("، "),
-        totalPrice: Number(appointment.totalPrice || 0),
-        deposit: appointment.payment?.status === "Paid" ? Number(appointment.payment.amount || 0) : 0,
-        saleId: appointment.saleId || null,
-        isPaid: Boolean(appointment.saleId),
-        canRequestReview: Boolean(
-          appointment.status === "Completed" && !appointment.isReviewRequested,
-        ),
-        cancelReason: appointment.cancelReason || "",
-      })),
-    });
+    return res.json({ appointments: appointments.map(presentPosAppointment) });
   } catch (error) {
     return sendError(res, error, "تعذر تحميل مواعيد اليوم.");
   }
@@ -915,6 +920,178 @@ const deleteCashier = async (req, res) => {
   }
 };
 
+// ===== السجل: المواعيد والفواتير السابقة داخل نقطة البيع =====
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_RANGE_DAYS = 93;
+const HISTORY_PAGE = 50;
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const isRealDate = (value) => DATE_PATTERN.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00+03:00`))
+  && new Date(`${value}T12:00:00+03:00`).toISOString().slice(0, 10) === value;
+const shiftDays = (value, days) => {
+  const date = new Date(`${value}T12:00:00+03:00`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+};
+
+/** عملاء الصالون المطابقون لرقم جوال (جزئي) */
+const customerIdsByPhone = async (tenantId, digits) => {
+  if (digits.length < 3) return [];
+  const customers = await Customer.find({
+    tenantId,
+    $or: phoneCandidates(digits).map((candidate) => ({ phone: { $regex: candidate } })),
+  }).select("_id").limit(50).lean();
+  return customers.map((customer) => customer._id);
+};
+
+/**
+ * مواعيد يوم معيّن (الافتراضي اليوم)، أو بحث عن عميل بالاسم/الجوال في كل الأيام (الأحدث أولاً).
+ */
+const listAppointmentsHistory = async (req, res) => {
+  try {
+    const q = String(req.query.q || "").trim().slice(0, 40);
+    const query = { tenantId: req.tenantId, status: { $in: ["Booked", "Completed", "Cancelled"] } };
+    let date = "";
+    if (q) {
+      const digits = q.replace(/\D/g, "");
+      const or = [{ childName: { $regex: escapeRegex(q), $options: "i" } }];
+      const ids = await customerIdsByPhone(req.tenantId, digits);
+      if (ids.length) or.push({ customerId: { $in: ids } });
+      query.$or = or;
+    } else {
+      date = String(req.query.date || formatKsaDate());
+      if (!isRealDate(date)) return res.status(400).json({ message: "تاريخ غير صالح." });
+      query.date = date;
+    }
+    const appointments = await Appointment.find(query)
+      .populate("customerId", "phone")
+      .select(POS_APPOINTMENT_SELECT)
+      .sort(q ? { date: -1, timeSlot: -1 } : { timeSlot: 1 })
+      .limit(q ? 100 : 300)
+      .lean();
+    const list = appointments.map(presentPosAppointment);
+    const summary = {
+      count: list.length,
+      completed: list.filter((item) => item.status === "Completed").length,
+      cancelled: list.filter((item) => item.status === "Cancelled").length,
+      paidTotal: roundMoney(list.filter((item) => item.isPaid).reduce((sum, item) => sum + item.totalPrice, 0)),
+    };
+    return res.json({ date, query: q, appointments: list, summary });
+  } catch (error) {
+    return sendError(res, error, "تعذر تحميل المواعيد.");
+  }
+};
+
+/**
+ * سجل الفواتير لفترة (بتوقيت الرياض، حتى 93 يوماً)، مع البحث برقم الفاتورة أو اسم/جوال العميل.
+ * الصفحات بالأقدم: before = createdAt لآخر فاتورة معروضة.
+ */
+const listSalesHistory = async (req, res) => {
+  try {
+    const today = formatKsaDate();
+    const to = String(req.query.to || today);
+    const from = String(req.query.from || shiftDays(to, -6));
+    if (!isRealDate(from) || !isRealDate(to) || from > to) return res.status(400).json({ message: "الفترة غير صالحة." });
+    if (shiftDays(from, MAX_RANGE_DAYS) < to) return res.status(400).json({ message: `أقصى فترة ${MAX_RANGE_DAYS} يوماً.` });
+
+    const query = {
+      tenantId: req.tenantId,
+      createdAt: { $gte: new Date(`${from}T00:00:00+03:00`), $lte: new Date(`${to}T23:59:59.999+03:00`) },
+    };
+    if (["Draft", "Paid", "Partially_Paid", "Refunded", "Cancelled"].includes(req.query.status)) query.status = req.query.status;
+    if (req.query.refunded === "1") query.refundedAmount = { $gt: 0 };
+
+    const q = String(req.query.q || "").trim().slice(0, 40);
+    if (q) {
+      const invoiceDigits = q.toUpperCase().replace(/\s+/g, "").replace(/^(POS|INV)-?/, "");
+      const or = [{ "customerSnapshot.name": { $regex: escapeRegex(q), $options: "i" } }];
+      if (/^\d{1,9}$/.test(invoiceDigits)) or.push({ invoiceNumber: { $in: [`POS-${invoiceDigits}`, `INV-${invoiceDigits}`] } });
+      const digits = q.replace(/\D/g, "");
+      if (digits.length >= 3) or.push({ "customerSnapshot.phone": { $regex: digits } });
+      query.$or = or;
+    }
+
+    // مؤشر الصفحة: "تاريخ|معرّف" لآخر فاتورة معروضة، والمعرّف يفصل بين فاتورتين بنفس اللحظة
+    const page = { ...query };
+    if (req.query.before) {
+      const [rawDate, rawId] = String(req.query.before).split("|");
+      const before = new Date(rawDate);
+      if (!Number.isNaN(before.getTime())) {
+        const older = [{ createdAt: { $lt: before } }];
+        if (mongoose.Types.ObjectId.isValid(rawId)) older.push({ createdAt: before, _id: { $lt: new mongoose.Types.ObjectId(rawId) } });
+        page.$and = [...(page.$and || []), { $or: older }];
+      }
+    }
+
+    const [sales, totals] = await Promise.all([
+      Sale.find(page)
+        .select("invoiceNumber customerSnapshot totalAmount paidAmount refundedAmount status source createdAt appointmentId shiftId")
+        .sort({ createdAt: -1, _id: -1 })
+        .limit(HISTORY_PAGE + 1)
+        .lean(),
+      Sale.aggregate([
+        // التجميع لا يحوّل الأنواع تلقائياً: معرّف الصالون كـ ObjectId
+        { $match: { ...query, tenantId: new mongoose.Types.ObjectId(String(req.tenantId)), status: { $ne: "Cancelled" } } },
+        { $group: { _id: null, count: { $sum: 1 }, total: { $sum: "$totalAmount" }, paid: { $sum: "$paidAmount" }, refunded: { $sum: { $ifNull: ["$refundedAmount", 0] } } } },
+      ]),
+    ]);
+    const hasMore = sales.length > HISTORY_PAGE;
+    const pageSales = sales.slice(0, HISTORY_PAGE);
+    const ids = pageSales.map((sale) => sale._id);
+    const shiftIds = [...new Set(pageSales.map((sale) => String(sale.shiftId || "")).filter(Boolean))];
+
+    const [items, payments, shifts] = await Promise.all([
+      SaleItem.find({ tenantId: req.tenantId, saleId: { $in: ids } }).select("saleId name quantity").lean(),
+      Payment.find({ tenantId: req.tenantId, saleId: { $in: ids } }).select("saleId method").lean(),
+      CashShift.find({ tenantId: req.tenantId, _id: { $in: shiftIds } }).select("openedBy").lean(),
+    ]);
+    const group = (list, key) => list.reduce((map, row) => {
+      const id = String(row[key]);
+      if (!map.has(id)) map.set(id, []);
+      map.get(id).push(row);
+      return map;
+    }, new Map());
+    const itemsBySale = group(items, "saleId");
+    const paymentsBySale = group(payments, "saleId");
+    const cashierByShift = new Map(shifts.map((shift) => [String(shift._id), shift.openedBy || ""]));
+    const summary = totals[0] || { count: 0, total: 0, paid: 0, refunded: 0 };
+
+    return res.json({
+      from,
+      to,
+      sales: pageSales.map((sale) => {
+        const lines = itemsBySale.get(String(sale._id)) || [];
+        return {
+          _id: sale._id,
+          invoiceNumber: sale.invoiceNumber,
+          customerName: PLACEHOLDER_NAMES.has(String(sale.customerSnapshot?.name || "").trim()) ? "" : sale.customerSnapshot?.name || "",
+          customerPhone: sale.customerSnapshot?.phone || "",
+          totalAmount: roundMoney(sale.totalAmount),
+          paidAmount: roundMoney(sale.paidAmount),
+          refundedAmount: roundMoney(sale.refundedAmount),
+          status: sale.status,
+          source: sale.source,
+          fromAppointment: Boolean(sale.appointmentId),
+          createdAt: sale.createdAt,
+          cashierName: cashierByShift.get(String(sale.shiftId || "")) || "",
+          itemsLabel: lines.map((line) => (line.quantity > 1 ? `${line.name} ×${line.quantity}` : line.name)).join("، "),
+          methods: [...new Set((paymentsBySale.get(String(sale._id)) || []).map((payment) => payment.method))],
+        };
+      }),
+      hasMore,
+      nextBefore: hasMore ? `${new Date(pageSales[pageSales.length - 1].createdAt).toISOString()}|${pageSales[pageSales.length - 1]._id}` : null,
+      summary: {
+        count: summary.count,
+        total: roundMoney(summary.total),
+        paid: roundMoney(summary.paid),
+        refunded: roundMoney(summary.refunded),
+        net: roundMoney(summary.paid - summary.refunded),
+      },
+    });
+  } catch (error) {
+    return sendError(res, error, "تعذر تحميل الفواتير.");
+  }
+};
+
 module.exports = {
-  listTodayAppointments, updateAppointmentStatusFromPos, updateAppointmentServicesFromPos, createWalkInFromPos, getSaleRefundable, createSaleRefund, lookupSaleByInvoice, getRefundReceipt, sendAppointmentReminder, listShiftSales, listShiftExpenses,
+  listTodayAppointments, listAppointmentsHistory, listSalesHistory, updateAppointmentStatusFromPos, updateAppointmentServicesFromPos, createWalkInFromPos, getSaleRefundable, createSaleRefund, lookupSaleByInvoice, getRefundReceipt, sendAppointmentReminder, listShiftSales, listShiftExpenses,
   createDrawerExpense, posLogin, posDeviceStatus, getSetupStatus, dismissSetupGuide, activateThisDevice, createActivationCode, activateWithCode, listDevices, revokeDevice, posMe, listCashiers, createCashier, updateCashier, deleteCashier, getCatalog, getCurrentShift, postOpenShift, postCloseShift, listShifts, getShift, searchCustomers, getCheckoutAppointment };

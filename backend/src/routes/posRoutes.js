@@ -13,6 +13,8 @@ const {
   searchCustomers,
   getCheckoutAppointment,
   listTodayAppointments,
+  listAppointmentsHistory,
+  listSalesHistory,
   updateAppointmentStatusFromPos,
   updateAppointmentServicesFromPos,
   createWalkInFromPos,
@@ -89,6 +91,8 @@ router.get("/shift/expenses", listShiftExpenses);
 router.post("/shift/expenses", createDrawerExpense);
 router.get("/customers", searchCustomers);
 router.get("/appointments", listTodayAppointments);
+router.get("/history/appointments", listAppointmentsHistory);
+router.get("/history/sales", listSalesHistory);
 router.get("/appointments/:appointmentId", getCheckoutAppointment);
 router.put("/appointments/:appointmentId/status", updateAppointmentStatusFromPos);
 // العميل غيّر طلبه: تعديل خدمات الحجز قبل التحصيل
