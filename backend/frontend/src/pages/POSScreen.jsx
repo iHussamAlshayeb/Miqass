@@ -52,6 +52,9 @@ const Tile = ({ title, price, sub, accent, disabled, onClick, inCart = 0, icon =
     </button>
 );
 
+// تاريخ اليوم بتوقيت الرياض (YYYY-MM-DD) لتمييز الحجوزات السابقة عند تحصيلها
+const todayIso = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh' }).format(new Date());
+
 function POSScreen() {
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
@@ -399,6 +402,8 @@ function POSScreen() {
             const sale = res.data.sale;
             setPaying(false);
             setCompleted({ sale, payments, ...cash });
+            // تحديث السجل: الحجز المحصّل يخرج من "غير المحصّلة" والفاتورة تظهر في سجل الفواتير
+            setShiftReload((value) => value + 1);
             // تحديث المخزون محلياً حتى لا يُباع ما نفد
             setCatalog((current) => ({
                 ...current,
@@ -597,6 +602,11 @@ function POSScreen() {
                             <PosHistory
                                 onReceipt={openInvoice}
                                 onRefund={setRefundSaleId}
+                                onCollect={(item) => {
+                                    pickAppointment(item);
+                                    setToast(`حُمّل حجز ${item.childName} في الفاتورة.`);
+                                }}
+                                accent={accent}
                                 reloadKey={shiftReload}
                             />
                         ) : mode === 'appointments' ? (
@@ -647,7 +657,7 @@ function POSScreen() {
                             <div className="min-w-0 flex-1">
                                 <p className="truncate font-bold text-emerald-900">حجز {appointment.childName}</p>
                                 <p className="truncate text-xs font-semibold text-emerald-700">
-                                    {bookingEdited ? 'عدّلت خدمات الحجز · تُحفظ عند الدفع' : `${appointment.timeSlot} · ${appointment.barberName}${appointment.status === 'Booked' ? ' · يُسجل مكتملاً عند الدفع' : ''}`}
+                                    {bookingEdited ? 'عدّلت خدمات الحجز · تُحفظ عند الدفع' : `${appointment.date && appointment.date !== todayIso() ? `موعد سابق ${appointment.date} · ` : ''}${appointment.timeSlot} · ${appointment.barberName}${appointment.status === 'Booked' ? ' · يُسجل مكتملاً عند الدفع' : ''}`}
                                 </p>
                             </div>
                             <button type="button" onClick={() => setSwapTarget('add')} className="flex h-10 shrink-0 items-center gap-1 rounded-lg border border-emerald-200 bg-white px-2.5 text-sm font-bold text-emerald-800 hover:bg-emerald-100">

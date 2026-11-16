@@ -943,21 +943,32 @@ const customerIdsByPhone = async (tenantId, digits) => {
   return customers.map((customer) => customer._id);
 };
 
+const UNPAID_LOOKBACK_DAYS = 60;
+
 /**
- * مواعيد يوم معيّن (الافتراضي اليوم)، أو بحث عن عميل بالاسم/الجوال في كل الأيام (الأحدث أولاً).
+ * مواعيد يوم معيّن (الافتراضي اليوم)، أو بحث عن عميل بالاسم/الجوال في كل الأيام (الأحدث أولاً)،
+ * أو unpaid=1: مواعيد الأيام السابقة (آخر 60 يوماً) التي لم يُحصّل حسابها (محجوز أو مكتمل بلا فاتورة) لتحصيلها لاحقاً.
  */
 const listAppointmentsHistory = async (req, res) => {
   try {
     const q = String(req.query.q || "").trim().slice(0, 40);
     const query = { tenantId: req.tenantId, status: { $in: ["Booked", "Completed", "Cancelled"] } };
     let date = "";
+    const unpaid = req.query.unpaid === "1";
+    if (unpaid) {
+      const today = formatKsaDate();
+      query.status = { $in: ["Booked", "Completed"] };
+      query.saleId = null;
+      // الأيام السابقة فقط: مواعيد اليوم في تبويب الحجوزات
+      query.date = { $gte: shiftDays(today, -UNPAID_LOOKBACK_DAYS), $lt: today };
+    }
     if (q) {
       const digits = q.replace(/\D/g, "");
       const or = [{ childName: { $regex: escapeRegex(q), $options: "i" } }];
       const ids = await customerIdsByPhone(req.tenantId, digits);
       if (ids.length) or.push({ customerId: { $in: ids } });
       query.$or = or;
-    } else {
+    } else if (!unpaid) {
       date = String(req.query.date || formatKsaDate());
       if (!isRealDate(date)) return res.status(400).json({ message: "تاريخ غير صالح." });
       query.date = date;
@@ -965,8 +976,8 @@ const listAppointmentsHistory = async (req, res) => {
     const appointments = await Appointment.find(query)
       .populate("customerId", "phone")
       .select(POS_APPOINTMENT_SELECT)
-      .sort(q ? { date: -1, timeSlot: -1 } : { timeSlot: 1 })
-      .limit(q ? 100 : 300)
+      .sort(q || unpaid ? { date: -1, timeSlot: -1 } : { timeSlot: 1 })
+      .limit(q ? 100 : unpaid ? 200 : 300)
       .lean();
     const list = appointments.map(presentPosAppointment);
     const summary = {
@@ -974,8 +985,9 @@ const listAppointmentsHistory = async (req, res) => {
       completed: list.filter((item) => item.status === "Completed").length,
       cancelled: list.filter((item) => item.status === "Cancelled").length,
       paidTotal: roundMoney(list.filter((item) => item.isPaid).reduce((sum, item) => sum + item.totalPrice, 0)),
+      dueTotal: roundMoney(list.filter((item) => !item.isPaid && item.status !== "Cancelled").reduce((sum, item) => sum + Math.max(item.totalPrice - item.deposit, 0), 0)),
     };
-    return res.json({ date, query: q, appointments: list, summary });
+    return res.json({ date, query: q, unpaid, appointments: list, summary });
   } catch (error) {
     return sendError(res, error, "تعذر تحميل المواعيد.");
   }

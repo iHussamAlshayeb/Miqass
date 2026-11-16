@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { CalendarDays, ChevronLeft, ChevronRight, Printer, ReceiptText, Search, Undo2, X } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, Printer, ReceiptText, Search, Undo2, Wallet, X, XCircle } from 'lucide-react';
+import CancelAppointmentModal from '../dashboard/CancelAppointmentModal';
 import posApi from '../../services/posApi';
 import { money } from '../../utils/posPricing';
-import { methodLabel } from './posShared';
+import { isAwaitingPayment, methodLabel } from './posShared';
 
 // تاريخ الرياض بصيغة YYYY-MM-DD، وإزاحته بالأيام
 const riyadhToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh' }).format(new Date());
@@ -93,17 +94,49 @@ const useHistoryFetch = (url, params, reloadKey, fallback) => {
 };
 
 /** مواعيد يوم بالتنقل بين الأيام، أو بحث عن عميل في كل المواعيد */
-const AppointmentsHistory = ({ onReceipt }) => {
+const AppointmentsHistory = ({ onReceipt, onCollect, accent, reloadKey }) => {
     const [date, setDate] = useState(() => addDays(riyadhToday(), -1));
     const [search, setSearch] = useState('');
+    const [unpaidOnly, setUnpaidOnly] = useState(false);
+    const [localReload, setLocalReload] = useState(0);
+    const [cancelTarget, setCancelTarget] = useState(null);
+    const [cancelling, setCancelling] = useState(false);
+    const [actionError, setActionError] = useState('');
     const q = useDebounced(search.trim());
-    const { data, loading, error } = useHistoryFetch('/pos/history/appointments', q ? { q } : { date }, 0, 'تعذر تحميل المواعيد.');
+    const reload = reloadKey * 1000 + localReload;
+    const params = unpaidOnly ? { unpaid: '1', ...(q ? { q } : {}) } : q ? { q } : { date };
+    const { data, loading, error: loadError } = useHistoryFetch('/pos/history/appointments', params, reload, 'تعذر تحميل المواعيد.');
+    // عدد المواعيد السابقة التي لم تُحصّل: يظهر على زر التصفية حتى لا تُنسى
+    const { data: unpaidData } = useHistoryFetch('/pos/history/appointments', { unpaid: '1' }, reload, '');
+    const unpaidCount = unpaidData?.appointments?.length || 0;
+    const error = loadError || actionError;
+    const showDates = unpaidOnly || Boolean(q);
+
+    const cancelAppointment = async (reason) => {
+        setCancelling(true);
+        setActionError('');
+        try {
+            await posApi.put(`/pos/appointments/${cancelTarget._id}/status`, { status: 'Cancelled', cancelReason: reason });
+            setCancelTarget(null);
+            setLocalReload((value) => value + 1);
+        } catch (err) {
+            setActionError(errorText(err, 'تعذر إلغاء الموعد.'));
+            setCancelTarget(null);
+        } finally {
+            setCancelling(false);
+        }
+    };
 
     const list = data?.appointments || [];
     return (
         <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
-                {!q && (
+                <button type="button" onClick={() => setUnpaidOnly((value) => !value)} aria-pressed={unpaidOnly}
+                    className={`flex h-12 items-center gap-2 rounded-xl border px-4 text-sm font-extrabold ${unpaidOnly ? 'border-amber-500 bg-amber-500 text-white' : 'border-slate-200 bg-white text-slate-700'}`}>
+                    <Wallet size={17} /> غير المحصّلة
+                    {unpaidCount > 0 && <span className={`rounded-full px-1.5 text-xs leading-5 ${unpaidOnly ? 'bg-white/25' : 'bg-amber-100 text-amber-800'}`}>{unpaidCount}</span>}
+                </button>
+                {!showDates && (
                     <div className="flex h-12 items-center rounded-xl border border-slate-200 bg-white">
                         <button type="button" onClick={() => setDate((value) => addDays(value, -1))} className="flex h-full w-11 items-center justify-center text-slate-600" aria-label="اليوم السابق"><ChevronRight size={20} /></button>
                         <label className="relative flex h-full min-w-[150px] cursor-pointer items-center justify-center gap-2 px-2 font-extrabold text-slate-800">
@@ -113,11 +146,18 @@ const AppointmentsHistory = ({ onReceipt }) => {
                         <button type="button" onClick={() => setDate((value) => addDays(value, 1))} className="flex h-full w-11 items-center justify-center text-slate-600" aria-label="اليوم التالي"><ChevronLeft size={20} /></button>
                     </div>
                 )}
-                {!q && date !== riyadhToday() && <button type="button" onClick={() => setDate(riyadhToday())} className="h-12 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600">اليوم</button>}
+                {!showDates && date !== riyadhToday() && <button type="button" onClick={() => setDate(riyadhToday())} className="h-12 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600">اليوم</button>}
                 <SearchField value={search} onChange={setSearch} placeholder="ابحث عن عميل بالاسم أو الجوال في كل المواعيد" />
             </div>
 
-            {data && !q && (
+            {data && unpaidOnly && (
+                <div className="grid grid-cols-2 gap-2">
+                    <Stat label="بانتظار التحصيل" value={data.summary.count} tone="text-amber-700" />
+                    <Stat label="المتبقي على العملاء" value={money(data.summary.dueTotal)} />
+                </div>
+            )}
+            {unpaidOnly && <p className="text-xs font-semibold text-slate-500">مواعيد الأيام السابقة (آخر 60 يوماً) لم تُصدر لها فاتورة. التحصيل يُسجل بتاريخ اليوم في الوردية الحالية، وموعد العميل الذي لم يحضر يمكن إلغاؤه.</p>}
+            {data && !q && !unpaidOnly && (
                 <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
                     <Stat label="المواعيد" value={data.summary.count} />
                     <Stat label="مكتملة" value={data.summary.completed} tone="text-emerald-700" />
@@ -125,7 +165,7 @@ const AppointmentsHistory = ({ onReceipt }) => {
                     <Stat label="المحصّل" value={money(data.summary.paidTotal)} />
                 </div>
             )}
-            {q && data && <p className="text-sm font-bold text-slate-500">{list.length ? `${list.length} موعد للعميل "${q}"${list.length >= 100 ? ' (آخر 100)' : ''}` : ''}</p>}
+            {q && !unpaidOnly && data && <p className="text-sm font-bold text-slate-500">{list.length ? `${list.length} موعد للعميل "${q}"${list.length >= 100 ? ' (آخر 100)' : ''}` : ''}</p>}
 
             {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</p>}
             {loading && !data ? (
@@ -133,7 +173,7 @@ const AppointmentsHistory = ({ onReceipt }) => {
             ) : list.length === 0 && !error ? (
                 <div className="mt-12 flex flex-col items-center gap-2 text-slate-400">
                     <CalendarDays size={38} strokeWidth={1.5} />
-                    <p className="font-bold">{q ? 'لا توجد مواعيد لهذا العميل.' : 'لا توجد مواعيد في هذا اليوم.'}</p>
+                    <p className="font-bold">{unpaidOnly ? 'لا توجد مواعيد بانتظار التحصيل.' : q ? 'لا توجد مواعيد لهذا العميل.' : 'لا توجد مواعيد في هذا اليوم.'}</p>
                 </div>
             ) : (
                 <div className={`divide-y divide-slate-100 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/80 ${loading ? 'opacity-60' : ''}`}>
@@ -143,7 +183,7 @@ const AppointmentsHistory = ({ onReceipt }) => {
                             <div key={item._id} className="flex flex-wrap items-center gap-3 px-4 py-3">
                                 <div className="w-16 shrink-0 text-center">
                                     <p className="font-mono text-lg font-extrabold text-slate-900" dir="ltr">{item.timeSlot}</p>
-                                    {q && <p className="text-[11px] font-bold text-slate-400" dir="ltr">{item.date}</p>}
+                                    {showDates && <p className="whitespace-nowrap text-[11px] font-bold text-slate-400">{dayLabel(item.date)}</p>}
                                 </div>
                                 <div className="min-w-0 flex-1">
                                     <p className="truncate font-extrabold text-slate-900">{item.childName}{item.customerPhone && <span className="mr-2 font-mono text-xs font-semibold text-slate-400" dir="ltr">{item.customerPhone}</span>}</p>
@@ -152,16 +192,32 @@ const AppointmentsHistory = ({ onReceipt }) => {
                                     </p>
                                     {item.status === 'Cancelled' && item.cancelReason && <p className="text-xs font-semibold text-red-600">السبب: {item.cancelReason}</p>}
                                 </div>
-                                <span className="font-mono text-base font-extrabold text-slate-700" dir="ltr">{money(item.totalPrice)}</span>
+                                {!isAwaitingPayment(item) && <span className="font-mono text-base font-extrabold text-slate-700" dir="ltr">{money(item.totalPrice)}</span>}
                                 <Pill tone={tone}>{label}{item.isPaid ? ' · مدفوع' : ''}</Pill>
                                 {item.saleId ? (
                                     <button type="button" onClick={() => onReceipt(item.saleId)} className="flex h-10 items-center gap-1.5 rounded-xl bg-slate-50 px-3 text-sm font-bold text-slate-700 hover:bg-slate-100"><Printer size={15} /> الإيصال</button>
+                                ) : isAwaitingPayment(item) ? (
+                                    <div className="flex gap-1.5">
+                                        <button type="button" onClick={() => onCollect(item)} className="flex h-10 items-center gap-2 rounded-xl px-3 text-sm font-extrabold text-white" style={{ backgroundColor: accent }}>
+                                            <Wallet size={15} /> تحصيل <span className="font-mono" dir="ltr">{money(Math.max(item.totalPrice - item.deposit, 0))}</span>
+                                        </button>
+                                        {item.status === 'Booked' && (
+                                            <button type="button" onClick={() => setCancelTarget(item)} className="flex h-10 items-center gap-1 rounded-xl px-2.5 text-sm font-bold text-red-600 hover:bg-red-50" aria-label={`إلغاء موعد ${item.childName}`}><XCircle size={15} /> إلغاء</button>
+                                        )}
+                                    </div>
                                 ) : <span className="w-[86px]" />}
                             </div>
                         );
                     })}
                 </div>
             )}
+
+            <CancelAppointmentModal
+                isOpen={Boolean(cancelTarget)}
+                isCanceling={cancelling}
+                onClose={() => setCancelTarget(null)}
+                onConfirm={cancelAppointment}
+            />
         </div>
     );
 };
@@ -290,7 +346,7 @@ const SalesHistory = ({ onReceipt, onRefund, reloadKey }) => {
 };
 
 /** السجل داخل نقطة البيع: الفواتير السابقة والمواعيد السابقة */
-const PosHistory = ({ onReceipt, onRefund, reloadKey }) => {
+const PosHistory = ({ onReceipt, onRefund, onCollect, accent, reloadKey }) => {
     const [tab, setTab] = useState('sales');
     return (
         <div className="space-y-4">
@@ -303,7 +359,7 @@ const PosHistory = ({ onReceipt, onRefund, reloadKey }) => {
             </div>
             {tab === 'sales'
                 ? <SalesHistory onReceipt={onReceipt} onRefund={onRefund} reloadKey={reloadKey} />
-                : <AppointmentsHistory onReceipt={onReceipt} />}
+                : <AppointmentsHistory onReceipt={onReceipt} onCollect={onCollect} accent={accent} reloadKey={reloadKey} />}
         </div>
     );
 };

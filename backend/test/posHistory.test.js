@@ -43,3 +43,19 @@ test("sales history totals match on the tenant ObjectId and search escapes regex
   assert.equal(find.mock.calls[0].arguments[0].$or[0]["customerSnapshot.name"].$regex, "a\\(b");
   assert.deepEqual(res.body.summary, { count: 3, total: 90, paid: 90, refunded: 10, net: 80 });
 });
+
+test("unpaid appointments: previous days only (60-day window), unpaid and not cancelled", async (t) => {
+  const Appointment = require("../src/models/Appointment");
+  const find = t.mock.method(Appointment, "find", () => chain([
+    { _id: "a1", childName: "سعد", date: "2026-11-15", timeSlot: "12:00", status: "Completed", totalPrice: 80, payment: { status: "Paid", amount: 20 } },
+    { _id: "a2", childName: "ريان", date: "2026-11-13", timeSlot: "13:00", status: "Booked", totalPrice: 30 },
+  ]));
+  const res = response();
+  await listAppointmentsHistory({ tenantId: "t", query: { unpaid: "1" } }, res);
+  const query = find.mock.calls[0].arguments[0];
+  assert.deepEqual(query.status, { $in: ["Booked", "Completed"] });
+  assert.equal(query.saleId, null);
+  assert.ok(query.date.$lt && query.date.$gte && query.date.$gte < query.date.$lt);
+  assert.equal(res.body.unpaid, true);
+  assert.equal(res.body.summary.dueTotal, 90);
+});
